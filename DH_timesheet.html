@@ -1229,13 +1229,21 @@ function buildAdminProjectOverviewDetail(projectId){
   const phases = state.config.phases;
   const entries = (state.adminEntriesFlat || []).filter(e => e.projectId === projectId);
   const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
+  const projectCosts = (state.costs || []).filter(c => c.projectId === projectId);
+  const totalCostAmount = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
 
   const byPhase = {};
   entries.forEach(e => {
     const pid = e.phaseId || "—";
-    if(!byPhase[pid]) byPhase[pid] = { total: 0, byEmployee: {} };
+    if(!byPhase[pid]) byPhase[pid] = { total: 0, byEmployee: {}, costs: [], costTotal: 0 };
     byPhase[pid].total += Number(e.hours||0);
     byPhase[pid].byEmployee[e.employeeName] = (byPhase[pid].byEmployee[e.employeeName] || 0) + Number(e.hours||0);
+  });
+  projectCosts.forEach(c => {
+    const pid = c.phaseId || "—";
+    if(!byPhase[pid]) byPhase[pid] = { total: 0, byEmployee: {}, costs: [], costTotal: 0 };
+    byPhase[pid].costs.push(c);
+    byPhase[pid].costTotal += Number(c.amount||0);
   });
 
   const assignedIds = (project && project.phaseIds) ? project.phaseIds : [];
@@ -1252,21 +1260,34 @@ function buildAdminProjectOverviewDetail(projectId){
   const phaseBlocks = phaseIds.map(pid => {
     const phase = phases.find(p => p.id === pid);
     const label = phase ? `${esc(phase.name)}` : (pid === "—" ? "Bez fáze" : esc(pid));
-    const data = byPhase[pid] || { total: 0, byEmployee: {} };
+    const data = byPhase[pid] || { total: 0, byEmployee: {}, costs: [], costTotal: 0 };
     const empRows = Object.entries(data.byEmployee)
       .sort((a,b) => b[1]-a[1])
       .map(([name,h]) => `<div class="phase-employee-row"><span>${esc(name)}</span><span>${fmtH(h)}</span></div>`)
+      .join("");
+    const costRows = data.costs.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""))
+      .map(c => {
+        const payLabel = c.paymentMethod === "hotove" ? "hotově" : c.paymentMethod === "ucet" ? "účtem" : "";
+        const detail = [c.date, payLabel, c.note].filter(Boolean).join(" · ");
+        return `<div class="phase-employee-row"><span>${esc(detail)}</span><span>${fmtKc(c.amount)}</span></div>`;
+      })
       .join("");
     return `
       <div class="phase-block">
         <div class="phase-block-head"><span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(data.total)}</b></div>
         ${empRows ? `<div class="phase-employees">${empRows}</div>` : ``}
+        ${data.costTotal ? `
+        <div class="phase-employees" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);">
+          <div class="phase-employee-row"><span><b style="color:var(--ink);">Náklady fáze</b></span><span><b style="color:var(--ink);">${fmtKc(data.costTotal)}</b></span></div>
+          ${costRows}
+        </div>` : ``}
       </div>`;
   }).join("");
 
   return `
     <div class="project-detail">
       <div class="project-detail-total"><span>Projekt celkem</span><b>${fmtH(totalHours)}</b></div>
+      ${totalCostAmount ? `<div class="project-detail-total"><span>Náklady celkem</span><b>${fmtKc(totalCostAmount)}</b></div>` : ``}
       ${phaseBlocks || `<div class="q-hint" style="margin:6px 0 0;">Tomuto projektu zatím nejsou přiřazené žádné fáze a nemá ani žádné zapsané hodiny.</div>`}
     </div>`;
 }
@@ -1807,11 +1828,9 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" && state.adminEntriesFlat === null && !state.adminHoursLoading){
-      loadAdminHours();
-    }
-    if(newSection === "project-costs" && state.costs === null && !state.costsLoading){
-      loadAdminCosts();
+    if(newSection === "project-overview" || newSection === "project-costs"){
+      if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
+      if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
   });
 
