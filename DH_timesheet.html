@@ -3565,6 +3565,55 @@ async function loadAllEntries(){
   return results.flat();
 }
 
+async function loadEntriesByEmployee(){
+  const entriesByEmployee = {};
+  await Promise.all(state.config.employees.map(async emp => {
+    entriesByEmployee[emp.id] = await loadEntries(emp.id);
+  }));
+  return entriesByEmployee;
+}
+
+function sheetSafeName(name, taken){
+  let base = String(name || "").replace(/[\/\\?*\[\]:]/g, " ").trim().slice(0, 31) || "Zaměstnanec";
+  let candidate = base;
+  let n = 2;
+  while(taken.has(candidate)){
+    const suffix = ` (${n})`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+    n++;
+  }
+  taken.add(candidate);
+  return candidate;
+}
+
+function buildTimesheetWorkbook(entriesByEmployee){
+  const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
+  const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
+  const header = ["Datum", "Číslo projektu", "Projekt", "Fáze", "Název fáze", "Hodiny", "Náklady (Kč)", "Poznámka"];
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  state.config.employees.forEach(emp => {
+    const entries = (entriesByEmployee[emp.id] || []).slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const totalHours = entries.reduce((s, e) => s + Number(e.hours || 0), 0);
+    const rows = entries.map(e => [
+      e.date || "",
+      e.projectId || "",
+      projectsById[e.projectId] || "",
+      e.phaseId || "",
+      phasesById[e.phaseId] || "",
+      Number(e.hours || 0),
+      Number(e.cost || 0),
+      e.note || ""
+    ]);
+    rows.push([]);
+    rows.push(["", "", "", "", "Celkem hodin", totalHours, "", ""]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 9 }, { wch: 13 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, ws, sheetSafeName(emp.name, usedNames));
+  });
+  return wb;
+}
+
 async function renameProjectIdEverywhere(oldId, newId){
   await Promise.all(state.config.employees.map(async emp => {
     const entries = await loadEntries(emp.id);
@@ -4235,6 +4284,9 @@ function adminTemplate(){
         <p class="q-hint" style="margin:20px 0 8px;">Stáhne kompletní zálohu všech dat (zaměstnanci, projekty, fáze, všechny výkazy) do jednoho JSON souboru.</p>
         <button class="btn btn-outline btn-small" id="export-data-btn">Exportovat data (JSON)</button>
 
+        <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se záložkou pro každého zaměstnance a všemi jeho odpracovanými hodinami.</p>
+        <button class="btn btn-outline btn-small" id="export-excel-btn">Exportovat Excel (XLSX)</button>
+
         <p class="q-hint" style="margin:20px 0 8px;">Smaže všechny zaměstnance, projekty, fáze i jejich výkazy. Nevratné.</p>
         <button class="btn btn-danger btn-small" id="reset-app-btn">Smazat všechna data</button>
         ` : ``}
@@ -4669,10 +4721,7 @@ function bindAdmin(){
     const origText = exportBtn.textContent;
     exportBtn.textContent = "Připravuji…";
     try{
-      const entriesByEmployee = {};
-      for(const emp of state.config.employees){
-        entriesByEmployee[emp.id] = await loadEntries(emp.id);
-      }
+      const entriesByEmployee = await loadEntriesByEmployee();
       const payload = {
         exportedAt: new Date().toISOString(),
         config: state.config,
@@ -4690,6 +4739,21 @@ function bindAdmin(){
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = origText;
+    }
+  };
+
+  const exportExcelBtn = document.getElementById("export-excel-btn");
+  if(exportExcelBtn) exportExcelBtn.onclick = async () => {
+    exportExcelBtn.disabled = true;
+    const origText = exportExcelBtn.textContent;
+    exportExcelBtn.textContent = "Připravuji…";
+    try{
+      const entriesByEmployee = await loadEntriesByEmployee();
+      const wb = buildTimesheetWorkbook(entriesByEmployee);
+      XLSX.writeFile(wb, `vykazy-export-${new Date().toISOString().slice(0,10)}.xlsx`);
+    } finally {
+      exportExcelBtn.disabled = false;
+      exportExcelBtn.textContent = origText;
     }
   };
 
