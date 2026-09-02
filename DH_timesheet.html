@@ -137,10 +137,6 @@
   .choice-btn.selected .dot::after{ content:""; position:absolute; inset:3px; border-radius:50%; background: var(--sage); }
   .choice-btn:hover{ border-color: var(--ink); }
 
-  .modal-overlay{ position:fixed; inset:0; background:rgba(20,19,15,0.5); display:flex; align-items:flex-start; justify-content:center; padding:60px 16px; z-index:100; overflow-y:auto; }
-  .modal-box{ background:var(--paper); border-radius:16px; padding:28px; max-width:640px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
-  .modal-box h3{ font-size:22px; font-weight:800; margin:0 0 18px; }
-
   .gate{ text-align:center; padding: 20px 10px; }
   .gate p{ color:var(--soft); font-size:14px; margin: 8px 0 20px; }
   .gate input{ max-width:220px; margin: 0 auto 16px; text-align:center; }
@@ -1537,15 +1533,23 @@ function adminRecordsTemplate(){
     <div class="entries">${rows}</div>`;
 }
 
-function projectModalHtml(){
+function projectDetailPageHtml(){
   const p = state.config.projects.find(x => x.id === state.editingProjectId);
-  if(!p) return "";
+  if(!p){
+    return `
+    <div class="sheet">
+      <button class="logout-link" data-action="back-to-projects">← Zpět na projekty</button>
+      <div class="empty-state" style="margin-top:20px;">Projekt nenalezen.</div>
+    </div>`;
+  }
   const phaseIds = p.phaseIds || [];
   return `
-  <div class="modal-overlay" data-action="close-project-modal-backdrop">
-    <div class="modal-box">
-      <h3>Upravit projekt</h3>
-      <form id="project-modal-form" data-id="${esc(p.id)}">
+    <div class="sheet">
+      <button class="logout-link" data-action="back-to-projects">← Zpět na projekty</button>
+      <div class="eyebrow" style="margin-top:18px;">Projekt #${esc(p.id)}</div>
+      <div class="q-title">${esc(p.name)}</div>
+
+      <form id="project-modal-form" data-id="${esc(p.id)}" style="margin-top:24px;">
         <div class="form-grid">
           <div class="field-row"><label class="field-label">Číslo projektu</label><input type="text" name="id" value="${esc(p.id)}" required></div>
           <div class="field-row"><label class="field-label">Název</label><input type="text" name="name" value="${esc(p.name)}" required></div>
@@ -1555,17 +1559,17 @@ function projectModalHtml(){
         ${state.editProjError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.editProjError)}</div>` : ``}
 
         ${p.phaseless ? `
-        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
+        <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0;">Tomuto projektu nejde přiřadit žádná fáze — zaměstnanci u něj mohou zapisovat hodiny rovnou, bez volby fáze.</p>
         </div>` : `
-        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);">
+        <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0 0 10px;">Fáze dostupné pro tento projekt. Nic vybráno = zaměstnanci u něj neuvidí žádnou fázi.</p>
           <div class="phase-picker">
             ${state.config.phases.map(ph => `<button type="button" class="phase-chip ${phaseIds.includes(ph.id) ? "selected" : ""}" data-action="toggle-project-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
           </div>
         </div>
         ${phaseIds.length ? `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line);">
+        <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0 0 10px;">Rozpočet fáze (Kč, kolik lze na fázi utratit) a případné uzavření zapisování hodin od zvoleného data.</p>
           ${phaseIds.map(pid => {
             const ph = state.config.phases.find(x => x.id === pid);
@@ -1589,13 +1593,12 @@ function projectModalHtml(){
         </div>` : ``}
         `}
 
-        <div style="margin-top:20px;display:flex;gap:8px;">
-          <button class="btn btn-tan btn-small" type="submit">Uložit</button>
-          <button class="btn btn-small" type="button" data-action="close-project-modal">Zavřít</button>
+        <div style="margin-top:24px;display:flex;gap:8px;">
+          <button class="btn btn-tan" type="submit">Uložit</button>
+          <button class="btn btn-outline" type="button" data-action="back-to-projects">Zpět</button>
         </div>
       </form>
-    </div>
-  </div>`;
+    </div>`;
 }
 
 function adminSectionHeader(key, label, rightHtml){
@@ -1623,6 +1626,10 @@ function adminTemplate(){
       </div>`;
   }
 
+  if(state.editingProjectId){
+    return projectDetailPageHtml();
+  }
+
   const empRows = state.config.employees.map(e => `
     <div class="resp-item">
       <div>${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span></div>
@@ -1636,7 +1643,7 @@ function adminTemplate(){
     const assignedCount = (p.phaseIds && p.phaseIds.length) ? p.phaseIds.length : 0;
     return `
     <div class="admin-project-item">
-      <div class="admin-project-head" data-action="open-project-modal" data-id="${esc(p.id)}" style="cursor:pointer;">
+      <div class="admin-project-head" data-action="open-project-page" data-id="${esc(p.id)}" style="cursor:pointer;">
         <span class="grow"><span class="entry-proj">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
         <button class="icon-btn" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">×</button>
       </div>
@@ -1651,7 +1658,6 @@ function adminTemplate(){
 
   return `
     <div class="sheet">
-      ${projectModalHtml()}
       <div class="admin-subnav">
         <button type="button" data-action="switch-admin-subtab" data-subtab="settings" class="${state.adminSubTab === "settings" ? "active" : ""}">Nastavení</button>
         <button type="button" data-action="switch-admin-subtab" data-subtab="reports" class="${state.adminSubTab === "reports" ? "active" : ""}">Přehledy</button>
@@ -2041,15 +2047,12 @@ function bindAdmin(){
     await saveConfig();
     render();
   });
-  document.querySelectorAll('[data-action="open-project-modal"]').forEach(el => el.onclick = () => {
+  document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
     setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "" });
   });
-  document.querySelectorAll('[data-action="close-project-modal"]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
     setState({ editingProjectId: null, editProjError: "" });
   });
-  document.querySelectorAll('[data-action="close-project-modal-backdrop"]').forEach(el => el.addEventListener("click", (e) => {
-    if(e.target === el) setState({ editingProjectId: null, editProjError: "" });
-  }));
   const projectModalForm = document.getElementById("project-modal-form");
   if(projectModalForm) projectModalForm.addEventListener("submit", async e => {
     e.preventDefault();
