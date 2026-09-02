@@ -522,6 +522,9 @@ let state = {
   costError: "",
   costImportError: "",
   costImportPreview: null,
+  costFilterProjectId: "",
+  costFilterPhaseId: "",
+  costFilterPayment: "",
   adminHoursLoading: false,
   currentEmployee: null,
   entries: [],
@@ -1368,7 +1371,6 @@ function adminProjectsOverviewTemplate(){
 
 function adminCostsTemplate(){
   const costs = state.costs || [];
-  const totalAmount = costs.reduce((s,c) => s + Number(c.amount||0), 0);
   const editingCost = state.editingCostId ? costs.find(c => c.id === state.editingCostId) : null;
   const formProject = editingCost
     ? (state.config.projects.find(p => p.id === editingCost.projectId) || state.config.projects[0])
@@ -1377,7 +1379,18 @@ function adminCostsTemplate(){
   const projectOptions = state.config.projects.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
   const phaseOptions = `<option value="">—</option>` + formPhases.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
 
-  const sorted = costs.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
+  const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.costFilterProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.costFilterPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
+
+  const filtered = costs.filter(c =>
+    (!state.costFilterProjectId || c.projectId === state.costFilterProjectId) &&
+    (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
+    (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment)
+  );
+  const totalAmount = filtered.reduce((s,c) => s + Number(c.amount||0), 0);
+  const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment;
+
+  const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const rows = sorted.length ? sorted.map(c => {
     const proj = state.config.projects.find(p => p.id === c.projectId);
     const phase = state.config.phases.find(p => p.id === c.phaseId);
@@ -1392,10 +1405,10 @@ function adminCostsTemplate(){
       <button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
       <button class="icon-btn" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">×</button>
     </div>`;
-  }).join("") : `<div class="empty-state">Zatím žádné náklady.</div>`;
+  }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
   return `
-    <p class="q-hint" style="margin:0 0 14px;">Celkové náklady: <b style="color:var(--ink);">${fmtKc(totalAmount)}</b></p>
+    <p class="q-hint" style="margin:0 0 14px;">${filtersActive ? "Náklady dle filtru" : "Celkové náklady"}: <b style="color:var(--ink);">${fmtKc(totalAmount)}</b></p>
 
     <form id="add-cost-form">
       ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
@@ -1421,6 +1434,19 @@ function adminCostsTemplate(){
 
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
       ${costs.length ? `<button class="btn btn-outline btn-small" id="export-costs-btn" style="margin-bottom:14px;">Exportovat náklady (XLSX)</button>` : ``}
+      ${costs.length ? `
+      <div class="form-grid" style="margin-bottom:14px;">
+        <div class="field-row"><label class="field-label">Projekt</label><select id="cost-filter-project">${filterProjectOptions}</select></div>
+        <div class="field-row"><label class="field-label">Fáze</label><select id="cost-filter-phase">${filterPhaseOptions}</select></div>
+        <div class="field-row"><label class="field-label">Platba</label>
+          <select id="cost-filter-payment">
+            <option value="">Vše</option>
+            <option value="hotove" ${state.costFilterPayment === "hotove" ? "selected" : ""}>Hotově</option>
+            <option value="ucet" ${state.costFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
+          </select>
+        </div>
+        ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
+      </div>` : ``}
       <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
       <div class="entries">${rows}</div>
     </div>
@@ -2333,6 +2359,15 @@ function bindAdmin(){
       exportCostsBtn.disabled = false;
     }
   };
+
+  const costFilterProject = document.getElementById("cost-filter-project");
+  if(costFilterProject) costFilterProject.addEventListener("change", () => setState({ costFilterProjectId: costFilterProject.value }));
+  const costFilterPhase = document.getElementById("cost-filter-phase");
+  if(costFilterPhase) costFilterPhase.addEventListener("change", () => setState({ costFilterPhaseId: costFilterPhase.value }));
+  const costFilterPayment = document.getElementById("cost-filter-payment");
+  if(costFilterPayment) costFilterPayment.addEventListener("change", () => setState({ costFilterPayment: costFilterPayment.value }));
+  const costFilterResetBtn = document.getElementById("cost-filter-reset-btn");
+  if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "" });
 
   const exportBtn = document.getElementById("export-data-btn");
   if(exportBtn) exportBtn.onclick = async () => {
