@@ -229,6 +229,10 @@
   .entry-row-compact{ display:grid; grid-template-columns: 92px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-compact:hover{ border-color: var(--soft); }
 
+  .entry-head-wide{ display:grid; grid-template-columns: 92px 130px 1fr 70px 64px 84px 1fr; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-wide{ display:grid; grid-template-columns: 92px 130px 1fr 70px 64px 84px 1fr; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-row-wide:hover{ border-color: var(--soft); }
+
   .stamp-toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background: var(--ink); color:#fff; font-weight:700; font-size:12.5px;
@@ -249,6 +253,8 @@
     .entry-row{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-compact{ display:none; }
     .entry-row-compact{ grid-template-columns: 1fr; gap:6px; }
+    .entry-head-wide{ display:none; }
+    .entry-row-wide{ grid-template-columns: 1fr; gap:6px; }
     .project-head{ display:none; }
     .project-row{ grid-template-columns: 16px auto 1fr; }
     .project-hours{ grid-column: 1 / -1; text-align:left; }
@@ -525,6 +531,10 @@ let state = {
   costFilterProjectId: "",
   costFilterPhaseId: "",
   costFilterPayment: "",
+  recordsFilterFrom: "",
+  recordsFilterTo: "",
+  recordsFilterProjectId: "",
+  recordsFilterPhaseId: "",
   adminHoursLoading: false,
   currentEmployee: null,
   entries: [],
@@ -1473,6 +1483,57 @@ function costImportFormHtml(){
     </div>`;
 }
 
+function adminRecordsTemplate(){
+  const entries = state.adminEntriesFlat;
+  const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.recordsFilterProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.recordsFilterPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
+
+  const filterHtml = `
+    <div class="form-grid" style="margin-bottom:14px;">
+      <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="records-filter-from" value="${esc(state.recordsFilterFrom)}"></div>
+      <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="records-filter-to" value="${esc(state.recordsFilterTo)}"></div>
+      <div class="field-row"><label class="field-label">Projekt</label><select id="records-filter-project">${filterProjectOptions}</select></div>
+      <div class="field-row"><label class="field-label">Fáze</label><select id="records-filter-phase">${filterPhaseOptions}</select></div>
+    </div>`;
+
+  if(entries === null){
+    return `${filterHtml}<div class="empty-state">Načítání…</div>`;
+  }
+
+  const filtersActive = !!(state.recordsFilterFrom || state.recordsFilterTo || state.recordsFilterProjectId || state.recordsFilterPhaseId);
+  const filtered = entries.filter(e =>
+    (!state.recordsFilterFrom || e.date >= state.recordsFilterFrom) &&
+    (!state.recordsFilterTo || e.date <= state.recordsFilterTo) &&
+    (!state.recordsFilterProjectId || e.projectId === state.recordsFilterProjectId) &&
+    (!state.recordsFilterPhaseId || e.phaseId === state.recordsFilterPhaseId)
+  );
+  const totalHours = filtered.reduce((s,e) => s + Number(e.hours||0), 0);
+  const totalCost = filtered.reduce((s,e) => s + Number(e.cost||0), 0);
+
+  const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
+  const rows = sorted.length ? sorted.map(e => {
+    const proj = state.config.projects.find(p => p.id === e.projectId);
+    const phase = state.config.phases.find(p => p.id === e.phaseId);
+    return `
+    <div class="entry-row-wide">
+      <span class="entry-date">${esc(e.date)}</span>
+      <span>${esc(e.employeeName)}</span>
+      <span>${proj ? `<span class="entry-proj">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+      <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
+      <span class="entry-num">${fmtH(e.hours)}</span>
+      <span class="entry-num">${fmtKc(e.cost)}</span>
+      <span class="entry-note">${esc(e.note||"")}</span>
+    </div>`;
+  }).join("") : `<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Zatím nejsou zadané žádné hodiny."}</div>`;
+
+  return `
+    ${filterHtml}
+    ${filtersActive ? `<button class="btn btn-small" type="button" id="records-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
+    <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalCost ? ` · ${fmtKc(totalCost)}` : ``}</p>
+    <div class="entry-head-wide"><span>Datum</span><span>Zaměstnanec</span><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span></div>
+    <div class="entries">${rows}</div>`;
+}
+
 function adminSectionHeader(key, label, rightHtml){
   const isOpen = state.adminOpenSection === key;
   return `
@@ -1587,6 +1648,11 @@ function adminTemplate(){
       <div class="admin-block">
         ${adminSectionHeader("project-costs", "Náklady projektů")}
         ${state.adminOpenSection === "project-costs" ? adminCostsTemplate() : ""}
+      </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("records-filter", "Filtr záznamů")}
+        ${state.adminOpenSection === "records-filter" ? adminRecordsTemplate() : ""}
       </div>
       ` : ``}
 
@@ -1911,7 +1977,7 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
@@ -2382,6 +2448,17 @@ function bindAdmin(){
   if(costFilterPayment) costFilterPayment.addEventListener("change", () => setState({ costFilterPayment: costFilterPayment.value }));
   const costFilterResetBtn = document.getElementById("cost-filter-reset-btn");
   if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "" });
+
+  const recordsFilterFrom = document.getElementById("records-filter-from");
+  if(recordsFilterFrom) recordsFilterFrom.addEventListener("change", () => setState({ recordsFilterFrom: recordsFilterFrom.value }));
+  const recordsFilterTo = document.getElementById("records-filter-to");
+  if(recordsFilterTo) recordsFilterTo.addEventListener("change", () => setState({ recordsFilterTo: recordsFilterTo.value }));
+  const recordsFilterProject = document.getElementById("records-filter-project");
+  if(recordsFilterProject) recordsFilterProject.addEventListener("change", () => setState({ recordsFilterProjectId: recordsFilterProject.value }));
+  const recordsFilterPhase = document.getElementById("records-filter-phase");
+  if(recordsFilterPhase) recordsFilterPhase.addEventListener("change", () => setState({ recordsFilterPhaseId: recordsFilterPhase.value }));
+  const recordsFilterResetBtn = document.getElementById("records-filter-reset-btn");
+  if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "" });
 
   const exportBtn = document.getElementById("export-data-btn");
   if(exportBtn) exportBtn.onclick = async () => {
