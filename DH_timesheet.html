@@ -846,7 +846,7 @@ function render(){
         ${state.currentEmployee && state.tab==="app" ? `<button class="logout-link" id="logout-btn">Odhlásit</button>` : ``}
         <div class="nav-links">
           <button data-tab="app" class="${state.tab==="app"?"active":""}">Výkazy</button>
-          <button data-tab="admin" class="${state.tab==="admin"?"active":""}">Administrace</button>
+          <button data-tab="admin" class="${state.tab==="admin"?"active":""}" title="Administrace" aria-label="Administrace" style="font-size:16px;">⚙</button>
         </div>
       </div>
     </div>
