@@ -1603,7 +1603,9 @@ function projectDetailPageHtml(){
         ${phaseIds.length ? `
         <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0 0 10px;">Rozpočet, skutečné náklady a mzdové náklady na fázi. Mzdové náklady = odpracované hodiny × hodinová sazba zaměstnance platná v daný den (nastavuje se u zaměstnance).</p>
-          ${phaseIds.map(pid => {
+          ${(() => {
+          let totalBudget = 0, totalCosts = 0, totalLabor = 0;
+          const phaseBlocksHtml = phaseIds.map(pid => {
             const ph = state.config.phases.find(x => x.id === pid);
             const label = ph ? esc(ph.name) : esc(pid);
             const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
@@ -1618,6 +1620,7 @@ function projectDetailPageHtml(){
             const budgetNum = budget === "" ? 0 : Number(budget) || 0;
             const status = budgetNum - costsSum - laborSum;
             const statusColor = status < 0 ? "var(--danger)" : "var(--sage)";
+            totalBudget += budgetNum; totalCosts += costsSum; totalLabor += laborSum;
             const phaseHours = phaseEntries.reduce((s,en) => s + Number(en.hours||0), 0);
             const byEmployeePhase = {};
             phaseEntries.forEach(en => { byEmployeePhase[en.employeeName] = (byEmployeePhase[en.employeeName] || 0) + Number(en.hours||0); });
@@ -1645,7 +1648,21 @@ function projectDetailPageHtml(){
                 `}
               </div>
             </div>`;
-          }).join("")}
+          }).join("");
+          const totalStatus = totalBudget - totalCosts - totalLabor;
+          const totalStatusColor = totalStatus < 0 ? "var(--danger)" : "var(--sage)";
+          const totalBlockHtml = `
+            <div class="phase-block" style="margin-bottom:10px;background:var(--sage-tint);">
+              <div class="phase-block-head">Celkem za projekt</div>
+              <div class="form-grid" style="margin-top:10px;">
+                <div class="field-row"><label class="field-label">Rozpočet (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(totalBudget)}</div></div>
+                <div class="field-row"><label class="field-label">Náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(totalCosts)}</div></div>
+                <div class="field-row"><label class="field-label">Mzdové náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(totalLabor)}</div></div>
+                <div class="field-row"><label class="field-label">Stav (Kč)</label><div style="padding:13px 0;font-weight:700;color:${totalStatusColor};">${fmtKc(totalStatus)}</div></div>
+              </div>
+            </div>`;
+          return phaseBlocksHtml + totalBlockHtml;
+          })()}
         </div>` : ``}
         `}
 
