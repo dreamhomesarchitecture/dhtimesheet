@@ -1433,7 +1433,6 @@ function adminCostsTemplate(){
     </form>
 
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
-      ${costs.length ? `<button class="btn btn-outline btn-small" id="export-costs-btn" style="margin-bottom:14px;">Exportovat náklady (XLSX)</button>` : ``}
       ${costs.length ? `
       <div class="form-grid" style="margin-bottom:14px;">
         <div class="field-row"><label class="field-label">Projekt</label><select id="cost-filter-project">${filterProjectOptions}</select></div>
@@ -1449,10 +1448,13 @@ function adminCostsTemplate(){
       </div>` : ``}
       <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
       <div class="entries">${rows}</div>
-    </div>
+    </div>`;
+}
 
+function costImportFormHtml(){
+  return `
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
-      <p class="q-hint" style="margin:0 0 14px;">Import nákladů z Excelu — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka (za co), Cena, Platba (hotově/účtem).</p>
+      <p class="q-hint" style="margin:0 0 14px;"><b style="color:var(--ink);">Import nákladů</b> — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka (za co), Cena, Platba (hotově/účtem).</p>
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Soubor (.xlsx)</label><input type="file" id="cost-import-file-input" accept=".xlsx,.xls"></div>
         <div class="field-row"><button class="btn btn-outline btn-small" type="button" id="cost-import-parse-btn">Načíst soubor</button></div>
@@ -1641,9 +1643,9 @@ function adminTemplate(){
       </div>
 
       <div class="admin-block">
-        ${adminSectionHeader("import", "Import výkazů z Excelu")}
+        ${adminSectionHeader("import", "Import")}
         ${state.adminOpenSection === "import" ? `
-        <p class="q-hint" style="margin:0 0 14px;">Nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka, Hodiny, Náklady — stejný formát, jaký jste posílal/a pro import Viktora. Neznámé projekty se přeskočí a nahlásí, žádná data se tím nepřepíšou.</p>
+        <p class="q-hint" style="margin:0 0 14px;"><b style="color:var(--ink);">Import výkazů</b> — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka, Hodiny, Náklady — stejný formát, jaký jste posílal/a pro import Viktora. Neznámé projekty se přeskočí a nahlásí, žádná data se tím nepřepíšou.</p>
         <div class="form-grid">
           <div class="field-row"><label class="field-label">Zaměstnanec</label>
             <select id="import-employee-select">${state.config.employees.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select>
@@ -1663,6 +1665,21 @@ function adminTemplate(){
             </div>
           </div>
         ` : ``}
+        ${costImportFormHtml()}
+        ` : ``}
+      </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("export", "Export")}
+        ${state.adminOpenSection === "export" ? `
+        <p class="q-hint" style="margin:0 0 8px;">Stáhne kompletní zálohu všech dat (zaměstnanci, projekty, fáze, všechny výkazy) do jednoho JSON souboru.</p>
+        <button class="btn btn-outline btn-small" id="export-data-btn">Exportovat data (JSON)</button>
+
+        <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se záložkou pro každého zaměstnance a všemi jeho odpracovanými hodinami.</p>
+        <button class="btn btn-outline btn-small" id="export-excel-btn">Exportovat Excel (XLSX)</button>
+
+        <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se všemi náklady projektů.</p>
+        <button class="btn btn-outline btn-small" id="export-costs-btn">Exportovat náklady (XLSX)</button>
         ` : ``}
       </div>
 
@@ -1675,12 +1692,6 @@ function adminTemplate(){
             <div class="field-row"><button class="btn btn-outline btn-small" type="submit">Uložit</button></div>
           </div>
         </form>
-
-        <p class="q-hint" style="margin:20px 0 8px;">Stáhne kompletní zálohu všech dat (zaměstnanci, projekty, fáze, všechny výkazy) do jednoho JSON souboru.</p>
-        <button class="btn btn-outline btn-small" id="export-data-btn">Exportovat data (JSON)</button>
-
-        <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se záložkou pro každého zaměstnance a všemi jeho odpracovanými hodinami.</p>
-        <button class="btn btn-outline btn-small" id="export-excel-btn">Exportovat Excel (XLSX)</button>
 
         <p class="q-hint" style="margin:20px 0 8px;">Smaže všechny zaměstnance, projekty, fáze i jejich výkazy. Nevratné.</p>
         <button class="btn btn-danger btn-small" id="reset-app-btn">Smazat všechna data</button>
@@ -2350,13 +2361,16 @@ function bindAdmin(){
   if(costImportCancelBtn) costImportCancelBtn.onclick = () => setState({ costImportPreview: null, costImportError: "" });
 
   const exportCostsBtn = document.getElementById("export-costs-btn");
-  if(exportCostsBtn) exportCostsBtn.onclick = () => {
+  if(exportCostsBtn) exportCostsBtn.onclick = async () => {
     exportCostsBtn.disabled = true;
+    const origText = exportCostsBtn.textContent;
     try{
-      const wb = buildCostsWorkbook(state.costs || []);
+      const costs = state.costs === null ? await loadCosts() : state.costs;
+      const wb = buildCostsWorkbook(costs);
       XLSX.writeFile(wb, `naklady-export-${new Date().toISOString().slice(0,10)}.xlsx`);
     } finally {
       exportCostsBtn.disabled = false;
+      exportCostsBtn.textContent = origText;
     }
   };
 
