@@ -3488,6 +3488,8 @@ let state = {
   editingEntryId: null,
   empError: "",
   projError: "",
+  editingProjectId: null,
+  editProjError: "",
   phaseError: "",
   importError: "",
   importPreview: null,
@@ -3561,6 +3563,16 @@ async function loadAllEntries(){
     return entries.map(e => ({ ...e, employeeId: emp.id, employeeName: emp.name }));
   }));
   return results.flat();
+}
+
+async function renameProjectIdEverywhere(oldId, newId){
+  await Promise.all(state.config.employees.map(async emp => {
+    const entries = await loadEntries(emp.id);
+    let changed = false;
+    entries.forEach(e => { if(e.projectId === oldId){ e.projectId = newId; changed = true; } });
+    if(changed) await saveEntries(emp.id, emp.name, entries);
+  }));
+  if(state.currentEmployee) state.entries.forEach(e => { if(e.projectId === oldId) e.projectId = newId; });
 }
 
 async function loadAdminHours(){
@@ -4059,13 +4071,27 @@ function adminTemplate(){
   const projRows = sortedProjects().map(p => {
     const isOpen = state.expandedAdminProjectId === p.id;
     const assignedCount = (p.phaseIds && p.phaseIds.length) ? p.phaseIds.length : 0;
+    const isEditing = state.editingProjectId === p.id;
     return `
     <div class="admin-project-item">
       <div class="admin-project-head">
         <button class="icon-btn" data-action="toggle-admin-project" data-id="${esc(p.id)}" title="Fáze projektu">${isOpen ? "▾" : "▸"}</button>
         <div class="grow"><span class="entry-proj">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}</span></div>
+        <button class="icon-btn" data-action="toggle-edit-project" data-id="${esc(p.id)}" title="Upravit">✎</button>
         <button class="icon-btn" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">×</button>
       </div>
+      ${isEditing ? `
+      <form class="phase-picker-wrap" data-action="edit-project-form" data-id="${esc(p.id)}">
+        <div class="form-grid">
+          <div class="field-row"><label class="field-label">Číslo projektu</label><input type="text" name="id" value="${esc(p.id)}" required></div>
+          <div class="field-row"><label class="field-label">Název</label><input type="text" name="name" value="${esc(p.name)}" required></div>
+          <div class="field-row" style="display:flex;gap:8px;">
+            <button class="btn btn-tan btn-small" type="submit">Uložit</button>
+            <button class="btn btn-small" type="button" data-action="cancel-edit-project">Zrušit</button>
+          </div>
+        </div>
+        ${state.editProjError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.editProjError)}</div>` : ``}
+      </form>` : ``}
       ${isOpen ? (p.phaseless ? `
       <div class="phase-picker-wrap">
         <p class="q-hint" style="margin:0;">Tomuto projektu nejde přiřadit žádná fáze — zaměstnanci u něj mohou zapisovat hodiny rovnou, bez volby fáze.</p>
@@ -4393,6 +4419,37 @@ function bindAdmin(){
     const id = b.getAttribute("data-id");
     setState({ expandedAdminProjectId: state.expandedAdminProjectId === id ? null : id });
   });
+  document.querySelectorAll('[data-action="toggle-edit-project"]').forEach(b => b.onclick = () => {
+    const id = b.getAttribute("data-id");
+    setState({ editingProjectId: state.editingProjectId === id ? null : id, editProjError: "" });
+  });
+  document.querySelectorAll('[data-action="cancel-edit-project"]').forEach(b => b.onclick = () => {
+    setState({ editingProjectId: null, editProjError: "" });
+  });
+  document.querySelectorAll('[data-action="edit-project-form"]').forEach(form => form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const oldId = form.getAttribute("data-id");
+    const project = state.config.projects.find(x => x.id === oldId);
+    if(!project) return;
+    const data = Object.fromEntries(new FormData(form).entries());
+    const newId = data.id.trim(), newName = data.name.trim();
+    if(!newId || !newName) return;
+    if(newId !== oldId && state.config.projects.some(x => x.id === newId)){
+      setState({ editProjError: "Toto číslo projektu už existuje." }); return;
+    }
+    if(newId !== oldId){
+      await renameProjectIdEverywhere(oldId, newId);
+      project.id = newId;
+      if(state.expandedAdminProjectId === oldId) state.expandedAdminProjectId = newId;
+    }
+    project.name = newName;
+    state.editProjError = "";
+    state.editingProjectId = null;
+    state.allEntriesFlat = null;
+    state.projectTotals = null;
+    await saveConfig();
+    await loadAdminHours();
+  }));
   document.querySelectorAll('[data-action="toggle-admin-employee"]').forEach(row => row.onclick = () => {
     const id = row.getAttribute("data-id");
     setState({ expandedAdminEmployeeId: state.expandedAdminEmployeeId === id ? null : id });
