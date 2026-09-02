@@ -820,9 +820,7 @@ function buildProjectDetail(projectId){
   const byPhase = {};
   entries.forEach(e => {
     const pid = e.phaseId || "—";
-    if(!byPhase[pid]) byPhase[pid] = { total: 0, byEmployee: {} };
-    byPhase[pid].total += Number(e.hours||0);
-    byPhase[pid].byEmployee[e.employeeName] = (byPhase[pid].byEmployee[e.employeeName] || 0) + Number(e.hours||0);
+    byPhase[pid] = (byPhase[pid] || 0) + Number(e.hours||0);
   });
 
   // zobrazit fáze přiřazené projektu (i s 0 h) + jakoukoli fázi s reálně zapsanými hodinami
@@ -831,8 +829,8 @@ function buildProjectDetail(projectId){
   const phaseIds = Array.from(new Set([...assignedIds, ...idsWithHours]));
   const masterOrder = phases.map(p => p.id);
   phaseIds.sort((a,b) => {
-    const ha = byPhase[a] ? byPhase[a].total : 0;
-    const hb = byPhase[b] ? byPhase[b].total : 0;
+    const ha = byPhase[a] || 0;
+    const hb = byPhase[b] || 0;
     if(hb !== ha) return hb - ha;
     return masterOrder.indexOf(a) - masterOrder.indexOf(b);
   });
@@ -840,15 +838,10 @@ function buildProjectDetail(projectId){
   const phaseBlocks = phaseIds.map(pid => {
     const phase = phases.find(p => p.id === pid);
     const label = phase ? `${esc(phase.name)}` : (pid === "—" ? "Bez fáze" : esc(pid));
-    const data = byPhase[pid] || { total: 0, byEmployee: {} };
-    const empRows = Object.entries(data.byEmployee)
-      .sort((a,b) => b[1]-a[1])
-      .map(([name,h]) => `<div class="phase-employee-row"><span>${esc(name)}</span><span>${fmtH(h)}</span></div>`)
-      .join("");
+    const total = byPhase[pid] || 0;
     return `
       <div class="phase-block">
-        <div class="phase-block-head"><span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(data.total)}</b></div>
-        ${empRows ? `<div class="phase-employees">${empRows}</div>` : ``}
+        <div class="phase-block-head"><span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(total)}</b></div>
       </div>`;
   }).join("");
 
