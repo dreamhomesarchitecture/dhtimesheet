@@ -57,7 +57,6 @@
   }
   .nav-links button.active{ color: var(--ink); }
   .nav-links button[data-tab="app"].active{ border-color: var(--sage); }
-  .nav-links button[data-tab="projects"].active{ border-color: var(--ink); }
   .nav-links button[data-tab="admin"].active{ border-color: var(--tan); }
   .admin-subnav{ display:flex; gap:22px; margin-bottom:26px; border-bottom:1.5px solid var(--line); }
   .admin-subnav button{
@@ -522,6 +521,7 @@ let state = {
   entries: [],
   month: new Date().toISOString().slice(0,7),
   editingEntryId: null,
+  showAllProjects: false,
   showMyProjects: false,
   expandedMyProjectId: null,
   expandedMyPhaseKey: null,
@@ -588,6 +588,17 @@ function fmtH(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionD
 function fmtHShort(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:1}); }
 function fmtKc(n){ return (Number(n)||0).toLocaleString("cs-CZ") + " Kč"; }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
+const MONTH_NAMES_CS = ["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];
+function fmtMonthLabel(monthStr){
+  const [y, m] = monthStr.split("-").map(Number);
+  const name = MONTH_NAMES_CS[m-1] || monthStr;
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${y}`;
+}
+function shiftMonth(monthStr, delta){
+  const [y, m] = monthStr.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+}
 
 async function storageGet(key){
   const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`);
@@ -777,7 +788,6 @@ function render(){
         ${state.currentEmployee && state.tab==="app" ? `<button class="logout-link" id="logout-btn">Odhlásit</button>` : ``}
         <div class="nav-links">
           <button data-tab="app" class="${state.tab==="app"?"active":""}">Výkazy</button>
-          <button data-tab="projects" class="${state.tab==="projects"?"active":""}">Projekty</button>
           <button data-tab="admin" class="${state.tab==="admin"?"active":""}">Administrace</button>
         </div>
       </div>
@@ -785,13 +795,7 @@ function render(){
     <div id="tab-content"></div>
   `;
   document.querySelectorAll(".nav-links button").forEach(b => b.onclick = () => {
-    const tab = b.getAttribute("data-tab");
-    if(tab === "projects"){
-      setState({ tab, projectTotalsLoading: true });
-      loadProjectTotals();
-    } else {
-      setState({ tab });
-    }
+    setState({ tab: b.getAttribute("data-tab") });
   });
   const homeBtn = document.getElementById("home-btn");
   homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false });
@@ -801,7 +805,6 @@ function render(){
 
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
-  else if(state.tab === "projects"){ content.innerHTML = projectsTemplate(); bindProjects(); }
   else { content.innerHTML = appTemplate(); bindApp(); }
 }
 
@@ -860,57 +863,6 @@ function buildProjectDetail(projectId){
     </div>`;
 }
 
-function projectsTemplate(){
-  const projects = sortedProjects();
-
-  const rows = projects.map(p => {
-    const hours = state.projectTotals ? (state.projectTotals[p.id] || 0) : null;
-    const hoursHtml = state.projectTotalsLoading && state.projectTotals === null
-      ? `<span class="project-hours zero">…</span>`
-      : `<span class="project-hours ${hours ? "" : "zero"}">${fmtH(hours || 0)}</span>`;
-    const isOpen = state.expandedProjectId === p.id;
-    return `
-    <div class="project-item ${isOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
-      <div class="project-row" data-action="toggle-project" data-id="${esc(p.id)}">
-        <span class="chevron">▸</span>
-        <span class="entry-proj">#${esc(p.id)}</span>
-        <span class="name">${esc(p.name)}</span>
-        ${hoursHtml}
-      </div>
-      ${isOpen ? buildProjectDetail(p.id) : ""}
-    </div>`;
-  }).join("");
-
-  return `
-    <div class="sheet">
-      <div class="eyebrow">Projekty</div>
-      <div class="q-title">Aktuální projekty</div>
-      <div class="q-hint">${projects.length} projektů. Klikněte na projekt pro rozpad podle fází a lidí. Nové projekty se přidávají v Administraci.</div>
-      ${projects.length === 0 ? `<div class="empty-state">Zatím žádné projekty.</div>` : `
-      <div class="field-row project-search">
-        <input type="text" id="project-search-input" placeholder="Hledat…">
-      </div>
-      <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Hodiny celkem</span></div>
-      <div class="project-list" id="project-list">${rows}</div>
-      `}
-    </div>`;
-}
-
-function bindProjects(){
-  const input = document.getElementById("project-search-input");
-  if(input) input.addEventListener("input", () => {
-    const q = input.value.trim().toLowerCase();
-    document.querySelectorAll("#project-list .project-item").forEach(item => {
-      item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
-    });
-  });
-
-  document.querySelectorAll('[data-action="toggle-project"]').forEach(row => row.onclick = () => {
-    const id = row.getAttribute("data-id");
-    setState({ expandedProjectId: state.expandedProjectId === id ? null : id });
-  });
-}
-
 function myProjectTotals(){
   const totals = {};
   state.entries.forEach(e => { totals[e.projectId] = (totals[e.projectId] || 0) + Number(e.hours || 0); });
@@ -967,6 +919,46 @@ function buildMyProjectDetail(projectId){
     <div class="project-detail">
       <div class="project-detail-total"><span>Moje hodiny na projektu</span><b>${fmtH(totalHours)}</b></div>
       ${phaseBlocks || `<div class="q-hint" style="margin:6px 0 0;">Zatím žádné hodiny na tomto projektu.</div>`}
+    </div>`;
+}
+
+function allProjectsSection(){
+  const projects = sortedProjects();
+  const isOpen = state.showAllProjects;
+  const loading = state.projectTotalsLoading && state.projectTotals === null;
+
+  const rows = projects.map(p => {
+    const hours = state.projectTotals ? (state.projectTotals[p.id] || 0) : 0;
+    const hoursHtml = loading
+      ? `<span class="project-hours zero">…</span>`
+      : `<span class="project-hours ${hours ? "" : "zero"}">${fmtH(hours)}</span>`;
+    const rowOpen = state.expandedProjectId === p.id;
+    return `
+    <div class="project-item ${rowOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
+      <div class="project-row" data-action="toggle-all-project" data-id="${esc(p.id)}">
+        <span class="chevron">▸</span>
+        <span class="entry-proj">#${esc(p.id)}</span>
+        <span class="name">${esc(p.name)}</span>
+        ${hoursHtml}
+      </div>
+      ${rowOpen ? buildProjectDetail(p.id) : ""}
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="admin-block">
+      <div class="admin-block-title">
+        <span data-action="toggle-all-projects-section" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+          <span style="display:inline-block;width:10px;">${isOpen ? "▾" : "▸"}</span>Všechny projekty${projects.length ? ` (${projects.length})` : ""}
+        </span>
+      </div>
+      ${isOpen ? (projects.length ? `
+        <div class="field-row project-search">
+          <input type="text" id="all-project-search-input" placeholder="Hledat…">
+        </div>
+        <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Hodiny celkem</span></div>
+        <div class="project-list" id="all-project-list">${rows}</div>
+      ` : `<div class="empty-state">Zatím žádné projekty.</div>`) : ``}
     </div>`;
 }
 
@@ -1114,13 +1106,16 @@ function timesheetTemplate(){
       <div class="q-title">${esc(emp.name)}</div>
       <div class="q-hint">Zadejte odpracované hodiny, projekt a fázi.</div>
 
+      ${allProjectsSection()}
+
       ${myProjectsSection()}
 
       ${yearOverviewHtml}
 
-      <div class="field-row month-field">
-        <label class="field-label">Měsíc</label>
-        <input type="month" id="month-input" value="${esc(state.month)}">
+      <div class="year-nav month-nav" style="margin-bottom:18px;">
+        <button class="icon-btn" data-action="month-prev" type="button">‹</button>
+        <span class="year-label">${esc(fmtMonthLabel(state.month))}</span>
+        <button class="icon-btn" data-action="month-next" type="button">›</button>
       </div>
 
       ${calendarHtml}
@@ -1507,6 +1502,27 @@ function bindApp(){
   const gotoAdmin = document.getElementById("goto-admin-btn") || document.getElementById("goto-admin-btn2");
   if(gotoAdmin) gotoAdmin.onclick = () => setState({ tab: "admin" });
 
+  const toggleAllProjects = document.querySelector('[data-action="toggle-all-projects-section"]');
+  if(toggleAllProjects) toggleAllProjects.onclick = () => {
+    const opening = !state.showAllProjects;
+    setState({ showAllProjects: opening });
+    if(opening && state.projectTotals === null && !state.projectTotalsLoading){
+      setState({ projectTotalsLoading: true });
+      loadProjectTotals();
+    }
+  };
+  document.querySelectorAll('[data-action="toggle-all-project"]').forEach(row => row.onclick = () => {
+    const id = row.getAttribute("data-id");
+    setState({ expandedProjectId: state.expandedProjectId === id ? null : id });
+  });
+  const allProjectSearchInput = document.getElementById("all-project-search-input");
+  if(allProjectSearchInput) allProjectSearchInput.addEventListener("input", () => {
+    const q = allProjectSearchInput.value.trim().toLowerCase();
+    document.querySelectorAll("#all-project-list .project-item").forEach(item => {
+      item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
+    });
+  });
+
   const toggleMyProjects = document.querySelector('[data-action="toggle-my-projects-section"]');
   if(toggleMyProjects) toggleMyProjects.onclick = () => setState({ showMyProjects: !state.showMyProjects });
   document.querySelectorAll('[data-action="toggle-my-project"]').forEach(row => row.onclick = () => {
@@ -1601,8 +1617,10 @@ function bindApp(){
     loginInput.addEventListener("keydown", e => { if(e.key === "Enter") tryLogin(); });
   }
 
-  const monthInput = document.getElementById("month-input");
-  if(monthInput) monthInput.addEventListener("change", () => setState({ month: monthInput.value }));
+  const monthPrevBtn = document.querySelector('[data-action="month-prev"]');
+  const monthNextBtn = document.querySelector('[data-action="month-next"]');
+  if(monthPrevBtn) monthPrevBtn.onclick = () => setState({ month: shiftMonth(state.month, -1) });
+  if(monthNextBtn) monthNextBtn.onclick = () => setState({ month: shiftMonth(state.month, 1) });
 
   const yearPrevBtn = document.querySelector('[data-action="year-prev"]');
   const yearNextBtn = document.querySelector('[data-action="year-next"]');
