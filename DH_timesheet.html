@@ -520,6 +520,8 @@ let state = {
   adminOpenSection: null,
   adminSubTab: "settings",
   expandedAdminProjectOverviewId: null,
+  expandedEmployeeRatesId: null,
+  rateError: "",
   adminEntriesFlat: null,
   costs: null,
   costsLoading: false,
@@ -582,6 +584,11 @@ function excelDateToISO(dateVal){
 function phasesForProject(project){
   if(!project || !project.phaseIds || project.phaseIds.length === 0) return [];
   return state.config.phases.filter(ph => project.phaseIds.includes(ph.id));
+}
+function hourlyRateForEmployee(employee, dateStr){
+  if(!employee || !employee.rates || !employee.rates.length || !dateStr) return 0;
+  const match = employee.rates.find(r => r.from && r.from <= dateStr && (!r.to || dateStr <= r.to));
+  return match ? Number(match.amount) || 0 : 0;
 }
 function isPhaseClosedOnDate(project, phaseId, dateStr){
   if(!project || !project.closedPhases) return false;
@@ -1570,24 +1577,36 @@ function projectDetailPageHtml(){
         </div>
         ${phaseIds.length ? `
         <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--line);">
-          <p class="q-hint" style="margin:0 0 10px;">Rozpočet fáze (Kč, kolik lze na fázi utratit) a případné uzavření zapisování hodin od zvoleného data.</p>
+          <p class="q-hint" style="margin:0 0 10px;">Rozpočet, skutečné náklady a mzdové náklady na fázi. Mzdové náklady = odpracované hodiny × hodinová sazba zaměstnance platná v daný den (nastavuje se u zaměstnance).</p>
           ${phaseIds.map(pid => {
             const ph = state.config.phases.find(x => x.id === pid);
             const label = ph ? esc(ph.name) : esc(pid);
             const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
             const closedFrom = (p.closedPhases && p.closedPhases[pid]) || null;
+            const phaseEntries = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid);
+            const phaseCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid);
+            const costsSum = phaseCosts.reduce((s,c) => s + Number(c.amount||0), 0);
+            const laborSum = phaseEntries.reduce((s,en) => {
+              const emp = state.config.employees.find(x => x.id === en.employeeId);
+              return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
+            }, 0);
             return `
-            <div class="admin-project-head" style="margin-bottom:10px;flex-wrap:wrap;row-gap:8px;">
-              <span class="entry-phase">${esc(pid)}</span>
-              <span class="grow">${label}</span>
-              <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:130px;padding:6px 8px;font-size:13px;" name="phase-budget-${esc(pid)}" value="${esc(budget)}">
-              ${closedFrom ? `
-                <span class="meta">Uzavřeno od ${esc(closedFrom)}</span>
-                <button class="btn btn-outline btn-small" type="button" data-action="reopen-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Znovu otevřít</button>
-              ` : `
-                <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
-                <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
-              `}
+            <div class="phase-block" style="margin-bottom:10px;">
+              <div class="phase-block-head"><span class="entry-phase">${esc(pid)}</span> ${label}</div>
+              <div class="form-grid" style="margin-top:10px;">
+                <div class="field-row"><label class="field-label">Rozpočet (Kč)</label><input type="number" min="0" step="1" placeholder="Rozpočet Kč" name="phase-budget-${esc(pid)}" value="${esc(budget)}"></div>
+                <div class="field-row"><label class="field-label">Náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(costsSum)}</div></div>
+                <div class="field-row"><label class="field-label">Mzdové náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(laborSum)}</div></div>
+              </div>
+              <div class="admin-project-head" style="margin-top:10px;flex-wrap:wrap;row-gap:8px;">
+                ${closedFrom ? `
+                  <span class="meta">Uzavřeno od ${esc(closedFrom)}</span>
+                  <button class="btn btn-outline btn-small" type="button" data-action="reopen-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Znovu otevřít</button>
+                ` : `
+                  <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+                  <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
+                `}
+              </div>
             </div>`;
           }).join("")}
         </div>` : ``}
@@ -1630,14 +1649,40 @@ function adminTemplate(){
     return projectDetailPageHtml();
   }
 
-  const empRows = state.config.employees.map(e => `
-    <div class="resp-item">
-      <div>${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span></div>
-      <div style="display:flex;gap:8px;">
+  const empRows = state.config.employees.map(e => {
+    const ratesOpen = state.expandedEmployeeRatesId === e.id;
+    const rates = (e.rates || []).slice().sort((a,b) => (b.from||"").localeCompare(a.from||""));
+    const rateRows = rates.length ? rates.map(r => `
+      <div class="phase-employee-row">
+        <span>${esc(r.from)} – ${r.to ? esc(r.to) : "dosud"}</span>
+        <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat" style="margin-left:6px;">×</button></span>
+      </div>`).join("") : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
+    return `
+    <div class="admin-project-item">
+      <div class="admin-project-head">
+        <button class="icon-btn" data-action="toggle-employee-rates" data-id="${esc(e.id)}" title="Hodinové sazby">${ratesOpen ? "▾" : "▸"}</button>
+        <div class="grow">${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span></div>
         <button class="icon-btn" data-action="wipe-employee-data" data-id="${esc(e.id)}" title="Smazat všechna data zaměstnance">↺</button>
         <button class="icon-btn" data-action="delete-employee" data-id="${esc(e.id)}" title="Smazat zaměstnance">×</button>
       </div>
-    </div>`).join("") || `<div class="empty-state">Zatím žádní zaměstnanci.</div>`;
+      ${ratesOpen ? `
+      <div class="phase-picker-wrap">
+        <p class="q-hint" style="margin:0 0 10px;">Hodinová sazba platná v daném období. Jakmile se sazba změní, přidejte nový řádek s novým obdobím — s tím se pak bude počítat podle data odpracovaných hodin.</p>
+        <div class="phase-employees" style="margin-top:0;padding-top:0;border-top:none;">
+          ${rateRows}
+        </div>
+        <form data-action="add-rate-form" data-id="${esc(e.id)}" style="margin-top:14px;">
+          <div class="form-grid">
+            <div class="field-row"><label class="field-label">Od</label><input type="date" name="from" required></div>
+            <div class="field-row"><label class="field-label">Do (nepovinné)</label><input type="date" name="to"></div>
+            <div class="field-row"><label class="field-label">Kč/h</label><input type="number" name="amount" min="0" step="1" required></div>
+            <div class="field-row"><button class="btn btn-tan btn-small" type="submit">+ Přidat sazbu</button></div>
+          </div>
+          ${state.rateError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.rateError)}</div>` : ``}
+        </form>
+      </div>` : ``}
+    </div>`;
+  }).join("") || `<div class="empty-state">Zatím žádní zaměstnanci.</div>`;
 
   const projRows = sortedProjects().map(p => {
     const assignedCount = (p.phaseIds && p.phaseIds.length) ? p.phaseIds.length : 0;
@@ -2040,6 +2085,34 @@ function bindAdmin(){
     await deleteEntries(id);
     render();
   });
+  document.querySelectorAll('[data-action="toggle-employee-rates"]').forEach(b => b.onclick = () => {
+    const id = b.getAttribute("data-id");
+    setState({ expandedEmployeeRatesId: state.expandedEmployeeRatesId === id ? null : id, rateError: "" });
+  });
+  document.querySelectorAll('[data-action="add-rate-form"]').forEach(form => form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const id = form.getAttribute("data-id");
+    const emp = state.config.employees.find(x => x.id === id);
+    if(!emp) return;
+    const data = Object.fromEntries(new FormData(form).entries());
+    const from = data.from, to = (data.to || "").trim(), amount = Number(data.amount);
+    if(!from || !(amount >= 0)) return;
+    if(to && to < from){ setState({ rateError: "Datum 'do' nemůže být dříve než 'od'." }); return; }
+    if(!emp.rates) emp.rates = [];
+    emp.rates.push({ id: uid("rate"), from, to, amount });
+    state.rateError = "";
+    await saveConfig();
+    render();
+  }));
+  document.querySelectorAll('[data-action="delete-rate"]').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute("data-id");
+    const rateId = b.getAttribute("data-rate-id");
+    const emp = state.config.employees.find(x => x.id === id);
+    if(!emp || !emp.rates) return;
+    emp.rates = emp.rates.filter(r => r.id !== rateId);
+    await saveConfig();
+    render();
+  });
   document.querySelectorAll('[data-action="delete-project"]').forEach(b => b.onclick = async (e) => {
     e.stopPropagation();
     if(!confirm("Smazat tento projekt?")) return;
@@ -2049,6 +2122,8 @@ function bindAdmin(){
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
     setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "" });
+    if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
+    if(state.costs === null && !state.costsLoading) loadAdminCosts();
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
     setState({ editingProjectId: null, editProjError: "" });
