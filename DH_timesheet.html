@@ -1590,6 +1590,9 @@ function projectDetailPageHtml(){
               const emp = state.config.employees.find(x => x.id === en.employeeId);
               return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
             }, 0);
+            const budgetNum = budget === "" ? 0 : Number(budget) || 0;
+            const status = budgetNum - costsSum - laborSum;
+            const statusColor = status < 0 ? "var(--danger)" : "var(--sage)";
             return `
             <div class="phase-block" style="margin-bottom:10px;">
               <div class="phase-block-head"><span class="entry-phase">${esc(pid)}</span> ${label}</div>
@@ -1597,6 +1600,7 @@ function projectDetailPageHtml(){
                 <div class="field-row"><label class="field-label">Rozpočet (Kč)</label><input type="number" min="0" step="1" placeholder="Rozpočet Kč" name="phase-budget-${esc(pid)}" value="${esc(budget)}"></div>
                 <div class="field-row"><label class="field-label">Náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(costsSum)}</div></div>
                 <div class="field-row"><label class="field-label">Mzdové náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(laborSum)}</div></div>
+                <div class="field-row"><label class="field-label">Stav (Kč)</label><div style="padding:13px 0;font-weight:700;color:${statusColor};">${fmtKc(status)}</div></div>
               </div>
               <div class="admin-project-head" style="margin-top:10px;flex-wrap:wrap;row-gap:8px;">
                 ${closedFrom ? `
