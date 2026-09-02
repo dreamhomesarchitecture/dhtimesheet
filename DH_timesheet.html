@@ -1565,6 +1565,22 @@ function projectDetailPageHtml(){
         </div>
         ${state.editProjError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.editProjError)}</div>` : ``}
 
+        ${(() => {
+          const projectEntries = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id);
+          const totalHours = projectEntries.reduce((s,en) => s + Number(en.hours||0), 0);
+          const byEmployee = {};
+          projectEntries.forEach(en => { byEmployee[en.employeeName] = (byEmployee[en.employeeName] || 0) + Number(en.hours||0); });
+          const empRowsHtml = Object.entries(byEmployee)
+            .sort((a,b) => b[1]-a[1])
+            .map(([name,h]) => `<div class="phase-employee-row"><span>${esc(name)}</span><span>${fmtH(h)}</span></div>`)
+            .join("");
+          return `
+          <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
+            <div class="project-detail-total"><span>Odpracováno celkem</span><b>${fmtH(totalHours)}</b></div>
+            ${empRowsHtml ? `<div class="phase-employees">${empRowsHtml}</div>` : `<div class="q-hint" style="margin:0;">Zatím žádné odpracované hodiny.</div>`}
+          </div>`;
+        })()}
+
         ${p.phaseless ? `
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0;">Tomuto projektu nejde přiřadit žádná fáze — zaměstnanci u něj mohou zapisovat hodiny rovnou, bez volby fáze.</p>
@@ -1593,9 +1609,17 @@ function projectDetailPageHtml(){
             const budgetNum = budget === "" ? 0 : Number(budget) || 0;
             const status = budgetNum - costsSum - laborSum;
             const statusColor = status < 0 ? "var(--danger)" : "var(--sage)";
+            const phaseHours = phaseEntries.reduce((s,en) => s + Number(en.hours||0), 0);
+            const byEmployeePhase = {};
+            phaseEntries.forEach(en => { byEmployeePhase[en.employeeName] = (byEmployeePhase[en.employeeName] || 0) + Number(en.hours||0); });
+            const empRowsPhaseHtml = Object.entries(byEmployeePhase)
+              .sort((a,b) => b[1]-a[1])
+              .map(([name,h]) => `<div class="phase-employee-row"><span>${esc(name)}</span><span>${fmtH(h)}</span></div>`)
+              .join("");
             return `
             <div class="phase-block" style="margin-bottom:10px;">
-              <div class="phase-block-head"><span class="entry-phase">${esc(pid)}</span> ${label}</div>
+              <div class="phase-block-head"><span class="entry-phase">${esc(pid)}</span> ${label} <b>${fmtH(phaseHours)}</b></div>
+              ${empRowsPhaseHtml ? `<div class="phase-employees">${empRowsPhaseHtml}</div>` : ``}
               <div class="form-grid" style="margin-top:10px;">
                 <div class="field-row"><label class="field-label">Rozpočet (Kč)</label><input type="number" min="0" step="1" placeholder="Rozpočet Kč" name="phase-budget-${esc(pid)}" value="${esc(budget)}"></div>
                 <div class="field-row"><label class="field-label">Náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(costsSum)}</div></div>
