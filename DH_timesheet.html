@@ -3496,6 +3496,30 @@ let state = {
 };
 
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function pad2(n){ return String(n).padStart(2, "0"); }
+function excelDateToISO(dateVal){
+  if(dateVal instanceof Date){
+    if(isNaN(dateVal)) return null;
+    return `${dateVal.getUTCFullYear()}-${pad2(dateVal.getUTCMonth()+1)}-${pad2(dateVal.getUTCDate())}`;
+  }
+  if(typeof dateVal === "number" && isFinite(dateVal)){
+    const ms = Math.round((dateVal - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if(isNaN(d)) return null;
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
+  }
+  const str = String(dateVal ?? "").trim();
+  if(!str) return null;
+  let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+  m = str.match(/^(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+  if(m) return `${m[3]}-${pad2(m[2])}-${pad2(m[1])}`;
+  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return `${m[3]}-${pad2(m[2])}-${pad2(m[1])}`;
+  const d = new Date(str);
+  if(!isNaN(d)) return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  return null;
+}
 function phasesForProject(project){
   if(!project || !project.phaseIds || project.phaseIds.length === 0) return [];
   return state.config.phases.filter(ph => project.phaseIds.includes(ph.id));
@@ -4650,9 +4674,7 @@ function bindAdmin(){
         const dateVal = row[dateCol], projVal = row[projCol], hoursVal = row[hoursCol];
         if(dateVal === undefined || projVal === undefined || hoursVal === undefined || hoursVal === "") continue;
 
-        let dateStr = null;
-        if(dateVal instanceof Date) dateStr = dateVal.toISOString().slice(0,10);
-        else { const d = new Date(dateVal); if(!isNaN(d)) dateStr = d.toISOString().slice(0,10); }
+        const dateStr = excelDateToISO(dateVal);
         if(!dateStr) continue;
 
         const hours = Number(hoursVal);
