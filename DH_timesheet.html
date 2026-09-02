@@ -1396,11 +1396,8 @@ function adminCostsTemplate(){
 
   return `
     <p class="q-hint" style="margin:0 0 14px;">Celkové náklady: <b style="color:var(--ink);">${fmtKc(totalAmount)}</b></p>
-    ${costs.length ? `<button class="btn btn-outline btn-small" id="export-costs-btn" style="margin-bottom:14px;">Exportovat náklady (XLSX)</button>` : ``}
-    <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
-    <div class="entries">${rows}</div>
 
-    <form id="add-cost-form" style="margin-top:16px;">
+    <form id="add-cost-form">
       ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
@@ -1421,6 +1418,12 @@ function adminCostsTemplate(){
       </div>
       ${state.costError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.costError)}</div>` : ``}
     </form>
+
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
+      ${costs.length ? `<button class="btn btn-outline btn-small" id="export-costs-btn" style="margin-bottom:14px;">Exportovat náklady (XLSX)</button>` : ``}
+      <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
+      <div class="entries">${rows}</div>
+    </div>
 
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
       <p class="q-hint" style="margin:0 0 14px;">Import nákladů z Excelu — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka (za co), Cena, Platba (hotově/účtem).</p>
