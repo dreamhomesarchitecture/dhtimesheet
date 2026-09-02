@@ -122,21 +122,6 @@
   }
   textarea:focus, input:focus, select:focus{ outline:none; border-color: var(--ink); }
 
-  .choices{ display:flex; flex-direction:column; gap:9px; }
-  .choice-btn{
-    text-align:left; display:flex; align-items:center; gap:11px;
-    border: 1.5px solid var(--line); background:#fff;
-    padding: 13px 16px; font-size:15px; color: var(--ink);
-    cursor:pointer; border-radius:12px; width:100%;
-    transition: border-color .12s, background .12s;
-    font-family:'DM Sans', sans-serif;
-  }
-  .choice-btn .dot{ width:14px; height:14px; border-radius:50%; border:1.5px solid var(--soft); flex:none; position:relative; }
-  .choice-btn.selected{ border-color: var(--sage); background: var(--sage-tint); }
-  .choice-btn.selected .dot{ border-color: var(--sage); }
-  .choice-btn.selected .dot::after{ content:""; position:absolute; inset:3px; border-radius:50%; background: var(--sage); }
-  .choice-btn:hover{ border-color: var(--ink); }
-
   .gate{ text-align:center; padding: 20px 10px; }
   .gate p{ color:var(--soft); font-size:14px; margin: 8px 0 20px; }
   .gate input{ max-width:220px; margin: 0 auto 16px; text-align:center; }
@@ -513,6 +498,10 @@ let state = {
   adminPassError: false,
   selectedEmployeeId: null,
   loginError: false,
+  nameInputValue: "",
+  nameInputError: "",
+  showAccountSettings: false,
+  myPasswordError: "",
   projectTotals: null,
   projectTotalsLoading: false,
   allEntriesFlat: null,
@@ -1084,11 +1073,6 @@ function pickerTemplate(){
         </div>
       </div>`;
   }
-  const choices = emps.map(e => `
-    <button type="button" class="choice-btn ${state.selectedEmployeeId===e.id?"selected":""}" data-action="select-emp" data-id="${esc(e.id)}">
-      <span class="dot"></span>${esc(e.name)}
-    </button>`).join("");
-
   let gate = "";
   if(state.selectedEmployeeId){
     const emp = emps.find(x => x.id === state.selectedEmployeeId);
@@ -1105,9 +1089,32 @@ function pickerTemplate(){
     <div class="sheet">
       <div class="eyebrow">Časové výkazy</div>
       <div class="q-title">Kdo jste?</div>
-      <div class="q-hint">Vyberte své jméno ze seznamu.</div>
-      <div class="choices">${choices}</div>
+      <div class="q-hint">Napište své křestní jméno.</div>
+      <input type="text" id="name-input-field" placeholder="např. Nikola" value="${esc(state.nameInputValue || "")}" autocomplete="off">
+      ${state.nameInputError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(state.nameInputError)}</div>` : ``}
+      <div style="margin-top:14px;"><button class="btn btn-sage" id="name-submit-btn">Pokračovat</button></div>
       ${gate}
+    </div>`;
+}
+
+function accountSettingsSection(){
+  const isOpen = state.showAccountSettings;
+  return `
+    <div class="admin-block">
+      <div class="admin-block-title">
+        <span data-action="toggle-account-settings" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+          <span style="display:inline-block;width:10px;">${isOpen ? "▾" : "▸"}</span>Nastavení
+        </span>
+      </div>
+      ${isOpen ? `
+      <form id="change-my-password-form">
+        <div class="form-grid">
+          <div class="field-row"><label class="field-label">Nové heslo</label><input type="text" name="password" required></div>
+          <div class="field-row"><button class="btn btn-outline btn-small" type="submit">Uložit</button></div>
+        </div>
+        ${state.myPasswordError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.myPasswordError)}</div>` : ``}
+      </form>
+      ` : ``}
     </div>`;
 }
 
@@ -1233,6 +1240,8 @@ function timesheetTemplate(){
         </div>
         ${timesheetOpen ? timesheetBody : ``}
       </div>
+
+      ${accountSettingsSection()}
     </div>`;
 }
 
@@ -1907,6 +1916,25 @@ function bindApp(){
   const toggleTimesheet = document.querySelector('[data-action="toggle-timesheet-section"]');
   if(toggleTimesheet) toggleTimesheet.onclick = () => setState({ showTimesheet: !state.showTimesheet });
 
+  const toggleAccountSettings = document.querySelector('[data-action="toggle-account-settings"]');
+  if(toggleAccountSettings) toggleAccountSettings.onclick = () => setState({ showAccountSettings: !state.showAccountSettings });
+
+  const changeMyPwForm = document.getElementById("change-my-password-form");
+  if(changeMyPwForm) changeMyPwForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(changeMyPwForm).entries());
+    const newPw = (data.password || "").trim();
+    if(!newPw) return;
+    const emp = state.config.employees.find(x => x.id === state.currentEmployee.id);
+    if(!emp) return;
+    emp.password = newPw;
+    state.currentEmployee = emp;
+    state.myPasswordError = "";
+    await saveConfig();
+    showStamp();
+    render();
+  });
+
   const projectSelect = document.getElementById("entry-project-select");
   const phaseSelect = document.getElementById("entry-phase-select");
   const phaseFieldRow = document.getElementById("phase-field-row");
@@ -1964,11 +1992,25 @@ function bindApp(){
     updateNoteRequirement();
   }
 
-  document.querySelectorAll('[data-action="select-emp"]').forEach(b => b.onclick = () => {
-    setState({ selectedEmployeeId: b.getAttribute("data-id"), loginError: false });
-    const input = document.getElementById("login-pass-input");
-    if(input) input.focus();
-  });
+  const nameInput = document.getElementById("name-input-field");
+  const nameSubmitBtn = document.getElementById("name-submit-btn");
+  const diacriticsPattern = "[" + String.fromCharCode(92,117,48,51,48,48) + "-" + String.fromCharCode(92,117,48,51,54,102) + "]";
+  const normalizeName = s => s.trim().toLowerCase().normalize("NFD").replace(new RegExp(diacriticsPattern, "g"), "");
+  const tryResolveName = () => {
+    if(!nameInput) return;
+    const typed = normalizeName(nameInput.value);
+    if(!typed) return;
+    const match = state.config.employees.find(e => normalizeName(e.name.trim().split(/\s+/)[0]) === typed);
+    if(match){
+      setState({ selectedEmployeeId: match.id, nameInputValue: nameInput.value, nameInputError: "", loginError: false });
+      const passInput = document.getElementById("login-pass-input");
+      if(passInput) passInput.focus();
+    } else {
+      setState({ nameInputValue: nameInput.value, nameInputError: "Jméno nenalezeno, zkontrolujte prosím zadání." });
+    }
+  };
+  if(nameSubmitBtn) nameSubmitBtn.onclick = tryResolveName;
+  if(nameInput) nameInput.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); tryResolveName(); } });
 
   const loginInput = document.getElementById("login-pass-input");
   const loginBtn = document.getElementById("login-submit-btn");
