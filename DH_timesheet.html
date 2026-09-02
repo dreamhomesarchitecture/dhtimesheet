@@ -218,6 +218,10 @@
   .entry-note{ font-size:13px; color:var(--soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .month-field{ max-width:200px; margin-bottom:22px; }
 
+  .entry-head-compact{ display:grid; grid-template-columns: 92px 64px 84px 1fr 28px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-compact{ display:grid; grid-template-columns: 92px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-row-compact:hover{ border-color: var(--soft); }
+
   .stamp-toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background: var(--ink); color:#fff; font-weight:700; font-size:12.5px;
@@ -236,6 +240,8 @@
     .nav-links button{ font-size:10.5px; }
     .entry-head{ display:none; }
     .entry-row{ grid-template-columns: 1fr; gap:6px; }
+    .entry-head-compact{ display:none; }
+    .entry-row-compact{ grid-template-columns: 1fr; gap:6px; }
     .project-head{ display:none; }
     .project-row{ grid-template-columns: 16px auto 1fr; }
     .project-hours{ grid-column: 1 / -1; text-align:left; }
@@ -510,6 +516,7 @@ let state = {
   editingEntryId: null,
   showMyProjects: false,
   expandedMyProjectId: null,
+  expandedMyPhaseKey: null,
   empError: "",
   projError: "",
   editingProjectId: null,
@@ -905,19 +912,41 @@ function buildMyProjectDetail(projectId){
   const byPhase = {};
   entries.forEach(e => {
     const pid = e.phaseId || "—";
-    byPhase[pid] = (byPhase[pid] || 0) + Number(e.hours||0);
+    if(!byPhase[pid]) byPhase[pid] = { total: 0, entries: [] };
+    byPhase[pid].total += Number(e.hours||0);
+    byPhase[pid].entries.push(e);
   });
   const masterOrder = phases.map(p => p.id);
   const phaseIds = Object.keys(byPhase).sort((a,b) => {
-    if(byPhase[b] !== byPhase[a]) return byPhase[b] - byPhase[a];
+    if(byPhase[b].total !== byPhase[a].total) return byPhase[b].total - byPhase[a].total;
     return masterOrder.indexOf(a) - masterOrder.indexOf(b);
   });
   const phaseBlocks = phaseIds.map(pid => {
     const phase = phases.find(p => p.id === pid);
     const label = phase ? esc(phase.name) : (pid === "—" ? "Bez fáze" : esc(pid));
+    const key = `${projectId}::${pid}`;
+    const isOpen = state.expandedMyPhaseKey === key;
+    const phaseEntries = byPhase[pid].entries.slice().sort((a,b) => b.date.localeCompare(a.date));
+    const entryRows = phaseEntries.map(e => `
+        <div class="entry-row-compact">
+          <span class="entry-date">${esc(e.date)}</span>
+          <span class="entry-num">${fmtH(e.hours)}</span>
+          <span class="entry-num">${fmtKc(e.cost)}</span>
+          <span class="entry-note">${esc(e.note||"")}</span>
+          <button class="icon-btn" data-action="edit-entry" data-id="${esc(e.id)}" title="Upravit">✎</button>
+          <button class="icon-btn" data-action="delete-entry" data-id="${esc(e.id)}" title="Smazat">×</button>
+        </div>`).join("");
     return `
       <div class="phase-block">
-        <div class="phase-block-head"><span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(byPhase[pid])}</b></div>
+        <div class="phase-block-head" data-action="toggle-my-phase-entries" data-key="${esc(key)}" style="cursor:pointer;">
+          <span class="chevron" style="margin-right:2px;">${isOpen ? "▾" : "▸"}</span>
+          <span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(byPhase[pid].total)}</b>
+        </div>
+        ${isOpen ? `
+        <div class="phase-employees" style="margin-top:8px;padding-top:8px;">
+          <div class="entry-head-compact"><span>Datum</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span><span></span><span></span></div>
+          <div class="entries">${entryRows}</div>
+        </div>` : ``}
       </div>`;
   }).join("");
 
@@ -1416,7 +1445,11 @@ function bindApp(){
   if(toggleMyProjects) toggleMyProjects.onclick = () => setState({ showMyProjects: !state.showMyProjects });
   document.querySelectorAll('[data-action="toggle-my-project"]').forEach(row => row.onclick = () => {
     const id = row.getAttribute("data-id");
-    setState({ expandedMyProjectId: state.expandedMyProjectId === id ? null : id });
+    setState({ expandedMyProjectId: state.expandedMyProjectId === id ? null : id, expandedMyPhaseKey: null });
+  });
+  document.querySelectorAll('[data-action="toggle-my-phase-entries"]').forEach(row => row.onclick = () => {
+    const key = row.getAttribute("data-key");
+    setState({ expandedMyPhaseKey: state.expandedMyPhaseKey === key ? null : key });
   });
 
   const projectSelect = document.getElementById("entry-project-select");
