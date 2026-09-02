@@ -59,6 +59,14 @@
   .nav-links button[data-tab="app"].active{ border-color: var(--sage); }
   .nav-links button[data-tab="projects"].active{ border-color: var(--ink); }
   .nav-links button[data-tab="admin"].active{ border-color: var(--tan); }
+  .admin-subnav{ display:flex; gap:22px; margin-bottom:26px; border-bottom:1.5px solid var(--line); }
+  .admin-subnav button{
+    background:none; border:none; cursor:pointer;
+    font-family:'DM Sans', sans-serif; font-size:12px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase; color: var(--soft);
+    padding:6px 0 12px; border-bottom:2px solid transparent; margin-bottom:-1.5px;
+  }
+  .admin-subnav button.active{ color: var(--ink); border-color: var(--tan); }
   .project-search{ max-width:320px; margin-bottom:20px; }
   .project-list{ display:flex; flex-direction:column; gap:8px; }
   .project-item{ border:1.5px solid var(--line); border-radius:12px; overflow:hidden; }
@@ -507,6 +515,7 @@ let state = {
   expandedAdminProjectId: null,
   expandedAdminEmployeeId: null,
   adminOpenSection: null,
+  adminSubTab: "settings",
   adminMonth: new Date().toISOString().slice(0,7),
   adminEntriesFlat: null,
   adminHoursLoading: false,
@@ -1358,11 +1367,19 @@ function adminTemplate(){
 
   return `
     <div class="sheet">
+      <div class="admin-subnav">
+        <button type="button" data-action="switch-admin-subtab" data-subtab="settings" class="${state.adminSubTab === "settings" ? "active" : ""}">Nastavení</button>
+        <button type="button" data-action="switch-admin-subtab" data-subtab="reports" class="${state.adminSubTab === "reports" ? "active" : ""}">Přehledy</button>
+      </div>
+
+      ${state.adminSubTab === "reports" ? `
       <div class="admin-block">
         ${adminSectionHeader("hours", "Přehled hodin", `<input type="month" id="admin-month-input" value="${esc(state.adminMonth)}" style="width:auto;padding:6px 10px;font-size:13px;">`)}
         ${state.adminOpenSection === "hours" ? hoursRows : ""}
       </div>
+      ` : ``}
 
+      ${state.adminSubTab === "settings" ? `
       <div class="admin-block">
         ${adminSectionHeader("employees", `Zaměstnanci (${state.config.employees.length})`)}
         ${state.adminOpenSection === "employees" ? `
@@ -1460,6 +1477,7 @@ function adminTemplate(){
         <button class="btn btn-danger btn-small" id="reset-app-btn">Smazat všechna data</button>
         ` : ``}
       </div>
+      ` : ``}
     </div>`;
 }
 
@@ -1638,6 +1656,10 @@ function bindAdmin(){
     input.focus();
     return;
   }
+
+  document.querySelectorAll('[data-action="switch-admin-subtab"]').forEach(b => b.onclick = () => {
+    setState({ adminSubTab: b.getAttribute("data-subtab") });
+  });
 
   document.querySelectorAll('[data-action="toggle-admin-section"]').forEach(el => el.onclick = () => {
     const section = el.getAttribute("data-section");
