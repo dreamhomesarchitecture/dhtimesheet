@@ -508,6 +508,8 @@ let state = {
   entries: [],
   month: new Date().toISOString().slice(0,7),
   editingEntryId: null,
+  showMyProjects: false,
+  expandedMyProjectId: null,
   empError: "",
   projError: "",
   editingProjectId: null,
@@ -889,6 +891,76 @@ function bindProjects(){
   });
 }
 
+function myProjectTotals(){
+  const totals = {};
+  state.entries.forEach(e => { totals[e.projectId] = (totals[e.projectId] || 0) + Number(e.hours || 0); });
+  return totals;
+}
+
+function buildMyProjectDetail(projectId){
+  const phases = state.config.phases;
+  const entries = state.entries.filter(e => e.projectId === projectId);
+  const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
+
+  const byPhase = {};
+  entries.forEach(e => {
+    const pid = e.phaseId || "—";
+    byPhase[pid] = (byPhase[pid] || 0) + Number(e.hours||0);
+  });
+  const masterOrder = phases.map(p => p.id);
+  const phaseIds = Object.keys(byPhase).sort((a,b) => {
+    if(byPhase[b] !== byPhase[a]) return byPhase[b] - byPhase[a];
+    return masterOrder.indexOf(a) - masterOrder.indexOf(b);
+  });
+  const phaseBlocks = phaseIds.map(pid => {
+    const phase = phases.find(p => p.id === pid);
+    const label = phase ? esc(phase.name) : (pid === "—" ? "Bez fáze" : esc(pid));
+    return `
+      <div class="phase-block">
+        <div class="phase-block-head"><span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(byPhase[pid])}</b></div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="project-detail">
+      <div class="project-detail-total"><span>Moje hodiny na projektu</span><b>${fmtH(totalHours)}</b></div>
+      ${phaseBlocks || `<div class="q-hint" style="margin:6px 0 0;">Zatím žádné hodiny na tomto projektu.</div>`}
+    </div>`;
+}
+
+function myProjectsSection(){
+  const totals = myProjectTotals();
+  const projects = sortedProjects().filter(p => (totals[p.id] || 0) > 0);
+  const isOpen = state.showMyProjects;
+
+  const rows = projects.map(p => {
+    const rowOpen = state.expandedMyProjectId === p.id;
+    return `
+    <div class="project-item ${rowOpen ? "open" : ""}">
+      <div class="project-row" data-action="toggle-my-project" data-id="${esc(p.id)}">
+        <span class="chevron">▸</span>
+        <span class="entry-proj">#${esc(p.id)}</span>
+        <span class="name">${esc(p.name)}</span>
+        <span class="project-hours">${fmtH(totals[p.id])}</span>
+      </div>
+      ${rowOpen ? buildMyProjectDetail(p.id) : ""}
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="admin-block">
+      <div class="admin-block-title">
+        <span data-action="toggle-my-projects-section" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+          <span style="display:inline-block;width:10px;">${isOpen ? "▾" : "▸"}</span>Moje projekty${projects.length ? ` (${projects.length})` : ""}
+        </span>
+      </div>
+      ${isOpen ? (projects.length ? `
+        <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Moje hodiny</span></div>
+        <div class="project-list">${rows}</div>
+      ` : `<div class="empty-state">Zatím nemáte žádné hodiny na žádném projektu.</div>`) : ``}
+    </div>`;
+}
+
 /* ---------------- app tab ---------------- */
 
 function appTemplate(){
@@ -998,6 +1070,8 @@ function timesheetTemplate(){
       <div class="eyebrow">Výkaz práce</div>
       <div class="q-title">${esc(emp.name)}</div>
       <div class="q-hint">Zadejte odpracované hodiny, projekt a fázi.</div>
+
+      ${myProjectsSection()}
 
       ${yearOverviewHtml}
 
@@ -1337,6 +1411,13 @@ function adminTemplate(){
 function bindApp(){
   const gotoAdmin = document.getElementById("goto-admin-btn") || document.getElementById("goto-admin-btn2");
   if(gotoAdmin) gotoAdmin.onclick = () => setState({ tab: "admin" });
+
+  const toggleMyProjects = document.querySelector('[data-action="toggle-my-projects-section"]');
+  if(toggleMyProjects) toggleMyProjects.onclick = () => setState({ showMyProjects: !state.showMyProjects });
+  document.querySelectorAll('[data-action="toggle-my-project"]').forEach(row => row.onclick = () => {
+    const id = row.getAttribute("data-id");
+    setState({ expandedMyProjectId: state.expandedMyProjectId === id ? null : id });
+  });
 
   const projectSelect = document.getElementById("entry-project-select");
   const phaseSelect = document.getElementById("entry-phase-select");
