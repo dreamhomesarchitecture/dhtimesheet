@@ -513,10 +513,9 @@ let state = {
   allEntriesFlat: null,
   expandedProjectId: null,
   expandedAdminProjectId: null,
-  expandedAdminEmployeeId: null,
   adminOpenSection: null,
   adminSubTab: "settings",
-  adminMonth: new Date().toISOString().slice(0,7),
+  expandedAdminProjectOverviewId: null,
   adminEntriesFlat: null,
   adminHoursLoading: false,
   currentEmployee: null,
@@ -1206,41 +1205,86 @@ function buildMiniCalendar(month, hoursByDay){
   return `<div class="mini-calendar">${cells}</div>`;
 }
 
-function buildEmployeeMonthDetail(employeeId){
-  const monthEntries = (state.adminEntriesFlat || [])
-    .filter(e => e.employeeId === employeeId && e.date && e.date.slice(0,7) === state.adminMonth)
-    .sort((a,b) => a.date.localeCompare(b.date));
+function buildAdminProjectOverviewDetail(projectId){
+  const project = state.config.projects.find(p => p.id === projectId);
+  const phases = state.config.phases;
+  const entries = (state.adminEntriesFlat || []).filter(e => e.projectId === projectId);
+  const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
 
-  const hoursByDay = {};
-  monthEntries.forEach(e => { hoursByDay[e.date] = (hoursByDay[e.date] || 0) + Number(e.hours || 0); });
+  const byPhase = {};
+  entries.forEach(e => {
+    const pid = e.phaseId || "—";
+    if(!byPhase[pid]) byPhase[pid] = { total: 0, byEmployee: {} };
+    byPhase[pid].total += Number(e.hours||0);
+    byPhase[pid].byEmployee[e.employeeName] = (byPhase[pid].byEmployee[e.employeeName] || 0) + Number(e.hours||0);
+  });
 
-  const calendarHtml = buildMiniCalendar(state.adminMonth, hoursByDay);
+  const assignedIds = (project && project.phaseIds) ? project.phaseIds : [];
+  const idsWithHours = Object.keys(byPhase);
+  const phaseIds = Array.from(new Set([...assignedIds, ...idsWithHours]));
+  const masterOrder = phases.map(p => p.id);
+  phaseIds.sort((a,b) => {
+    const ha = byPhase[a] ? byPhase[a].total : 0;
+    const hb = byPhase[b] ? byPhase[b].total : 0;
+    if(hb !== ha) return hb - ha;
+    return masterOrder.indexOf(a) - masterOrder.indexOf(b);
+  });
 
-  const rows = monthEntries.length ? `
-    <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span><span></span><span></span></div>
-    <div class="entries">
-      ${monthEntries.map(e => {
-        const proj = state.config.projects.find(p => p.id === e.projectId);
-        const phase = state.config.phases.find(p => p.id === e.phaseId);
-        return `
-        <div class="entry-row">
-          <span class="entry-date">${esc(e.date)}</span>
-          <span>${proj ? `<span class="entry-proj">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
-          <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
-          <span class="entry-num">${fmtH(e.hours)}</span>
-          <span class="entry-num">${fmtKc(e.cost)}</span>
-          <span class="entry-note">${esc(e.note || "")}</span>
-          <span></span>
-          <span></span>
-        </div>`;
-      }).join("")}
-    </div>` : `<div class="empty-state">Za tento měsíc zatím žádné záznamy.</div>`;
+  const phaseBlocks = phaseIds.map(pid => {
+    const phase = phases.find(p => p.id === pid);
+    const label = phase ? `${esc(phase.name)}` : (pid === "—" ? "Bez fáze" : esc(pid));
+    const data = byPhase[pid] || { total: 0, byEmployee: {} };
+    const empRows = Object.entries(data.byEmployee)
+      .sort((a,b) => b[1]-a[1])
+      .map(([name,h]) => `<div class="phase-employee-row"><span>${esc(name)}</span><span>${fmtH(h)}</span></div>`)
+      .join("");
+    return `
+      <div class="phase-block">
+        <div class="phase-block-head"><span class="entry-phase">${phase ? esc(phase.id) : "?"}</span> ${label} <b>${fmtH(data.total)}</b></div>
+        ${empRows ? `<div class="phase-employees">${empRows}</div>` : ``}
+      </div>`;
+  }).join("");
 
   return `
-    <div class="phase-picker-wrap">
-      ${calendarHtml}
-      ${rows}
+    <div class="project-detail">
+      <div class="project-detail-total"><span>Projekt celkem</span><b>${fmtH(totalHours)}</b></div>
+      ${phaseBlocks || `<div class="q-hint" style="margin:6px 0 0;">Tomuto projektu zatím nejsou přiřazené žádné fáze a nemá ani žádné zapsané hodiny.</div>`}
     </div>`;
+}
+
+function adminProjectsOverviewTemplate(){
+  const projects = sortedProjects();
+  const totals = {};
+  (state.adminEntriesFlat || []).forEach(e => { totals[e.projectId] = (totals[e.projectId] || 0) + Number(e.hours||0); });
+  const loading = state.adminHoursLoading && state.adminEntriesFlat === null;
+
+  const rows = projects.map(p => {
+    const hours = totals[p.id] || 0;
+    const hoursHtml = loading
+      ? `<span class="project-hours zero">…</span>`
+      : `<span class="project-hours ${hours ? "" : "zero"}">${fmtH(hours)}</span>`;
+    const isOpen = state.expandedAdminProjectOverviewId === p.id;
+    return `
+    <div class="project-item ${isOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
+      <div class="project-row" data-action="toggle-admin-project-overview" data-id="${esc(p.id)}">
+        <span class="chevron">▸</span>
+        <span class="entry-proj">#${esc(p.id)}</span>
+        <span class="name">${esc(p.name)}</span>
+        ${hoursHtml}
+      </div>
+      ${isOpen ? buildAdminProjectOverviewDetail(p.id) : ""}
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="q-hint" style="margin:0 0 14px;">${projects.length} projektů. Klikněte na projekt pro rozpad podle fází a lidí.</div>
+    ${projects.length === 0 ? `<div class="empty-state">Zatím žádné projekty.</div>` : `
+    <div class="field-row project-search">
+      <input type="text" id="admin-project-search-input" placeholder="Hledat…">
+    </div>
+    <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Hodiny celkem</span></div>
+    <div class="project-list" id="admin-project-list">${rows}</div>
+    `}`;
 }
 
 function adminSectionHeader(key, label, rightHtml){
@@ -1341,30 +1385,6 @@ function adminTemplate(){
       <button class="icon-btn" data-action="delete-phase" data-id="${esc(p.id)}" title="Smazat">×</button>
     </div>`).join("") || `<div class="empty-state">Zatím žádné fáze.</div>`;
 
-  const hoursByEmp = {};
-  (state.adminEntriesFlat || []).forEach(e => {
-    if(!e.date || e.date.slice(0,7) !== state.adminMonth) return;
-    if(!hoursByEmp[e.employeeId]) hoursByEmp[e.employeeId] = { hours: 0, cost: 0 };
-    hoursByEmp[e.employeeId].hours += Number(e.hours || 0);
-    hoursByEmp[e.employeeId].cost += Number(e.cost || 0);
-  });
-  const hoursRows = state.config.employees.length === 0 ? `<div class="empty-state">Zatím žádní zaměstnanci.</div>` :
-    (state.adminHoursLoading && state.adminEntriesFlat === null ? `<div class="empty-state">Načítání…</div>` :
-    state.config.employees.map(e => {
-      const d = hoursByEmp[e.id] || { hours: 0, cost: 0 };
-      const isOpen = state.expandedAdminEmployeeId === e.id;
-      return `
-      <div class="admin-project-item">
-        <div class="admin-project-head" data-action="toggle-admin-employee" data-id="${esc(e.id)}" style="cursor:pointer;">
-          <button class="icon-btn" title="Detail">${isOpen ? "▾" : "▸"}</button>
-          <div class="grow">${esc(e.name)}</div>
-          <span class="project-hours ${d.hours ? "" : "zero"}">${fmtH(d.hours)}</span>
-          <span class="meta" style="margin-left:16px;">${fmtKc(d.cost)}</span>
-        </div>
-        ${isOpen ? buildEmployeeMonthDetail(e.id) : ``}
-      </div>`;
-    }).join(""));
-
   return `
     <div class="sheet">
       <div class="admin-subnav">
@@ -1374,8 +1394,8 @@ function adminTemplate(){
 
       ${state.adminSubTab === "reports" ? `
       <div class="admin-block">
-        ${adminSectionHeader("hours", "Přehled hodin", `<input type="month" id="admin-month-input" value="${esc(state.adminMonth)}" style="width:auto;padding:6px 10px;font-size:13px;">`)}
-        ${state.adminOpenSection === "hours" ? hoursRows : ""}
+        ${adminSectionHeader("project-overview", "Přehled projektů")}
+        ${state.adminOpenSection === "project-overview" ? adminProjectsOverviewTemplate() : ""}
       </div>
       ` : ``}
 
@@ -1665,12 +1685,22 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "hours" && state.adminEntriesFlat === null && !state.adminHoursLoading){
+    if(newSection === "project-overview" && state.adminEntriesFlat === null && !state.adminHoursLoading){
       loadAdminHours();
     }
   });
-  const monthInput = document.getElementById("admin-month-input");
-  if(monthInput) monthInput.addEventListener("change", () => setState({ adminMonth: monthInput.value }));
+
+  const adminProjectSearchInput = document.getElementById("admin-project-search-input");
+  if(adminProjectSearchInput) adminProjectSearchInput.addEventListener("input", () => {
+    const q = adminProjectSearchInput.value.trim().toLowerCase();
+    document.querySelectorAll("#admin-project-list .project-item").forEach(item => {
+      item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
+    });
+  });
+  document.querySelectorAll('[data-action="toggle-admin-project-overview"]').forEach(row => row.onclick = () => {
+    const id = row.getAttribute("data-id");
+    setState({ expandedAdminProjectOverviewId: state.expandedAdminProjectOverviewId === id ? null : id });
+  });
 
   document.querySelectorAll('[data-action="wipe-employee-data"]').forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-id");
@@ -1732,10 +1762,6 @@ function bindAdmin(){
     await saveConfig();
     await loadAdminHours();
   }));
-  document.querySelectorAll('[data-action="toggle-admin-employee"]').forEach(row => row.onclick = () => {
-    const id = row.getAttribute("data-id");
-    setState({ expandedAdminEmployeeId: state.expandedAdminEmployeeId === id ? null : id });
-  });
   document.querySelectorAll('[data-action="toggle-project-phase"]').forEach(b => b.onclick = async () => {
     const projectId = b.getAttribute("data-project-id");
     const phaseId = b.getAttribute("data-phase-id");
