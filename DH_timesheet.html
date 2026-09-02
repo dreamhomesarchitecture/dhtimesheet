@@ -718,6 +718,31 @@ function buildTimesheetWorkbook(entriesByEmployee){
   return wb;
 }
 
+function buildCostsWorkbook(costs){
+  const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
+  const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
+  const header = ["Datum", "Číslo projektu", "Projekt", "Fáze", "Název fáze", "Cena (Kč)", "Platba", "Poznámka"];
+  const sorted = (costs || []).slice().sort((a,b) => (a.date || "").localeCompare(b.date || ""));
+  const totalAmount = sorted.reduce((s,c) => s + Number(c.amount||0), 0);
+  const rows = sorted.map(c => [
+    c.date || "",
+    c.projectId || "",
+    projectsById[c.projectId] || "",
+    c.phaseId || "",
+    phasesById[c.phaseId] || "",
+    Number(c.amount || 0),
+    c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "",
+    c.note || ""
+  ]);
+  rows.push([]);
+  rows.push(["", "", "", "", "Celkem náklady", totalAmount, "", ""]);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 13 }, { wch: 10 }, { wch: 40 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Náklady");
+  return wb;
+}
+
 async function renameProjectIdEverywhere(oldId, newId){
   await Promise.all(state.config.employees.map(async emp => {
     const entries = await loadEntries(emp.id);
@@ -1371,6 +1396,7 @@ function adminCostsTemplate(){
 
   return `
     <p class="q-hint" style="margin:0 0 14px;">Celkové náklady: <b style="color:var(--ink);">${fmtKc(totalAmount)}</b></p>
+    ${costs.length ? `<button class="btn btn-outline btn-small" id="export-costs-btn" style="margin-bottom:14px;">Exportovat náklady (XLSX)</button>` : ``}
     <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
     <div class="entries">${rows}</div>
 
@@ -2293,6 +2319,17 @@ function bindAdmin(){
 
   const costImportCancelBtn = document.getElementById("cost-import-cancel-btn");
   if(costImportCancelBtn) costImportCancelBtn.onclick = () => setState({ costImportPreview: null, costImportError: "" });
+
+  const exportCostsBtn = document.getElementById("export-costs-btn");
+  if(exportCostsBtn) exportCostsBtn.onclick = () => {
+    exportCostsBtn.disabled = true;
+    try{
+      const wb = buildCostsWorkbook(state.costs || []);
+      XLSX.writeFile(wb, `naklady-export-${new Date().toISOString().slice(0,10)}.xlsx`);
+    } finally {
+      exportCostsBtn.disabled = false;
+    }
+  };
 
   const exportBtn = document.getElementById("export-data-btn");
   if(exportBtn) exportBtn.onclick = async () => {
