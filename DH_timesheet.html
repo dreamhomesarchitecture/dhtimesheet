@@ -4065,7 +4065,10 @@ function adminTemplate(){
   const empRows = state.config.employees.map(e => `
     <div class="resp-item">
       <div>${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span></div>
-      <button class="icon-btn" data-action="delete-employee" data-id="${esc(e.id)}" title="Smazat">×</button>
+      <div style="display:flex;gap:8px;">
+        <button class="icon-btn" data-action="wipe-employee-data" data-id="${esc(e.id)}" title="Smazat všechna data zaměstnance">↺</button>
+        <button class="icon-btn" data-action="delete-employee" data-id="${esc(e.id)}" title="Smazat zaměstnance">×</button>
+      </div>
     </div>`).join("") || `<div class="empty-state">Zatím žádní zaměstnanci.</div>`;
 
   const projRows = sortedProjects().map(p => {
@@ -4401,6 +4404,17 @@ function bindAdmin(){
   const monthInput = document.getElementById("admin-month-input");
   if(monthInput) monthInput.addEventListener("change", () => setState({ adminMonth: monthInput.value }));
 
+  document.querySelectorAll('[data-action="wipe-employee-data"]').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute("data-id");
+    const emp = state.config.employees.find(x => x.id === id);
+    if(!emp) return;
+    if(!confirm(`Opravdu nenávratně smazat všechny odpracované hodiny zaměstnance ${emp.name}? Jméno a heslo zůstanou zachované, přihlásit se půjde dál, ale historie výkazů bude prázdná.`)) return;
+    await deleteEntries(id);
+    if(state.currentEmployee && state.currentEmployee.id === id) state.entries = [];
+    state.allEntriesFlat = null;
+    state.projectTotals = null;
+    await loadAdminHours();
+  });
   document.querySelectorAll('[data-action="delete-employee"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tohoto zaměstnance i jeho výkazy?")) return;
     const id = b.getAttribute("data-id");
