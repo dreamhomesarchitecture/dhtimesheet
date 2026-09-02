@@ -528,6 +528,7 @@ let state = {
   month: new Date().toISOString().slice(0,7),
   editingEntryId: null,
   showAllProjects: false,
+  showTimesheet: true,
   showMyProjects: false,
   expandedMyProjectId: null,
   expandedMyPhaseKey: null,
@@ -1124,15 +1125,9 @@ function timesheetTemplate(){
   const canLogHours = projects.length > 0;
   const formNoteRequired = editingEntry ? editingEntry.phaseId === "AD" : (formPhases.length > 0 && formPhases[0].id === "AD");
 
-  return `
-    <div class="sheet">
-      <div class="eyebrow">Výkaz práce</div>
-      <div class="q-title">${esc(emp.name)}</div>
-      <div class="q-hint">Zadejte odpracované hodiny, projekt a fázi.</div>
-
-      ${allProjectsSection()}
-
-      ${myProjectsSection()}
+  const timesheetOpen = state.showTimesheet;
+  const timesheetBody = `
+      <div class="q-hint" style="margin-bottom:18px;">Zadejte odpracované hodiny, projekt a fázi.</div>
 
       ${yearOverviewHtml}
 
@@ -1175,6 +1170,25 @@ function timesheetTemplate(){
       `}
 
       ${rows}
+  `;
+
+  return `
+    <div class="sheet">
+      <div class="eyebrow">Výkaz práce</div>
+      <div class="q-title">${esc(emp.name)}</div>
+
+      ${allProjectsSection()}
+
+      ${myProjectsSection()}
+
+      <div class="admin-block">
+        <div class="admin-block-title">
+          <span data-action="toggle-timesheet-section" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+            <span style="display:inline-block;width:10px;">${timesheetOpen ? "▾" : "▸"}</span>Výkaz
+          </span>
+        </div>
+        ${timesheetOpen ? timesheetBody : ``}
+      </div>
     </div>`;
 }
 
@@ -1658,6 +1672,9 @@ function bindApp(){
     const key = row.getAttribute("data-key");
     setState({ expandedMyPhaseKey: state.expandedMyPhaseKey === key ? null : key });
   });
+
+  const toggleTimesheet = document.querySelector('[data-action="toggle-timesheet-section"]');
+  if(toggleTimesheet) toggleTimesheet.onclick = () => setState({ showTimesheet: !state.showTimesheet });
 
   const projectSelect = document.getElementById("entry-project-select");
   const phaseSelect = document.getElementById("entry-phase-select");
