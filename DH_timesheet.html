@@ -516,6 +516,12 @@ let state = {
   adminSubTab: "settings",
   expandedAdminProjectOverviewId: null,
   adminEntriesFlat: null,
+  costs: null,
+  costsLoading: false,
+  editingCostId: null,
+  costError: "",
+  costImportError: "",
+  costImportPreview: null,
   adminHoursLoading: false,
   currentEmployee: null,
   entries: [],
@@ -643,6 +649,17 @@ async function saveEntries(employeeId, employeeName, entries){
 async function deleteEntries(employeeId){
   try{ await storageDelete(`entries:${employeeId}`); }catch(e){}
 }
+async function loadCosts(){
+  try{
+    const res = await storageGet("costs");
+    if(!res) return [];
+    return JSON.parse(res.value);
+  }catch(e){ return []; }
+}
+async function saveCosts(){
+  try{ await storageSet("costs", JSON.stringify(state.costs || [])); }
+  catch(e){ console.error("saveCosts failed", e); }
+}
 async function loadAllEntries(){
   const results = await Promise.all(state.config.employees.map(async emp => {
     const entries = await loadEntries(emp.id);
@@ -714,6 +731,13 @@ async function loadAdminHours(){
   state.adminHoursLoading = true;
   state.adminEntriesFlat = await loadAllEntries();
   state.adminHoursLoading = false;
+  render();
+}
+
+async function loadAdminCosts(){
+  state.costsLoading = true;
+  state.costs = await loadCosts();
+  state.costsLoading = false;
   render();
 }
 
@@ -1282,6 +1306,81 @@ function adminProjectsOverviewTemplate(){
     `}`;
 }
 
+function adminCostsTemplate(){
+  const costs = state.costs || [];
+  const totalAmount = costs.reduce((s,c) => s + Number(c.amount||0), 0);
+  const editingCost = state.editingCostId ? costs.find(c => c.id === state.editingCostId) : null;
+  const formProject = editingCost
+    ? (state.config.projects.find(p => p.id === editingCost.projectId) || state.config.projects[0])
+    : state.config.projects[0];
+  const formPhases = formProject ? phasesForProject(formProject) : [];
+  const projectOptions = state.config.projects.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const phaseOptions = `<option value="">—</option>` + formPhases.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
+
+  const sorted = costs.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
+  const rows = sorted.length ? sorted.map(c => {
+    const proj = state.config.projects.find(p => p.id === c.projectId);
+    const phase = state.config.phases.find(p => p.id === c.phaseId);
+    return `
+    <div class="entry-row">
+      <span class="entry-date">${esc(c.date)}</span>
+      <span>${proj ? `<span class="entry-proj">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+      <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
+      <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
+      <span class="entry-num">${fmtKc(c.amount)}</span>
+      <span class="entry-note">${esc(c.note||"")}</span>
+      <button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
+      <button class="icon-btn" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">×</button>
+    </div>`;
+  }).join("") : `<div class="empty-state">Zatím žádné náklady.</div>`;
+
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Celkové náklady: <b style="color:var(--ink);">${fmtKc(totalAmount)}</b></p>
+    <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
+    <div class="entries">${rows}</div>
+
+    <form id="add-cost-form" style="margin-top:16px;">
+      ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
+      <div class="form-grid">
+        <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
+        <div class="field-row"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
+        <div class="field-row"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
+        <div class="field-row"><label class="field-label">Cena (Kč)</label><input type="number" name="amount" min="0" step="1" value="${editingCost ? esc(editingCost.amount) : ""}" required></div>
+        <div class="field-row"><label class="field-label">Platba</label>
+          <select name="paymentMethod" required>
+            <option value="hotove" ${editingCost && editingCost.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
+            <option value="ucet" ${!editingCost || editingCost.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option>
+          </select>
+        </div>
+        <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" name="note" value="${editingCost ? esc(editingCost.note || "") : ""}"></div>
+        <div class="field-row" style="display:flex;gap:8px;">
+          <button class="btn btn-tan btn-small" type="submit">${editingCost ? "Uložit změny" : "+ Přidat"}</button>
+          ${editingCost ? `<button class="btn btn-small" type="button" id="cancel-edit-cost-btn">Zrušit</button>` : ``}
+        </div>
+      </div>
+      ${state.costError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.costError)}</div>` : ``}
+    </form>
+
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
+      <p class="q-hint" style="margin:0 0 14px;">Import nákladů z Excelu — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka (za co), Cena, Platba (hotově/účtem).</p>
+      <div class="form-grid">
+        <div class="field-row"><label class="field-label">Soubor (.xlsx)</label><input type="file" id="cost-import-file-input" accept=".xlsx,.xls"></div>
+        <div class="field-row"><button class="btn btn-outline btn-small" type="button" id="cost-import-parse-btn">Načíst soubor</button></div>
+      </div>
+      ${state.costImportError ? `<div class="q-hint" style="color:var(--danger);margin-top:8px;">${esc(state.costImportError)}</div>` : ``}
+      ${state.costImportPreview ? `
+        <div class="phase-picker-wrap" style="margin-top:14px;">
+          <p style="margin:0 0 6px;"><b>${state.costImportPreview.items.length}</b> nákladů připraveno k importu (${fmtKc(state.costImportPreview.totalAmount)} celkem), rozsah ${esc(state.costImportPreview.minDate)} – ${esc(state.costImportPreview.maxDate)}.</p>
+          ${state.costImportPreview.unknownProjects.length ? `<p class="q-hint" style="color:var(--danger);">Přeskočeno ${state.costImportPreview.skipped} řádků s neznámým projektem: ${state.costImportPreview.unknownProjects.map(esc).join(", ")}. Přidejte je nejdřív v Projektech.</p>` : ``}
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-sage btn-small" type="button" id="cost-import-confirm-btn">Potvrdit a uložit</button>
+            <button class="btn btn-outline btn-small" type="button" id="cost-import-cancel-btn">Zrušit</button>
+          </div>
+        </div>
+      ` : ``}
+    </div>`;
+}
+
 function adminSectionHeader(key, label, rightHtml){
   const isOpen = state.adminOpenSection === key;
   return `
@@ -1391,6 +1490,11 @@ function adminTemplate(){
       <div class="admin-block">
         ${adminSectionHeader("project-overview", "Přehled projektů")}
         ${state.adminOpenSection === "project-overview" ? adminProjectsOverviewTemplate() : ""}
+      </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("project-costs", "Náklady projektů")}
+        ${state.adminOpenSection === "project-costs" ? adminCostsTemplate() : ""}
       </div>
       ` : ``}
 
@@ -1706,6 +1810,9 @@ function bindAdmin(){
     if(newSection === "project-overview" && state.adminEntriesFlat === null && !state.adminHoursLoading){
       loadAdminHours();
     }
+    if(newSection === "project-costs" && state.costs === null && !state.costsLoading){
+      loadAdminCosts();
+    }
   });
 
   const adminProjectSearchInput = document.getElementById("admin-project-search-input");
@@ -1995,6 +2102,161 @@ function bindAdmin(){
 
   const importCancelBtn = document.getElementById("import-cancel-btn");
   if(importCancelBtn) importCancelBtn.onclick = () => setState({ importPreview: null, importError: "" });
+
+  const costProjectSelect = document.getElementById("cost-project-select");
+  const costPhaseSelect = document.getElementById("cost-phase-select");
+  if(costProjectSelect && costPhaseSelect) costProjectSelect.addEventListener("change", () => {
+    const project = state.config.projects.find(p => p.id === costProjectSelect.value);
+    const phases = project ? phasesForProject(project) : [];
+    costPhaseSelect.innerHTML = `<option value="">—</option>` + phases.map(p => `<option value="${esc(p.id)}">${esc(p.id)} — ${esc(p.name)}</option>`).join("");
+  });
+
+  const addCostForm = document.getElementById("add-cost-form");
+  if(addCostForm) addCostForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(addCostForm).entries());
+    const amount = Number(data.amount);
+    if(!data.date || !data.projectId || !(amount >= 0) || !data.paymentMethod) return;
+    const fields = { date: data.date, projectId: data.projectId, phaseId: data.phaseId || "", amount, paymentMethod: data.paymentMethod, note: (data.note || "").trim() };
+    if(!state.costs) state.costs = [];
+    if(state.editingCostId){
+      const idx = state.costs.findIndex(c => c.id === state.editingCostId);
+      if(idx !== -1) state.costs[idx] = { ...state.costs[idx], ...fields };
+      state.editingCostId = null;
+    } else {
+      state.costs.push({ id: uid("cost"), ...fields });
+    }
+    state.costError = "";
+    await saveCosts();
+    render();
+  });
+
+  const cancelEditCostBtn = document.getElementById("cancel-edit-cost-btn");
+  if(cancelEditCostBtn) cancelEditCostBtn.onclick = () => setState({ editingCostId: null, costError: "" });
+
+  document.querySelectorAll('[data-action="edit-cost"]').forEach(b => b.onclick = () => {
+    setState({ editingCostId: b.getAttribute("data-id") });
+  });
+  document.querySelectorAll('[data-action="delete-cost"]').forEach(b => b.onclick = async () => {
+    if(!confirm("Smazat tento náklad?")) return;
+    state.costs = (state.costs || []).filter(c => c.id !== b.getAttribute("data-id"));
+    if(state.editingCostId === b.getAttribute("data-id")) state.editingCostId = null;
+    await saveCosts();
+    render();
+  });
+
+  const costImportParseBtn = document.getElementById("cost-import-parse-btn");
+  if(costImportParseBtn) costImportParseBtn.onclick = async () => {
+    const fileInput = document.getElementById("cost-import-file-input");
+    if(!fileInput || !fileInput.files.length){ setState({ costImportError: "Vyberte soubor.", costImportPreview: null }); return; }
+    try{
+      const file = fileInput.files[0];
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+
+      let headerRowIdx = -1, headerRow = null;
+      for(let i = 0; i < Math.min(5, rows.length); i++){
+        const joined = (rows[i] || []).map(c => String(c || "").toLowerCase()).join("|");
+        if((joined.includes("date") || joined.includes("datum")) && (joined.includes("project") || joined.includes("projekt"))){
+          headerRowIdx = i; headerRow = rows[i]; break;
+        }
+      }
+      if(headerRowIdx === -1){ setState({ costImportError: "Nepodařilo se najít hlavičkový řádek (Datum, Projekt…).", costImportPreview: null }); return; }
+
+      const findCol = (keywords) => {
+        for(let i = 0; i < headerRow.length; i++){
+          const h = String(headerRow[i] || "").toLowerCase();
+          if(keywords.some(k => h.includes(k))) return i;
+        }
+        return -1;
+      };
+      const dateCol = findCol(["date", "datum"]);
+      const projCol = findCol(["project", "projekt"]);
+      const phaseCol = findCol(["phase", "fáze", "faze"]);
+      const noteCol = findCol(["note", "poznámka", "poznamka", "za co"]);
+      const amountCol = findCol(["cena", "cost", "náklad", "naklad", "částka", "castka"]);
+      const paymentCol = findCol(["platba", "hotov", "účet", "ucet", "způsob", "zpusob"]);
+      if(dateCol === -1 || projCol === -1 || amountCol === -1){
+        setState({ costImportError: "Chybí povinné sloupce (Datum, Projekt, Cena).", costImportPreview: null }); return;
+      }
+
+      const knownProjectIds = new Set(state.config.projects.map(p => p.id));
+      const knownPhaseIds = new Set(state.config.phases.map(p => p.id));
+      const unknownProjects = new Set();
+      const parsed = [];
+      let skipped = 0;
+
+      for(let i = headerRowIdx + 1; i < rows.length; i++){
+        const row = rows[i];
+        if(!row || row.every(c => c === undefined || c === "")) continue;
+        const dateVal = row[dateCol], projVal = row[projCol], amountVal = row[amountCol];
+        if(dateVal === undefined || projVal === undefined || amountVal === undefined || amountVal === "") continue;
+
+        const dateStr = excelDateToISO(dateVal);
+        if(!dateStr) continue;
+
+        const amount = Number(amountVal);
+        if(!(amount >= 0)) continue;
+
+        const projStr = String(projVal).trim();
+        const projectId = projStr.split(" - ")[0].trim();
+        if(!knownProjectIds.has(projectId)){ unknownProjects.add(projStr); skipped++; continue; }
+
+        let phaseId = "";
+        if(phaseCol !== -1 && row[phaseCol]){
+          const phStr = String(row[phaseCol]).trim();
+          const m = phStr.match(/\[([A-Za-z]+)\]\s*$/);
+          const candidate = (m ? m[1] : phStr).toUpperCase();
+          if(knownPhaseIds.has(candidate)) phaseId = candidate;
+        }
+
+        let paymentMethod = "";
+        if(paymentCol !== -1 && row[paymentCol]){
+          const pStr = String(row[paymentCol]).trim().toLowerCase();
+          paymentMethod = pStr.includes("hotov") ? "hotove" : "ucet";
+        }
+
+        const note = noteCol !== -1 ? String(row[noteCol] || "").trim() : "";
+        parsed.push({ id: uid("cost"), date: dateStr, projectId, phaseId, amount, paymentMethod, note });
+      }
+
+      if(parsed.length === 0){ setState({ costImportError: "V souboru se nenašel žádný platný řádek k importu.", costImportPreview: null }); return; }
+
+      const totalAmount = parsed.reduce((s,c) => s + c.amount, 0);
+      const dates = parsed.map(c => c.date).sort();
+      setState({
+        costImportError: "",
+        costImportPreview: {
+          items: parsed,
+          totalAmount,
+          minDate: dates[0],
+          maxDate: dates[dates.length - 1],
+          unknownProjects: [...unknownProjects],
+          skipped
+        }
+      });
+    } catch(err){
+      console.error(err);
+      setState({ costImportError: "Soubor se nepodařilo zpracovat. Zkontrolujte formát.", costImportPreview: null });
+    }
+  };
+
+  const costImportConfirmBtn = document.getElementById("cost-import-confirm-btn");
+  if(costImportConfirmBtn) costImportConfirmBtn.onclick = async () => {
+    const preview = state.costImportPreview;
+    if(!preview) return;
+    if(!state.costs) state.costs = [];
+    state.costs = state.costs.concat(preview.items);
+    state.costImportPreview = null;
+    await saveCosts();
+    showStamp();
+    render();
+  };
+
+  const costImportCancelBtn = document.getElementById("cost-import-cancel-btn");
+  if(costImportCancelBtn) costImportCancelBtn.onclick = () => setState({ costImportPreview: null, costImportError: "" });
 
   const exportBtn = document.getElementById("export-data-btn");
   if(exportBtn) exportBtn.onclick = async () => {
