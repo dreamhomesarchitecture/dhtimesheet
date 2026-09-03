@@ -117,8 +117,16 @@
     padding: 13px 15px;
     font-family:'DM Sans', sans-serif;
     font-size: 15px;
+    line-height: 1.3;
     color: var(--ink);
     border-radius: 10px;
+  }
+  select{
+    appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%238b887f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat;
+    background-position: right 15px center;
+    padding-right: 38px;
   }
   textarea:focus, input:focus, select:focus{ outline:none; border-color: var(--ink); }
 
@@ -166,6 +174,7 @@
   .entry-form-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:end; }
   .entry-form-row .field-row{ margin-bottom:0; flex:0 0 auto; }
   .entry-form-row input, .entry-form-row select{ padding:10px 11px; font-size:13.5px; }
+  .entry-form-row select{ padding-right:32px; background-position: right 11px center; }
   .entry-form-row .w-date{ width:150px; }
   .entry-form-row .w-hours{ width:78px; }
   .entry-form-row .w-select{ width:150px; }
