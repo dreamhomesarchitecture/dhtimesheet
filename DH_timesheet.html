@@ -548,6 +548,7 @@ let state = {
   recordsFilterPhaseId: "",
   closedProjectsYear: "",
   closedProjectsMode: "project",
+  closedProjectsPhaseId: "",
   adminHoursLoading: false,
   currentEmployee: null,
   entries: [],
@@ -1646,6 +1647,21 @@ function adminClosedProjectsTemplate(){
     return `${toggleHtml}<div class="empty-state">${mode === "project" ? "Zatím žádné ukončené projekty. Projekt se považuje za ukončený, jakmile jsou uzavřené všechny jeho fáze (nastavuje se v detailu projektu)." : "Zatím žádné uzavřené fáze."}</div>`;
   }
 
+  const selectedPhaseId = mode === "phase" ? (state.closedProjectsPhaseId || "") : "";
+  const phaseFilterHtml = mode === "phase" ? (() => {
+    const phaseIdsPresent = [...new Set(items.map(x => x.pid))];
+    const phaseOptions = `<option value="">Všechny fáze</option>` + phaseIdsPresent.map(pid => {
+      const ph = state.config.phases.find(x => x.id === pid);
+      return `<option value="${esc(pid)}" ${selectedPhaseId === pid ? "selected" : ""}>${esc(pid)}${ph ? ` — ${esc(ph.name)}` : ""}</option>`;
+    }).join("");
+    return `<div class="field-row" style="max-width:220px;"><label class="field-label">Fáze</label><select id="closed-projects-phase">${phaseOptions}</select></div>`;
+  })() : "";
+  if(selectedPhaseId) items = items.filter(x => x.pid === selectedPhaseId);
+
+  if(!items.length){
+    return `${toggleHtml}${phaseFilterHtml}<div class="empty-state">Žádné uzavřené fáze pro zvolenou fázi.</div>`;
+  }
+
   const years = [...new Set(items.map(x => x.closedDate.slice(0,4)))].sort((a,b) => b.localeCompare(a));
   const selectedYear = state.closedProjectsYear || "";
   const yearOptions = `<option value="">Všechny roky</option>` + years.map(y => `<option value="${esc(y)}" ${selectedYear === y ? "selected" : ""}>${esc(y)}</option>`).join("");
@@ -1668,9 +1684,12 @@ function adminClosedProjectsTemplate(){
 
   return `
     ${toggleHtml}
-    <div class="field-row" style="max-width:220px;"><label class="field-label">Rok ukončení</label><select id="closed-projects-year">${yearOptions}</select></div>
+    <div class="form-grid" style="max-width:480px;">
+      <div class="field-row"><label class="field-label">Rok ukončení</label><select id="closed-projects-year">${yearOptions}</select></div>
+      ${phaseFilterHtml}
+    </div>
     <p class="q-hint" style="margin:14px 0 18px;">
-      Součet zisku ${mode === "project" ? "všech ukončených projektů" : "všech uzavřených fází"}: <b style="color:var(--ink);">${fmtKc(totalAll)}</b><br>
+      Součet zisku ${mode === "project" ? "všech ukončených projektů" : `všech uzavřených fází${selectedPhaseId ? ` (${esc(selectedPhaseId)})` : ""}`}: <b style="color:var(--ink);">${fmtKc(totalAll)}</b><br>
       Součet zisku ${selectedYear ? `za rok ${esc(selectedYear)}` : "za všechny roky"}: <b style="color:var(--ink);">${fmtKc(totalYear)}</b>
     </p>
     <div class="project-list">${rows}</div>`;
@@ -2884,8 +2903,10 @@ function bindAdmin(){
 
   const closedProjectsYear = document.getElementById("closed-projects-year");
   if(closedProjectsYear) closedProjectsYear.addEventListener("change", () => setState({ closedProjectsYear: closedProjectsYear.value }));
+  const closedProjectsPhase = document.getElementById("closed-projects-phase");
+  if(closedProjectsPhase) closedProjectsPhase.addEventListener("change", () => setState({ closedProjectsPhaseId: closedProjectsPhase.value }));
   document.querySelectorAll('[data-action="closed-projects-mode"]').forEach(b => b.onclick = () => {
-    setState({ closedProjectsMode: b.getAttribute("data-mode"), closedProjectsYear: "" });
+    setState({ closedProjectsMode: b.getAttribute("data-mode"), closedProjectsYear: "", closedProjectsPhaseId: "" });
   });
 
   const exportBtn = document.getElementById("export-data-btn");
