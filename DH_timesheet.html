@@ -549,6 +549,7 @@ let state = {
   closedProjectsYear: "",
   closedProjectsMode: "project",
   closedProjectsPhaseId: "",
+  closedProjectsSort: "date",
   adminHoursLoading: false,
   currentEmployee: null,
   entries: [],
@@ -1669,7 +1670,10 @@ function adminClosedProjectsTemplate(){
   const totalAll = items.reduce((s,x) => s + x.fin.status, 0);
   const filtered = items.filter(x => !selectedYear || x.closedDate.slice(0,4) === selectedYear);
   const totalYear = filtered.reduce((s,x) => s + x.fin.status, 0);
-  const sorted = filtered.slice().sort((a,b) => (b.closedDate||"").localeCompare(a.closedDate||""));
+  const sortBy = state.closedProjectsSort === "amount" ? "amount" : "date";
+  const sorted = filtered.slice().sort((a,b) => sortBy === "amount"
+    ? (b.fin.status - a.fin.status)
+    : (b.closedDate||"").localeCompare(a.closedDate||""));
 
   const rows = sorted.map(({p, pid, closedDate, fin}) => {
     const statusColor = fin.status < 0 ? "var(--danger)" : "var(--sage)";
@@ -1684,9 +1688,13 @@ function adminClosedProjectsTemplate(){
 
   return `
     ${toggleHtml}
-    <div class="form-grid" style="max-width:480px;">
+    <div class="form-grid" style="max-width:600px;">
       <div class="field-row"><label class="field-label">Rok ukončení</label><select id="closed-projects-year">${yearOptions}</select></div>
       ${phaseFilterHtml}
+      <div class="field-row"><label class="field-label">Seřadit podle</label><select id="closed-projects-sort">
+        <option value="date" ${sortBy === "date" ? "selected" : ""}>Data uzavření (nejnovější)</option>
+        <option value="amount" ${sortBy === "amount" ? "selected" : ""}>Nejvyšší zisk</option>
+      </select></div>
     </div>
     <p class="q-hint" style="margin:14px 0 18px;">
       Součet zisku ${mode === "project" ? "všech ukončených projektů" : `všech uzavřených fází${selectedPhaseId ? ` (${esc(selectedPhaseId)})` : ""}`}: <b style="color:var(--ink);">${fmtKc(totalAll)}</b><br>
@@ -2905,6 +2913,8 @@ function bindAdmin(){
   if(closedProjectsYear) closedProjectsYear.addEventListener("change", () => setState({ closedProjectsYear: closedProjectsYear.value }));
   const closedProjectsPhase = document.getElementById("closed-projects-phase");
   if(closedProjectsPhase) closedProjectsPhase.addEventListener("change", () => setState({ closedProjectsPhaseId: closedProjectsPhase.value }));
+  const closedProjectsSort = document.getElementById("closed-projects-sort");
+  if(closedProjectsSort) closedProjectsSort.addEventListener("change", () => setState({ closedProjectsSort: closedProjectsSort.value }));
   document.querySelectorAll('[data-action="closed-projects-mode"]').forEach(b => b.onclick = () => {
     setState({ closedProjectsMode: b.getAttribute("data-mode"), closedProjectsYear: "", closedProjectsPhaseId: "" });
   });
