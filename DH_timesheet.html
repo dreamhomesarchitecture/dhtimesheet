@@ -1601,30 +1601,40 @@ function adminRecordsTemplate(){
     <div class="entries">${rows}</div>`;
 }
 
+function projectClosedDate(p){
+  const phaseIds = p.phaseIds || [];
+  if(!phaseIds.length || !p.closedPhases) return null;
+  const dates = phaseIds.map(pid => p.closedPhases[pid]);
+  if(dates.some(d => !d)) return null;
+  return dates.reduce((max,d) => (d > max ? d : max), dates[0]);
+}
+
 function adminClosedProjectsTemplate(){
   if(state.adminEntriesFlat === null || state.costs === null){
     return `<div class="empty-state">Načítání…</div>`;
   }
-  const closedProjects = state.config.projects.filter(p => p.closedDate);
+  const closedProjects = state.config.projects
+    .map(p => ({ p, closedDate: projectClosedDate(p) }))
+    .filter(x => x.closedDate);
   if(!closedProjects.length){
-    return `<div class="empty-state">Zatím žádné ukončené projekty. Datum ukončení nastavíte v detailu projektu.</div>`;
+    return `<div class="empty-state">Zatím žádné ukončené projekty. Projekt se považuje za ukončený, jakmile jsou uzavřené všechny jeho fáze (nastavuje se v detailu projektu).</div>`;
   }
 
-  const years = [...new Set(closedProjects.map(p => p.closedDate.slice(0,4)))].sort((a,b) => b.localeCompare(a));
+  const years = [...new Set(closedProjects.map(x => x.closedDate.slice(0,4)))].sort((a,b) => b.localeCompare(a));
   const selectedYear = state.closedProjectsYear || "";
   const yearOptions = `<option value="">Všechny roky</option>` + years.map(y => `<option value="${esc(y)}" ${selectedYear === y ? "selected" : ""}>${esc(y)}</option>`).join("");
 
-  const withFinancials = closedProjects.map(p => ({ p, fin: projectFinancials(p) }));
+  const withFinancials = closedProjects.map(x => ({ p: x.p, closedDate: x.closedDate, fin: projectFinancials(x.p) }));
   const totalAll = withFinancials.reduce((s,x) => s + x.fin.status, 0);
-  const filtered = withFinancials.filter(x => !selectedYear || x.p.closedDate.slice(0,4) === selectedYear);
+  const filtered = withFinancials.filter(x => !selectedYear || x.closedDate.slice(0,4) === selectedYear);
   const totalYear = filtered.reduce((s,x) => s + x.fin.status, 0);
-  const sorted = filtered.slice().sort((a,b) => (b.p.closedDate||"").localeCompare(a.p.closedDate||""));
+  const sorted = filtered.slice().sort((a,b) => (b.closedDate||"").localeCompare(a.closedDate||""));
 
-  const rows = sorted.map(({p, fin}) => {
+  const rows = sorted.map(({p, closedDate, fin}) => {
     const statusColor = fin.status < 0 ? "var(--danger)" : "var(--sage)";
     return `
     <div class="admin-project-head">
-      <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">· ukončeno ${esc(p.closedDate)}</span></span>
+      <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">· uzavřeno ${esc(closedDate)}</span></span>
       <span style="font-weight:700;color:${statusColor};">${fmtKc(fin.status)}</span>
     </div>`;
   }).join("");
@@ -1660,7 +1670,6 @@ function projectDetailPageHtml(){
           <div class="field-row"><label class="field-label">Název</label><input type="text" name="name" value="${esc(p.name)}" required></div>
           <div class="field-row"><label class="field-label">Investor</label><input type="text" name="investor" value="${esc(p.investor || "")}"></div>
           <div class="field-row grow"><label class="field-label">Místo stavby</label><input type="text" name="location" value="${esc(p.location || "")}"></div>
-          <div class="field-row"><label class="field-label">Datum ukončení (nepovinné)</label><input type="date" name="closedDate" value="${esc(p.closedDate || "")}"></div>
         </div>
         ${state.editProjError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.editProjError)}</div>` : ``}
 
@@ -2415,7 +2424,6 @@ function bindAdmin(){
     project.name = newName;
     project.investor = (data.investor || "").trim();
     project.location = (data.location || "").trim();
-    project.closedDate = (data.closedDate || "").trim();
     state.editProjError = "";
     state.editingProjectId = null;
     state.allEntriesFlat = null;
