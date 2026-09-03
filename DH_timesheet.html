@@ -231,8 +231,8 @@
   .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-cost:hover{ border-color: var(--soft); }
 
-  .entry-head-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
-  .entry-row-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-head-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
   .stamp-toast{
@@ -555,6 +555,7 @@ let state = {
   entries: [],
   month: new Date().toISOString().slice(0,7),
   editingEntryId: null,
+  editingLaborEntryId: null,
   showAllProjects: false,
   showTimesheet: true,
   showMyProjects: false,
@@ -919,7 +920,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "" });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     };
@@ -1843,6 +1844,22 @@ function projectDetailPageHtml(){
           const laborTotal = projectLabor.reduce((s,r) => s + r.amount, 0);
           const laborRowsHtml = projectLabor.length ? projectLabor.map(({en, rate, amount}) => {
             const phase = state.config.phases.find(x => x.id === en.phaseId);
+            if(state.editingLaborEntryId === en.id){
+              const phaseOptions = phasesForProject(p).map(ph => `<option value="${esc(ph.id)}" ${en.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
+              return `
+              <div class="entry-row-labor" data-labor-edit-row="${esc(en.id)}" data-employee-id="${esc(en.employeeId)}">
+                <input type="date" class="labor-edit-date" value="${esc(en.date)}" style="padding:6px 8px;font-size:13px;">
+                <span>${esc(en.employeeName)}</span>
+                <select class="labor-edit-phase" style="padding:6px 8px;font-size:13px;">${phaseOptions}</select>
+                <input type="number" class="labor-edit-hours" min="0" step="0.01" value="${esc(en.hours)}" style="padding:6px 8px;font-size:13px;">
+                <span class="entry-num">${fmtKc(rate)}/h</span>
+                <span class="entry-num">${fmtKc(amount)}</span>
+                <span style="display:flex;gap:4px;">
+                  <button type="button" class="icon-btn" data-action="save-labor-edit" title="Uložit">✓</button>
+                  <button type="button" class="icon-btn" data-action="cancel-labor-edit" title="Zrušit">×</button>
+                </span>
+              </div>`;
+            }
             return `
             <div class="entry-row-labor">
               <span class="entry-date">${esc(en.date)}</span>
@@ -1851,6 +1868,7 @@ function projectDetailPageHtml(){
               <span class="entry-num">${fmtH(en.hours)}</span>
               <span class="entry-num">${fmtKc(rate)}/h</span>
               <span class="entry-num">${fmtKc(amount)}</span>
+              <button type="button" class="icon-btn" data-action="edit-labor-entry" data-id="${esc(en.id)}" title="Upravit">✎</button>
             </div>`;
           }).join("") : `<div class="empty-state">Zatím žádné odpracované hodiny.</div>`;
 
@@ -1865,7 +1883,7 @@ function projectDetailPageHtml(){
           <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
             <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Mzdové náklady</div>
             <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
-            <div class="entry-head-labor"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span></div>
+            <div class="entry-head-labor"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
             <div class="entries">${laborRowsHtml}</div>
           </div>`;
         })()}
@@ -2453,12 +2471,41 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "" });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "" });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null });
+  });
+  document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
+    setState({ editingLaborEntryId: b.getAttribute("data-id") });
+  });
+  document.querySelectorAll('[data-action="cancel-labor-edit"]').forEach(b => b.onclick = () => {
+    setState({ editingLaborEntryId: null });
+  });
+  document.querySelectorAll('[data-action="save-labor-edit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest("[data-labor-edit-row]");
+    if(!row) return;
+    const entryId = row.getAttribute("data-labor-edit-row");
+    const employeeId = row.getAttribute("data-employee-id");
+    const date = row.querySelector(".labor-edit-date").value;
+    const phaseId = row.querySelector(".labor-edit-phase").value;
+    const hours = row.querySelector(".labor-edit-hours").value;
+    if(!date || !hours) return;
+    const entries = await loadEntries(employeeId);
+    const idx = entries.findIndex(e => e.id === entryId);
+    if(idx !== -1){
+      entries[idx] = { ...entries[idx], date, phaseId, hours: Number(hours) };
+      await saveEntries(employeeId, "", entries);
+    }
+    if(state.adminEntriesFlat){
+      const flatIdx = state.adminEntriesFlat.findIndex(e => e.id === entryId);
+      if(flatIdx !== -1) state.adminEntriesFlat[flatIdx] = { ...state.adminEntriesFlat[flatIdx], date, phaseId, hours: Number(hours) };
+    }
+    state.editingLaborEntryId = null;
+    showStamp();
+    render();
   });
   const projectModalForm = document.getElementById("project-modal-form");
   if(projectModalForm) projectModalForm.addEventListener("submit", async e => {
