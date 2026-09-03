@@ -864,6 +864,20 @@ function render(){
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
   else { content.innerHTML = appTemplate(); bindApp(); }
+  bindProjectLinks();
+}
+
+function bindProjectLinks(){
+  if(!state.adminUnlocked) return;
+  document.querySelectorAll(".entry-proj[data-project-id]").forEach(el => {
+    el.style.cursor = "pointer";
+    el.title = "Otevřít detail projektu";
+    el.onclick = e => {
+      e.stopPropagation();
+      const id = el.getAttribute("data-project-id");
+      setState({ tab: "admin", editingProjectId: id, editProjError: "" });
+    };
+  });
 }
 
 /* ---------------- projects tab (read-only reference list) ---------------- */
@@ -995,7 +1009,7 @@ function allProjectsSection(){
     <div class="project-item ${rowOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
       <div class="project-row" data-action="toggle-all-project" data-id="${esc(p.id)}">
         <span class="chevron">▸</span>
-        <span class="entry-proj">#${esc(p.id)}</span>
+        <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         ${hoursHtml}
       </div>
@@ -1031,7 +1045,7 @@ function myProjectsSection(){
     <div class="project-item ${rowOpen ? "open" : ""}">
       <div class="project-row" data-action="toggle-my-project" data-id="${esc(p.id)}">
         <span class="chevron">▸</span>
-        <span class="entry-proj">#${esc(p.id)}</span>
+        <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         <span class="project-hours">${fmtH(totals[p.id])}</span>
       </div>
@@ -1149,7 +1163,7 @@ function timesheetTemplate(){
         return `
         <div class="entry-row">
           <span class="entry-date">${esc(e.date)}</span>
-          <span>${proj ? `<span class="entry-proj">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+          <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
           <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : e.phaseId ? `<span class="entry-phase gone">smazaná fáze</span>` : ``}</span>
           <span class="entry-num">${fmtH(e.hours)}</span>
           <span class="entry-num">${fmtKc(e.cost)}</span>
@@ -1375,7 +1389,7 @@ function adminProjectsOverviewTemplate(){
     <div class="project-item ${isOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
       <div class="project-row" data-action="toggle-admin-project-overview" data-id="${esc(p.id)}">
         <span class="chevron">▸</span>
-        <span class="entry-proj">#${esc(p.id)}</span>
+        <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         ${hoursHtml}
       </div>
@@ -1422,7 +1436,7 @@ function adminCostsTemplate(){
     return `
     <div class="entry-row">
       <span class="entry-date">${esc(c.date)}</span>
-      <span>${proj ? `<span class="entry-proj">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+      <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
       <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
       <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
       <span class="entry-num">${fmtKc(c.amount)}</span>
@@ -1533,7 +1547,7 @@ function adminRecordsTemplate(){
     <div class="entry-row-wide">
       <span class="entry-date">${esc(e.date)}</span>
       <span>${esc(e.employeeName)}</span>
-      <span>${proj ? `<span class="entry-proj">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+      <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
       <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
       <span class="entry-num">${fmtH(e.hours)}</span>
       <span class="entry-num">${fmtKc(e.cost)}</span>
@@ -1693,7 +1707,7 @@ function adminBudgetsTemplate(){
     }).join("");
     return `
     <div class="admin-project-item">
-      <div class="admin-project-head"><span class="grow"><span class="entry-proj">#${esc(p.id)}</span> ${esc(p.name)}</span></div>
+      <div class="admin-project-head"><span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)}</span></div>
       <div style="margin-top:8px;">${rows}</div>
     </div>`;
   }).join("");
@@ -1774,7 +1788,7 @@ function adminTemplate(){
     return `
     <div class="admin-project-item">
       <div class="admin-project-head" data-action="open-project-page" data-id="${esc(p.id)}" style="cursor:pointer;">
-        <span class="grow"><span class="entry-proj">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
+        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
         <button class="icon-btn" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">×</button>
       </div>
     </div>`;
