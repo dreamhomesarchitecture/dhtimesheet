@@ -1633,7 +1633,7 @@ function projectDetailPageHtml(){
               <div class="phase-block-head"><span class="entry-phase">${esc(pid)}</span> ${label} <b>${fmtH(phaseHours)}</b></div>
               ${empRowsPhaseHtml ? `<div class="phase-employees">${empRowsPhaseHtml}</div>` : ``}
               <div class="form-grid" style="margin-top:10px;">
-                <div class="field-row"><label class="field-label">Rozpočet (Kč)</label><input type="number" min="0" step="1" placeholder="Rozpočet Kč" name="phase-budget-${esc(pid)}" value="${esc(budget)}"></div>
+                <div class="field-row"><label class="field-label">Rozpočet (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(budgetNum)}</div></div>
                 <div class="field-row"><label class="field-label">Náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(costsSum)}</div></div>
                 <div class="field-row"><label class="field-label">Mzdové náklady (Kč)</label><div style="padding:13px 0;font-weight:700;">${fmtKc(laborSum)}</div></div>
                 <div class="field-row"><label class="field-label">Stav (Kč)</label><div style="padding:13px 0;font-weight:700;color:${statusColor};">${fmtKc(status)}</div></div>
@@ -1672,6 +1672,37 @@ function projectDetailPageHtml(){
         </div>
       </form>
     </div>`;
+}
+
+function adminBudgetsTemplate(){
+  const projects = sortedProjects().filter(p => (p.phaseIds || []).length > 0);
+  if(!projects.length){
+    return `<div class="empty-state">Zatím nejsou žádné projekty s přiřazenými fázemi.</div>`;
+  }
+  const blocks = projects.map(p => {
+    const rows = (p.phaseIds || []).map(pid => {
+      const ph = state.config.phases.find(x => x.id === pid);
+      const label = ph ? esc(ph.name) : esc(pid);
+      const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
+      return `
+      <div class="admin-project-head" style="margin-bottom:8px;">
+        <span class="entry-phase">${esc(pid)}</span>
+        <span class="grow">${label}</span>
+        <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+      </div>`;
+    }).join("");
+    return `
+    <div class="admin-project-item">
+      <div class="admin-project-head"><span class="grow"><span class="entry-proj">#${esc(p.id)}</span> ${esc(p.name)}</span></div>
+      <div style="margin-top:8px;">${rows}</div>
+    </div>`;
+  }).join("");
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Rozpočet jednotlivých fází napříč všemi projekty. Zobrazují se jen fáze, které má daný projekt aktuálně přiřazené (zaškrtnuté).</p>
+    <form id="budgets-form">
+      ${blocks}
+      <div style="margin-top:16px;"><button class="btn btn-tan" type="submit">Uložit rozpočty</button></div>
+    </form>`;
 }
 
 function adminSectionHeader(key, label, rightHtml){
@@ -1816,6 +1847,11 @@ function adminTemplate(){
           ${state.projError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.projError)}</div>` : ``}
         </form>
         ` : ``}
+      </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("budgets", "Rozpočty")}
+        ${state.adminOpenSection === "budgets" ? adminBudgetsTemplate() : ``}
       </div>
 
       <div class="admin-block">
@@ -2234,13 +2270,6 @@ function bindAdmin(){
     project.name = newName;
     project.investor = (data.investor || "").trim();
     project.location = (data.location || "").trim();
-    const phaseBudgets = { ...(project.phaseBudgets || {}) };
-    (project.phaseIds || []).forEach(pid => {
-      const raw = data[`phase-budget-${pid}`];
-      if(raw !== undefined && raw !== ""){ phaseBudgets[pid] = Number(raw); }
-      else { delete phaseBudgets[pid]; }
-    });
-    project.phaseBudgets = phaseBudgets;
     state.editProjError = "";
     state.editingProjectId = null;
     state.allEntriesFlat = null;
@@ -2320,6 +2349,24 @@ function bindAdmin(){
     state.config.projects.push({ id, name, investor: (data.investor||"").trim(), location: (data.location||"").trim(), phaseIds: selectedPhases });
     state.projError = "";
     await saveConfig();
+    render();
+  });
+
+  const budgetsForm = document.getElementById("budgets-form");
+  if(budgetsForm) budgetsForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    budgetsForm.querySelectorAll("input[data-project-id]").forEach(input => {
+      const projectId = input.getAttribute("data-project-id");
+      const phaseId = input.getAttribute("data-phase-id");
+      const project = state.config.projects.find(x => x.id === projectId);
+      if(!project) return;
+      if(!project.phaseBudgets) project.phaseBudgets = {};
+      const raw = input.value;
+      if(raw !== ""){ project.phaseBudgets[phaseId] = Number(raw); }
+      else { delete project.phaseBudgets[phaseId]; }
+    });
+    await saveConfig();
+    showStamp();
     render();
   });
 
