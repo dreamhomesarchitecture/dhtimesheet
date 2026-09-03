@@ -218,6 +218,14 @@
   .entry-row-wide{ display:grid; grid-template-columns: 92px 130px 1fr 70px 64px 84px 1fr; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-wide:hover{ border-color: var(--soft); }
 
+  .entry-head-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-row-cost:hover{ border-color: var(--soft); }
+
+  .entry-head-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-row-labor:hover{ border-color: var(--soft); }
+
   .stamp-toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background: var(--ink); color:#fff; font-weight:700; font-size:12.5px;
@@ -240,6 +248,10 @@
     .entry-row-compact{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-wide{ display:none; }
     .entry-row-wide{ grid-template-columns: 1fr; gap:6px; }
+    .entry-head-cost{ display:none; }
+    .entry-row-cost{ grid-template-columns: 1fr; gap:6px; }
+    .entry-head-labor{ display:none; }
+    .entry-row-labor{ grid-template-columns: 1fr; gap:6px; }
     .project-head{ display:none; }
     .project-row{ grid-template-columns: 16px auto 1fr; }
     .project-hours{ grid-column: 1 / -1; text-align:left; }
@@ -876,6 +888,8 @@ function bindProjectLinks(){
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
       setState({ tab: "admin", editingProjectId: id, editProjError: "" });
+      if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
+      if(state.costs === null && !state.costsLoading) loadAdminCosts();
     };
   });
 }
@@ -1679,6 +1693,56 @@ function projectDetailPageHtml(){
           })()}
         </div>` : ``}
         `}
+
+        ${(() => {
+          const projectCosts = (state.costs || []).filter(c => c.projectId === p.id).slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
+          const costsTotal = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
+          const costsRowsHtml = projectCosts.length ? projectCosts.map(c => {
+            const phase = state.config.phases.find(x => x.id === c.phaseId);
+            return `
+            <div class="entry-row-cost">
+              <span class="entry-date">${esc(c.date)}</span>
+              <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
+              <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
+              <span class="entry-num">${fmtKc(c.amount)}</span>
+              <span class="entry-note">${esc(c.note||"")}</span>
+            </div>`;
+          }).join("") : `<div class="empty-state">Zatím žádné náklady.</div>`;
+
+          const projectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
+            const emp = state.config.employees.find(x => x.id === en.employeeId);
+            const rate = hourlyRateForEmployee(emp, en.date);
+            return { en, rate, amount: Number(en.hours||0) * rate };
+          }).sort((a,b) => (b.en.date||"").localeCompare(a.en.date||""));
+          const laborTotal = projectLabor.reduce((s,r) => s + r.amount, 0);
+          const laborRowsHtml = projectLabor.length ? projectLabor.map(({en, rate, amount}) => {
+            const phase = state.config.phases.find(x => x.id === en.phaseId);
+            return `
+            <div class="entry-row-labor">
+              <span class="entry-date">${esc(en.date)}</span>
+              <span>${esc(en.employeeName)}</span>
+              <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
+              <span class="entry-num">${fmtH(en.hours)}</span>
+              <span class="entry-num">${fmtKc(rate)}/h</span>
+              <span class="entry-num">${fmtKc(amount)}</span>
+            </div>`;
+          }).join("") : `<div class="empty-state">Zatím žádné odpracované hodiny.</div>`;
+
+          return `
+          <div style="margin-top:28px;padding-top:18px;border-top:1px solid var(--line);">
+            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Klasické náklady</div>
+            <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
+            <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span></div>
+            <div class="entries">${costsRowsHtml}</div>
+          </div>
+
+          <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
+            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Mzdové náklady</div>
+            <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
+            <div class="entry-head-labor"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span></div>
+            <div class="entries">${laborRowsHtml}</div>
+          </div>`;
+        })()}
 
         <div style="margin-top:24px;display:flex;gap:8px;">
           <button class="btn btn-tan" type="submit">Uložit</button>
