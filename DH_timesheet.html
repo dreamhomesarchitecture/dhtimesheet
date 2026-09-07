@@ -2150,6 +2150,9 @@ function adminTemplate(){
           </div>
         </form>
 
+        <p class="q-hint" style="margin:20px 0 8px;">Smaže všechny nákladové položky u všech projektů najednou. Odpracované hodiny zůstanou zachované. Nevratné.</p>
+        <button class="btn btn-danger btn-small" id="wipe-all-costs-btn">Smazat všechny náklady všech projektů</button>
+
         <p class="q-hint" style="margin:20px 0 8px;">Smaže všechny zaměstnance, projekty, fáze i jejich výkazy. Nevratné.</p>
         <button class="btn btn-danger btn-small" id="reset-app-btn">Smazat všechna data</button>
         ` : ``}
@@ -3022,6 +3025,17 @@ function bindAdmin(){
     }
   };
 
+  const wipeAllCostsBtn = document.getElementById("wipe-all-costs-btn");
+  if(wipeAllCostsBtn) wipeAllCostsBtn.onclick = async () => {
+    if(state.costs === null) state.costs = await loadCosts();
+    const count = state.costs.length;
+    if(!count){ alert("Zatím nejsou zadané žádné náklady."); return; }
+    if(!confirm(`Opravdu nenávratně smazat všech ${count} nákladových položek u všech projektů?`)) return;
+    state.costs = [];
+    await saveCosts();
+    showStamp();
+    render();
+  };
   const resetBtn = document.getElementById("reset-app-btn");
   if(resetBtn) resetBtn.onclick = async () => {
     if(!confirm("Opravdu smazat úplně všechna data? Tuto akci nelze vrátit zpět.")) return;
