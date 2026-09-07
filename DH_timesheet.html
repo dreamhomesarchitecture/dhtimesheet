@@ -235,6 +235,11 @@
   .entry-row-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
+  .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 120px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 120px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-row-clientexp:hover{ border-color: var(--soft); }
+  .client-export-note{ font-size:13px; padding:8px 10px; }
+
   .closed-head{ display:grid; grid-template-columns: 1fr 130px 130px 90px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:6px; }
   .closed-row{ display:grid; grid-template-columns: 1fr 130px 130px 90px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; }
   .closed-row .num{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -265,6 +270,8 @@
     .entry-row-cost{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-labor{ display:none; }
     .entry-row-labor{ grid-template-columns: 1fr; gap:6px; }
+    .entry-head-clientexp{ display:none; }
+    .entry-row-clientexp{ grid-template-columns: 1fr; gap:6px; }
     .closed-head{ display:none; }
     .closed-row{ grid-template-columns: 1fr; gap:6px; }
     .closed-row .num{ text-align:left; }
@@ -553,6 +560,12 @@ let state = {
   recordsFilterTo: "",
   recordsFilterProjectId: "",
   recordsFilterPhaseId: "",
+  clientExportFrom: "",
+  clientExportTo: "",
+  clientExportProjectId: "",
+  clientExportPhaseId: "",
+  clientExportOverrides: {},
+  clientExportRates: {},
   closedProjectsYear: "",
   closedProjectsMode: "project",
   closedProjectsPhaseId: "",
@@ -811,6 +824,37 @@ function buildCostsWorkbook(costs){
   ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 13 }, { wch: 10 }, { wch: 40 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Náklady");
+  return wb;
+}
+
+function buildClientExportWorkbook(entries){
+  const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
+  const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
+  const header = ["Datum", "Zaměstnanec", "Projekt", "Fáze", "Hodiny", "Popis", "Sazba (Kč/h)", "Fakturováno (Kč)"];
+  let totalHours = 0, totalBillable = 0;
+  const rows = entries.map(e => {
+    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const hours = Number(e.hours || 0);
+    const billable = hours * rate;
+    const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
+    totalHours += hours; totalBillable += billable;
+    return [
+      e.date || "",
+      e.employeeName || "",
+      projectsById[e.projectId] || e.projectId || "",
+      phasesById[e.phaseId] || e.phaseId || "",
+      hours,
+      note,
+      rate,
+      billable
+    ];
+  });
+  rows.push([]);
+  rows.push(["", "", "", "Celkem", totalHours, "", "", totalBillable]);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  ws["!cols"] = [{ wch: 11 }, { wch: 20 }, { wch: 28 }, { wch: 8 }, { wch: 9 }, { wch: 45 }, { wch: 13 }, { wch: 16 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Export pro klienta");
   return wb;
 }
 
@@ -1628,6 +1672,78 @@ function adminRecordsTemplate(){
     <div class="entries">${rows}</div>`;
 }
 
+function adminClientExportTemplate(){
+  const entries = state.adminEntriesFlat;
+  if(entries === null){
+    return `<div class="empty-state">Načítání…</div>`;
+  }
+  const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.clientExportProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.clientExportPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
+  const filterHtml = `
+    <div class="form-grid" style="margin-bottom:14px;">
+      <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="client-export-from" value="${esc(state.clientExportFrom)}"></div>
+      <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="client-export-to" value="${esc(state.clientExportTo)}"></div>
+      <div class="field-row"><label class="field-label">Projekt</label><select id="client-export-project">${filterProjectOptions}</select></div>
+      <div class="field-row"><label class="field-label">Fáze</label><select id="client-export-phase">${filterPhaseOptions}</select></div>
+    </div>`;
+
+  const filtersActive = !!(state.clientExportFrom || state.clientExportTo || state.clientExportProjectId || state.clientExportPhaseId);
+  const filtered = entries.filter(e =>
+    (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
+    (!state.clientExportTo || e.date <= state.clientExportTo) &&
+    (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
+    (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
+  );
+  const sorted = filtered.slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
+
+  if(!sorted.length){
+    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}</div>`;
+  }
+
+  const employeeIdsPresent = [...new Set(sorted.map(e => e.employeeId))];
+  const rateFormHtml = `
+    <div class="form-grid" style="margin-bottom:14px;">
+      ${employeeIdsPresent.map(eid => {
+        const emp = state.config.employees.find(x => x.id === eid);
+        const rate = state.clientExportRates[eid] !== undefined ? state.clientExportRates[eid] : "";
+        return `<div class="field-row"><label class="field-label">${esc(emp ? emp.name : eid)} (Kč/h)</label><input type="number" min="0" step="1" class="client-export-rate" data-employee-id="${esc(eid)}" value="${esc(rate)}" placeholder="0"></div>`;
+      }).join("")}
+    </div>`;
+
+  const totalHours = sorted.reduce((s,e) => s + Number(e.hours||0), 0);
+  const totalBillable = sorted.reduce((s,e) => {
+    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    return s + Number(e.hours||0) * rate;
+  }, 0);
+
+  const rows = sorted.map(e => {
+    const proj = state.config.projects.find(p => p.id === e.projectId);
+    const phase = state.config.phases.find(p => p.id === e.phaseId);
+    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const billable = Number(e.hours||0) * rate;
+    const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
+    return `
+    <div class="entry-row-clientexp">
+      <span class="entry-date">${esc(e.date)}</span>
+      <span>${esc(e.employeeName)}</span>
+      <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
+      <span class="entry-num">${fmtH(e.hours)}</span>
+      <input type="text" class="client-export-note" data-entry-id="${esc(e.id)}" value="${esc(note)}" placeholder="Popis pro klienta">
+      <span class="entry-num">${fmtKc(billable)}</span>
+    </div>`;
+  }).join("");
+
+  return `
+    ${filterHtml}
+    ${filtersActive ? `<button class="btn btn-small" type="button" id="client-export-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
+    <p class="q-hint" style="margin:0 0 8px;">Fakturovatelná hodinovka je nezávislá na interní nákladové sazbě — platí jen pro tento export a nikam se neukládá.</p>
+    ${rateFormHtml}
+    <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}</p>
+    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span></div>
+    <div class="entries">${rows}</div>
+    <div style="margin-top:16px;"><button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button></div>`;
+}
+
 function projectClosedDate(p){
   const phaseIds = p.phaseIds || [];
   if(!phaseIds.length || !p.closedPhases) return null;
@@ -2159,6 +2275,11 @@ function adminTemplate(){
         ${adminSectionHeader("closed-projects", "Uzavřené projekty")}
         ${state.adminOpenSection === "closed-projects" ? adminClosedProjectsTemplate() : ""}
       </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("client-export", "Export pro klienty")}
+        ${state.adminOpenSection === "client-export" ? adminClientExportTemplate() : ""}
+      </div>
       ` : ``}
 
       ${state.adminSubTab === "settings" ? `
@@ -2525,7 +2646,7 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
@@ -3156,6 +3277,41 @@ function bindAdmin(){
   if(recordsFilterPhase) recordsFilterPhase.addEventListener("change", () => setState({ recordsFilterPhaseId: recordsFilterPhase.value }));
   const recordsFilterResetBtn = document.getElementById("records-filter-reset-btn");
   if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "" });
+
+  const clientExportFrom = document.getElementById("client-export-from");
+  if(clientExportFrom) clientExportFrom.addEventListener("change", () => setState({ clientExportFrom: clientExportFrom.value }));
+  const clientExportTo = document.getElementById("client-export-to");
+  if(clientExportTo) clientExportTo.addEventListener("change", () => setState({ clientExportTo: clientExportTo.value }));
+  const clientExportProject = document.getElementById("client-export-project");
+  if(clientExportProject) clientExportProject.addEventListener("change", () => setState({ clientExportProjectId: clientExportProject.value }));
+  const clientExportPhase = document.getElementById("client-export-phase");
+  if(clientExportPhase) clientExportPhase.addEventListener("change", () => setState({ clientExportPhaseId: clientExportPhase.value }));
+  const clientExportFilterResetBtn = document.getElementById("client-export-filter-reset-btn");
+  if(clientExportFilterResetBtn) clientExportFilterResetBtn.onclick = () => setState({ clientExportFrom: "", clientExportTo: "", clientExportProjectId: "", clientExportPhaseId: "" });
+  document.querySelectorAll(".client-export-rate").forEach(el => {
+    el.addEventListener("change", () => {
+      state.clientExportRates[el.getAttribute("data-employee-id")] = el.value === "" ? undefined : Number(el.value);
+      render();
+    });
+  });
+  document.querySelectorAll(".client-export-note").forEach(el => {
+    el.addEventListener("change", () => {
+      state.clientExportOverrides[el.getAttribute("data-entry-id")] = el.value;
+    });
+  });
+  const clientExportXlsxBtn = document.getElementById("client-export-xlsx-btn");
+  if(clientExportXlsxBtn) clientExportXlsxBtn.onclick = () => {
+    const entries = state.adminEntriesFlat || [];
+    const filtered = entries.filter(e =>
+      (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
+      (!state.clientExportTo || e.date <= state.clientExportTo) &&
+      (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
+      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
+    ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
+    if(!filtered.length) return;
+    const wb = buildClientExportWorkbook(filtered);
+    XLSX.writeFile(wb, `export-klient-${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
 
   const closedProjectsYear = document.getElementById("closed-projects-year");
   if(closedProjectsYear) closedProjectsYear.addEventListener("change", () => setState({ closedProjectsYear: closedProjectsYear.value }));
