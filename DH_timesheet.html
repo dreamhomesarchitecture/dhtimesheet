@@ -235,6 +235,10 @@
   .entry-row-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
+  .closed-head{ display:grid; grid-template-columns: 1fr 130px 130px 90px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:6px; }
+  .closed-row{ display:grid; grid-template-columns: 1fr 130px 130px 90px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; }
+  .closed-row .num{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+
   .stamp-toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background: var(--ink); color:#fff; font-weight:700; font-size:12.5px;
@@ -261,6 +265,9 @@
     .entry-row-cost{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-labor{ display:none; }
     .entry-row-labor{ grid-template-columns: 1fr; gap:6px; }
+    .closed-head{ display:none; }
+    .closed-row{ grid-template-columns: 1fr; gap:6px; }
+    .closed-row .num{ text-align:left; }
     .project-head{ display:none; }
     .project-row{ grid-template-columns: 16px auto 1fr; }
     .project-hours{ grid-column: 1 / -1; text-align:left; }
@@ -1682,19 +1689,25 @@ function adminClosedProjectsTemplate(){
   const totalAll = items.reduce((s,x) => s + x.fin.status, 0);
   const filtered = items.filter(x => !selectedYear || x.closedDate.slice(0,4) === selectedYear);
   const totalYear = filtered.reduce((s,x) => s + x.fin.status, 0);
-  const sortBy = state.closedProjectsSort === "amount" ? "amount" : "date";
-  const sorted = filtered.slice().sort((a,b) => sortBy === "amount"
-    ? (b.fin.status - a.fin.status)
-    : (b.closedDate||"").localeCompare(a.closedDate||""));
+  const sortBy = ["amount","budget","pct"].includes(state.closedProjectsSort) ? state.closedProjectsSort : "date";
+  const statusPctVal = fin => fin.totalBudget ? (fin.status/fin.totalBudget*100) : -Infinity;
+  const sorted = filtered.slice().sort((a,b) => {
+    if(sortBy === "amount") return b.fin.status - a.fin.status;
+    if(sortBy === "budget") return b.fin.totalBudget - a.fin.totalBudget;
+    if(sortBy === "pct") return statusPctVal(b.fin) - statusPctVal(a.fin);
+    return (b.closedDate||"").localeCompare(a.closedDate||"");
+  });
 
   const rows = sorted.map(({p, pid, closedDate, fin}) => {
     const statusColor = fin.status < 0 ? "var(--danger)" : "var(--sage)";
     const ph = pid ? state.config.phases.find(x => x.id === pid) : null;
     const phaseLabelHtml = pid ? ` <span class="entry-phase">${esc(pid)}</span> ${ph ? esc(ph.name) : ""}` : "";
     return `
-    <div class="admin-project-head">
-      <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)}${phaseLabelHtml} <span class="meta">· uzavřeno ${esc(closedDate)}</span></span>
-      <span style="font-weight:700;color:${statusColor};">${fmtKc(fin.status)}</span>
+    <div class="closed-row">
+      <span><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)}${phaseLabelHtml} <span class="meta">· uzavřeno ${esc(closedDate)}</span></span>
+      <span class="num">${fmtKc(fin.totalBudget)}</span>
+      <span class="num" style="color:${statusColor};">${fmtKc(fin.status)}</span>
+      <span class="num" style="color:${statusColor};">${fmtStatusPct(fin.status, fin.totalBudget)}</span>
     </div>`;
   }).join("");
 
@@ -1705,13 +1718,16 @@ function adminClosedProjectsTemplate(){
       ${phaseFilterHtml}
       <div class="field-row"><label class="field-label">Seřadit podle</label><select id="closed-projects-sort">
         <option value="date" ${sortBy === "date" ? "selected" : ""}>Data uzavření (nejnovější)</option>
+        <option value="budget" ${sortBy === "budget" ? "selected" : ""}>Nejvyšší rozpočet</option>
         <option value="amount" ${sortBy === "amount" ? "selected" : ""}>Nejvyšší zisk</option>
+        <option value="pct" ${sortBy === "pct" ? "selected" : ""}>Nejvyšší zisk v %</option>
       </select></div>
     </div>
     <p class="q-hint" style="margin:14px 0 18px;">
       Součet zisku ${mode === "project" ? "všech ukončených projektů" : `všech uzavřených fází${selectedPhaseId ? ` (${esc(selectedPhaseId)})` : ""}`}: <b style="color:var(--ink);">${fmtKc(totalAll)}</b><br>
       Součet zisku ${selectedYear ? `za rok ${esc(selectedYear)}` : "za všechny roky"}: <b style="color:var(--ink);">${fmtKc(totalYear)}</b>
     </p>
+    <div class="closed-head"><span>Projekt</span><span>Rozpočet</span><span>Zisk</span><span>Zisk %</span></div>
     <div class="project-list">${rows}</div>`;
 }
 
