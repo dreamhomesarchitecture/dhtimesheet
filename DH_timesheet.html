@@ -2577,6 +2577,24 @@ function bindAdmin(){
     showStamp();
     render();
   });
+  document.querySelectorAll('[data-cost-edit-row] input, [data-cost-edit-row] select').forEach(el => {
+    el.addEventListener("keydown", e => {
+      if(e.key !== "Enter") return;
+      e.preventDefault();
+      const row = el.closest("[data-cost-edit-row]");
+      const saveBtn = row && row.querySelector('[data-action="save-project-cost-edit"]');
+      if(saveBtn) saveBtn.click();
+    });
+  });
+  document.querySelectorAll('[data-labor-edit-row] input, [data-labor-edit-row] select').forEach(el => {
+    el.addEventListener("keydown", e => {
+      if(e.key !== "Enter") return;
+      e.preventDefault();
+      const row = el.closest("[data-labor-edit-row]");
+      const saveBtn = row && row.querySelector('[data-action="save-labor-edit"]');
+      if(saveBtn) saveBtn.click();
+    });
+  });
   const projectModalForm = document.getElementById("project-modal-form");
   if(projectModalForm) projectModalForm.addEventListener("submit", async e => {
     e.preventDefault();
