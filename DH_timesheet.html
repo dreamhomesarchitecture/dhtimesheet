@@ -227,8 +227,8 @@
   .entry-row-wide{ display:grid; grid-template-columns: 92px 130px 1fr 70px 64px 84px 1fr; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-wide:hover{ border-color: var(--soft); }
 
-  .entry-head-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
-  .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-head-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-cost:hover{ border-color: var(--soft); }
 
   .entry-head-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
@@ -556,6 +556,7 @@ let state = {
   month: new Date().toISOString().slice(0,7),
   editingEntryId: null,
   editingLaborEntryId: null,
+  editingProjectCostId: null,
   showAllProjects: false,
   showTimesheet: true,
   showMyProjects: false,
@@ -920,7 +921,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     };
@@ -1826,6 +1827,29 @@ function projectDetailPageHtml(){
           const costsTotal = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
           const costsRowsHtml = projectCosts.length ? projectCosts.map(c => {
             const phase = state.config.phases.find(x => x.id === c.phaseId);
+            if(state.editingProjectCostId === c.id){
+              let editPhases = phasesForProject(p);
+              if(c.phaseId && !editPhases.some(ph => ph.id === c.phaseId)){
+                const currentPhase = state.config.phases.find(x => x.id === c.phaseId) || { id: c.phaseId, name: "" };
+                editPhases = [currentPhase, ...editPhases];
+              }
+              const phaseOptions = `<option value="">—</option>` + editPhases.map(ph => `<option value="${esc(ph.id)}" ${c.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
+              return `
+              <div class="entry-row-cost" data-cost-edit-row="${esc(c.id)}">
+                <input type="date" class="cost-edit-date" value="${esc(c.date)}" style="padding:6px 8px;font-size:13px;">
+                <select class="cost-edit-phase" style="padding:6px 8px;font-size:13px;">${phaseOptions}</select>
+                <select class="cost-edit-payment" style="padding:6px 8px;font-size:13px;">
+                  <option value="hotove" ${c.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
+                  <option value="ucet" ${c.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option>
+                </select>
+                <input type="number" class="cost-edit-amount" min="0" step="1" value="${esc(c.amount)}" style="padding:6px 8px;font-size:13px;">
+                <input type="text" class="cost-edit-note" value="${esc(c.note||"")}" style="padding:6px 8px;font-size:13px;">
+                <span style="display:flex;gap:4px;">
+                  <button type="button" class="icon-btn" data-action="save-project-cost-edit" title="Uložit">✓</button>
+                  <button type="button" class="icon-btn" data-action="cancel-project-cost-edit" title="Zrušit">×</button>
+                </span>
+              </div>`;
+            }
             return `
             <div class="entry-row-cost">
               <span class="entry-date">${esc(c.date)}</span>
@@ -1833,6 +1857,7 @@ function projectDetailPageHtml(){
               <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
               <span class="entry-num">${fmtKc(c.amount)}</span>
               <span class="entry-note">${esc(c.note||"")}</span>
+              <button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
             </div>`;
           }).join("") : `<div class="empty-state">Zatím žádné náklady.</div>`;
 
@@ -1879,7 +1904,7 @@ function projectDetailPageHtml(){
               ${projectCosts.length ? `<button type="button" class="btn btn-danger btn-small" data-action="wipe-project-costs" data-project-id="${esc(p.id)}">Smazat všechny náklady projektu</button>` : ``}
             </div>
             <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
-            <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span></div>
+            <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span><span></span></div>
             <div class="entries">${costsRowsHtml}</div>
           </div>
 
@@ -2488,18 +2513,46 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null });
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: b.getAttribute("data-id") });
   });
   document.querySelectorAll('[data-action="cancel-labor-edit"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: null });
+  });
+  document.querySelectorAll('[data-action="edit-project-cost"]').forEach(b => b.onclick = () => {
+    setState({ editingProjectCostId: b.getAttribute("data-id") });
+  });
+  document.querySelectorAll('[data-action="cancel-project-cost-edit"]').forEach(b => b.onclick = () => {
+    setState({ editingProjectCostId: null });
+  });
+  document.querySelectorAll('[data-action="save-project-cost-edit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest("[data-cost-edit-row]");
+    if(!row) return;
+    const costId = row.getAttribute("data-cost-edit-row");
+    const cost = (state.costs || []).find(c => c.id === costId);
+    if(!cost) return;
+    const date = row.querySelector(".cost-edit-date").value;
+    const phaseId = row.querySelector(".cost-edit-phase").value;
+    const paymentMethod = row.querySelector(".cost-edit-payment").value;
+    const amount = row.querySelector(".cost-edit-amount").value;
+    const note = row.querySelector(".cost-edit-note").value;
+    if(!date || amount === "") return;
+    cost.date = date;
+    cost.phaseId = phaseId;
+    cost.paymentMethod = paymentMethod;
+    cost.amount = Number(amount);
+    cost.note = note.trim();
+    await saveCosts();
+    state.editingProjectCostId = null;
+    showStamp();
+    render();
   });
   document.querySelectorAll('[data-action="save-labor-edit"]').forEach(b => b.onclick = async () => {
     const row = b.closest("[data-labor-edit-row]");
