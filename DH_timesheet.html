@@ -660,7 +660,7 @@ function uid(prefix){ return prefix + "_" + Date.now().toString(36) + "_" + Math
 function initials(name){ return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
 function fmtH(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:2}) + " h"; }
 function fmtHShort(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:1}); }
-function fmtKc(n){ return (Number(n)||0).toLocaleString("cs-CZ") + " Kč"; }
+function fmtKc(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:0}) + " Kč"; }
 function fmtStatusPct(status, budget){
   if(!budget) return "—";
   return (Number(status)/Number(budget)*100).toLocaleString("cs-CZ",{maximumFractionDigits:1}) + " %";
