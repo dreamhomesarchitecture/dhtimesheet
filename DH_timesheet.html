@@ -2615,11 +2615,12 @@ function bindAdmin(){
     project.investor = (data.investor || "").trim();
     project.location = (data.location || "").trim();
     state.editProjError = "";
-    state.editingProjectId = null;
+    state.editingProjectId = newId;
     state.allEntriesFlat = null;
     state.projectTotals = null;
     await saveConfig();
     await loadAdminHours();
+    showStamp();
   });
   document.querySelectorAll('[data-action="toggle-project-phase"]').forEach(b => b.onclick = async () => {
     const projectId = b.getAttribute("data-project-id");
