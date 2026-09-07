@@ -1874,7 +1874,10 @@ function projectDetailPageHtml(){
 
           return `
           <div style="margin-top:28px;padding-top:18px;border-top:1px solid var(--line);">
-            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Klasické náklady</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+              <div style="font-weight:700;font-size:15px;">Klasické náklady</div>
+              ${projectCosts.length ? `<button type="button" class="btn btn-danger btn-small" data-action="wipe-project-costs" data-project-id="${esc(p.id)}">Smazat všechny náklady projektu</button>` : ``}
+            </div>
             <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
             <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span></div>
             <div class="entries">${costsRowsHtml}</div>
@@ -2426,6 +2429,17 @@ function bindAdmin(){
     state.allEntriesFlat = null;
     state.projectTotals = null;
     await loadAdminHours();
+  });
+  document.querySelectorAll('[data-action="wipe-project-costs"]').forEach(b => b.onclick = async () => {
+    const projectId = b.getAttribute("data-project-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    const count = (state.costs || []).filter(c => c.projectId === projectId).length;
+    if(!count) return;
+    if(!confirm(`Opravdu nenávratně smazat všech ${count} nákladových položek projektu ${project ? project.name : projectId}?`)) return;
+    state.costs = (state.costs || []).filter(c => c.projectId !== projectId);
+    await saveCosts();
+    showStamp();
+    render();
   });
   document.querySelectorAll('[data-action="delete-employee"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tohoto zaměstnance i jeho výkazy?")) return;
