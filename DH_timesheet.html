@@ -539,6 +539,8 @@ let state = {
   expandedAdminProjectOverviewId: null,
   expandedEmployeeRatesId: null,
   rateError: "",
+  expandedProjectRateEmployeeId: null,
+  projectRateError: "",
   adminEntriesFlat: null,
   costs: null,
   costsLoading: false,
@@ -619,6 +621,14 @@ function hourlyRateForEmployee(employee, dateStr){
   const match = employee.rates.find(r => r.from && r.from <= dateStr && (!r.to || dateStr <= r.to));
   return match ? Number(match.amount) || 0 : 0;
 }
+function effectiveHourlyRate(project, employee, dateStr){
+  if(project && employee && project.employeeRates && project.employeeRates[employee.id] && dateStr){
+    const rates = project.employeeRates[employee.id];
+    const match = rates.find(r => r.from && r.from <= dateStr && (!r.to || dateStr <= r.to));
+    if(match) return Number(match.amount) || 0;
+  }
+  return hourlyRateForEmployee(employee, dateStr);
+}
 function isPhaseClosedOnDate(project, phaseId, dateStr){
   if(!project || !project.closedPhases) return false;
   const closedFrom = project.closedPhases[phaseId];
@@ -636,7 +646,7 @@ function phaseFinancials(p, pid){
   const totalCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid).reduce((s,c) => s + Number(c.amount||0), 0);
   const totalLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid).reduce((s,en) => {
     const emp = state.config.employees.find(x => x.id === en.employeeId);
-    return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
+    return s + Number(en.hours||0) * effectiveHourlyRate(p, emp, en.date);
   }, 0);
   return { totalBudget, totalCosts, totalLabor, status: totalBudget - totalCosts - totalLabor };
 }
@@ -938,7 +948,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", expandedProjectRateEmployeeId: null, projectRateError: "" });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     };
@@ -1797,7 +1807,7 @@ function projectDetailPageHtml(){
             const costsSum = phaseCosts.reduce((s,c) => s + Number(c.amount||0), 0);
             const laborSum = phaseEntries.reduce((s,en) => {
               const emp = state.config.employees.find(x => x.id === en.employeeId);
-              return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
+              return s + Number(en.hours||0) * effectiveHourlyRate(p, emp, en.date);
             }, 0);
             const budgetNum = budget === "" ? 0 : Number(budget) || 0;
             const status = budgetNum - costsSum - laborSum;
@@ -1849,6 +1859,44 @@ function projectDetailPageHtml(){
           })()}
         </div>` : ``}
         `}
+
+        ${(() => {
+          const empRatesHtml = state.config.employees.map(emp => {
+            const projRates = ((p.employeeRates && p.employeeRates[emp.id]) || []).slice().sort((a,b) => (b.from||"").localeCompare(a.from||""));
+            const isOpen = state.expandedProjectRateEmployeeId === emp.id;
+            const rateRowsHtml = projRates.length ? projRates.map(r => `
+              <div class="phase-employee-row">
+                <span>${esc(r.from)} – ${r.to ? esc(r.to) : "dosud"}</span>
+                <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="delete-project-rate" data-project-id="${esc(p.id)}" data-employee-id="${esc(emp.id)}" data-rate-id="${esc(r.id)}" title="Smazat" style="margin-left:6px;">×</button></span>
+              </div>`).join("") : `<div class="q-hint" style="margin:0;">Používá se výchozí sazba zaměstnance.</div>`;
+            return `
+            <div class="admin-project-item">
+              <div class="admin-project-head">
+                <button type="button" class="icon-btn" data-action="toggle-project-rate-employee" data-id="${esc(emp.id)}" title="Sazby pro tento projekt">${isOpen ? "▾" : "▸"}</button>
+                <div class="grow">${esc(emp.name)}${projRates.length ? ` <span class="meta">· vlastní sazba pro projekt</span>` : ``}</div>
+              </div>
+              ${isOpen ? `
+              <div class="phase-picker-wrap">
+                <div class="phase-employees" style="margin-top:0;padding-top:0;border-top:none;">${rateRowsHtml}</div>
+                <div data-action="add-project-rate-row" data-project-id="${esc(p.id)}" data-employee-id="${esc(emp.id)}" style="margin-top:14px;">
+                  <div class="form-grid">
+                    <div class="field-row"><label class="field-label">Od</label><input type="date" class="project-rate-from" required></div>
+                    <div class="field-row"><label class="field-label">Do (nepovinné)</label><input type="date" class="project-rate-to"></div>
+                    <div class="field-row"><label class="field-label">Kč/h</label><input type="number" class="project-rate-amount" min="0" step="1" required></div>
+                    <div class="field-row"><button type="button" class="btn btn-tan btn-small" data-action="add-project-rate-submit">+ Přidat sazbu</button></div>
+                  </div>
+                  ${state.projectRateError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.projectRateError)}</div>` : ``}
+                </div>
+              </div>` : ``}
+            </div>`;
+          }).join("");
+          return `
+          <div style="margin-top:28px;padding-top:18px;border-top:1px solid var(--line);">
+            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Hodinové sazby pro tento projekt</div>
+            <p class="q-hint" style="margin:0 0 12px;">Nepovinné — přepíše výchozí hodinovou sazbu zaměstnance (nastavenou v Zaměstnancích) jen pro tento projekt a zadané období. Sazba se váže k datu odpracovaných hodin, takže jde nastavit třeba zvlášť pro jednotlivé roky.</p>
+            ${empRatesHtml}
+          </div>`;
+        })()}
 
         ${(() => {
           const allProjectCosts = (state.costs || []).filter(c => c.projectId === p.id);
@@ -1923,7 +1971,7 @@ function projectDetailPageHtml(){
 
           const allProjectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
             const emp = state.config.employees.find(x => x.id === en.employeeId);
-            const rate = hourlyRateForEmployee(emp, en.date);
+            const rate = effectiveHourlyRate(p, emp, en.date);
             return { en, rate, amount: Number(en.hours||0) * rate };
           });
           const laborPhaseIdsPresent = [...new Set(allProjectLabor.map(r => r.en.phaseId).filter(Boolean))];
@@ -2617,6 +2665,39 @@ function bindAdmin(){
     await saveConfig();
     render();
   });
+  document.querySelectorAll('[data-action="toggle-project-rate-employee"]').forEach(b => b.onclick = () => {
+    const id = b.getAttribute("data-id");
+    setState({ expandedProjectRateEmployeeId: state.expandedProjectRateEmployeeId === id ? null : id, projectRateError: "" });
+  });
+  document.querySelectorAll('[data-action="add-project-rate-submit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest('[data-action="add-project-rate-row"]');
+    if(!row) return;
+    const projectId = row.getAttribute("data-project-id");
+    const employeeId = row.getAttribute("data-employee-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const from = row.querySelector(".project-rate-from").value;
+    const to = row.querySelector(".project-rate-to").value.trim();
+    const amount = Number(row.querySelector(".project-rate-amount").value);
+    if(!from || !(amount >= 0)) return;
+    if(to && to < from){ setState({ projectRateError: "Datum 'do' nemůže být dříve než 'od'." }); return; }
+    if(!project.employeeRates) project.employeeRates = {};
+    if(!project.employeeRates[employeeId]) project.employeeRates[employeeId] = [];
+    project.employeeRates[employeeId].push({ id: uid("prate"), from, to, amount });
+    state.projectRateError = "";
+    await saveConfig();
+    render();
+  });
+  document.querySelectorAll('[data-action="delete-project-rate"]').forEach(b => b.onclick = async () => {
+    const projectId = b.getAttribute("data-project-id");
+    const employeeId = b.getAttribute("data-employee-id");
+    const rateId = b.getAttribute("data-rate-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project || !project.employeeRates || !project.employeeRates[employeeId]) return;
+    project.employeeRates[employeeId] = project.employeeRates[employeeId].filter(r => r.id !== rateId);
+    await saveConfig();
+    render();
+  });
   document.querySelectorAll('[data-action="delete-project"]').forEach(b => b.onclick = async (e) => {
     e.stopPropagation();
     if(!confirm("Smazat tento projekt?")) return;
@@ -2625,12 +2706,12 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", expandedProjectRateEmployeeId: null, projectRateError: "" });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", expandedProjectRateEmployeeId: null, projectRateError: "" });
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: b.getAttribute("data-id") });
@@ -2705,6 +2786,15 @@ function bindAdmin(){
       const row = el.closest("[data-labor-edit-row]");
       const saveBtn = row && row.querySelector('[data-action="save-labor-edit"]');
       if(saveBtn) saveBtn.click();
+    });
+  });
+  document.querySelectorAll('[data-action="add-project-rate-row"] input').forEach(el => {
+    el.addEventListener("keydown", e => {
+      if(e.key !== "Enter") return;
+      e.preventDefault();
+      const row = el.closest('[data-action="add-project-rate-row"]');
+      const submitBtn = row && row.querySelector('[data-action="add-project-rate-submit"]');
+      if(submitBtn) submitBtn.click();
     });
   });
   const projectModalForm = document.getElementById("project-modal-form");
@@ -3243,7 +3333,7 @@ document.addEventListener("keydown", e => {
   if(e.key !== "Enter") return;
   const el = e.target;
   if(!el || (el.tagName !== "INPUT" && el.tagName !== "SELECT")) return;
-  if(el.closest("[data-cost-edit-row]") || el.closest("[data-labor-edit-row]")) return;
+  if(el.closest("[data-cost-edit-row]") || el.closest("[data-labor-edit-row]") || el.closest('[data-action="add-project-rate-row"]')) return;
   const form = el.closest("form");
   if(!form) return;
   e.preventDefault();
