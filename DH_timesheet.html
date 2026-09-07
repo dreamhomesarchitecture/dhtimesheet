@@ -3126,6 +3126,18 @@ function showStamp(){
   setTimeout(()=>t.classList.remove("show"), 1000);
 }
 
+document.addEventListener("keydown", e => {
+  if(e.key !== "Enter") return;
+  const el = e.target;
+  if(!el || (el.tagName !== "INPUT" && el.tagName !== "SELECT")) return;
+  if(el.closest("[data-cost-edit-row]") || el.closest("[data-labor-edit-row]")) return;
+  const form = el.closest("form");
+  if(!form) return;
+  e.preventDefault();
+  if(form.requestSubmit) form.requestSubmit();
+  else form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+});
+
 init();
 </script>
 </body>
