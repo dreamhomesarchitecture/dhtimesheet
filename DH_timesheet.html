@@ -231,8 +231,8 @@
   .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-cost:hover{ border-color: var(--soft); }
 
-  .entry-head-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
-  .entry-row-labor{ display:grid; grid-template-columns: 92px 130px 70px 64px 90px 100px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-head-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
   .stamp-toast{
@@ -557,6 +557,12 @@ let state = {
   editingEntryId: null,
   editingLaborEntryId: null,
   editingProjectCostId: null,
+  projectCostsFilterPhase: "",
+  projectCostsFilterPayment: "",
+  projectCostsSort: "date",
+  projectLaborFilterPhase: "",
+  projectLaborFilterEmployee: "",
+  projectLaborSort: "date",
   showAllProjects: false,
   showTimesheet: true,
   showMyProjects: false,
@@ -921,7 +927,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     };
@@ -1823,8 +1829,40 @@ function projectDetailPageHtml(){
         `}
 
         ${(() => {
-          const projectCosts = (state.costs || []).filter(c => c.projectId === p.id).slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
+          const allProjectCosts = (state.costs || []).filter(c => c.projectId === p.id);
+          const costPhaseIdsPresent = [...new Set(allProjectCosts.map(c => c.phaseId).filter(Boolean))];
+          const costsFilterPhase = state.projectCostsFilterPhase || "";
+          const costsFilterPayment = state.projectCostsFilterPayment || "";
+          const costsFiltersActive = !!(costsFilterPhase || costsFilterPayment);
+          let projectCosts = allProjectCosts.filter(c =>
+            (!costsFilterPhase || c.phaseId === costsFilterPhase) &&
+            (!costsFilterPayment || c.paymentMethod === costsFilterPayment)
+          );
+          const costsSort = state.projectCostsSort || "date";
+          projectCosts = projectCosts.slice().sort((a,b) => {
+            if(costsSort === "phase") return (a.phaseId||"").localeCompare(b.phaseId||"") || (b.date||"").localeCompare(a.date||"");
+            if(costsSort === "amount") return Number(b.amount||0) - Number(a.amount||0);
+            return (b.date||"").localeCompare(a.date||"");
+          });
           const costsTotal = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
+          const costsFilterHtml = `
+            <div class="form-grid" style="margin-bottom:12px;">
+              <div class="field-row"><label class="field-label">Fáze</label><select id="project-costs-filter-phase">
+                <option value="">Všechny fáze</option>
+                ${costPhaseIdsPresent.map(pid => { const ph = state.config.phases.find(x => x.id === pid); return `<option value="${esc(pid)}" ${costsFilterPhase === pid ? "selected" : ""}>${esc(pid)}${ph ? ` — ${esc(ph.name)}` : ""}</option>`; }).join("")}
+              </select></div>
+              <div class="field-row"><label class="field-label">Platba</label><select id="project-costs-filter-payment">
+                <option value="">Vše</option>
+                <option value="hotove" ${costsFilterPayment === "hotove" ? "selected" : ""}>Hotově</option>
+                <option value="ucet" ${costsFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
+              </select></div>
+              <div class="field-row"><label class="field-label">Seřadit podle</label><select id="project-costs-sort">
+                <option value="date" ${costsSort === "date" ? "selected" : ""}>Data (nejnovější)</option>
+                <option value="phase" ${costsSort === "phase" ? "selected" : ""}>Fáze</option>
+                <option value="amount" ${costsSort === "amount" ? "selected" : ""}>Nejvyšší cena</option>
+              </select></div>
+              ${costsFiltersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="project-costs-filter-reset-btn">Zrušit filtr</button></div>` : ``}
+            </div>`;
           const costsRowsHtml = projectCosts.length ? projectCosts.map(c => {
             const phase = state.config.phases.find(x => x.id === c.phaseId);
             if(state.editingProjectCostId === c.id){
@@ -1859,14 +1897,48 @@ function projectDetailPageHtml(){
               <span class="entry-note">${esc(c.note||"")}</span>
               <button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
             </div>`;
-          }).join("") : `<div class="empty-state">Zatím žádné náklady.</div>`;
+          }).join("") : `<div class="empty-state">${allProjectCosts.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
-          const projectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
+          const allProjectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
             const emp = state.config.employees.find(x => x.id === en.employeeId);
             const rate = hourlyRateForEmployee(emp, en.date);
             return { en, rate, amount: Number(en.hours||0) * rate };
-          }).sort((a,b) => (b.en.date||"").localeCompare(a.en.date||""));
+          });
+          const laborPhaseIdsPresent = [...new Set(allProjectLabor.map(r => r.en.phaseId).filter(Boolean))];
+          const laborEmployeeIdsPresent = [...new Set(allProjectLabor.map(r => r.en.employeeId))];
+          const laborFilterPhase = state.projectLaborFilterPhase || "";
+          const laborFilterEmployee = state.projectLaborFilterEmployee || "";
+          const laborFiltersActive = !!(laborFilterPhase || laborFilterEmployee);
+          let projectLabor = allProjectLabor.filter(r =>
+            (!laborFilterPhase || r.en.phaseId === laborFilterPhase) &&
+            (!laborFilterEmployee || r.en.employeeId === laborFilterEmployee)
+          );
+          const laborSort = state.projectLaborSort || "date";
+          projectLabor = projectLabor.slice().sort((a,b) => {
+            if(laborSort === "phase") return (a.en.phaseId||"").localeCompare(b.en.phaseId||"") || (b.en.date||"").localeCompare(a.en.date||"");
+            if(laborSort === "hours") return Number(b.en.hours||0) - Number(a.en.hours||0);
+            if(laborSort === "employee") return a.en.employeeName.localeCompare(b.en.employeeName) || (b.en.date||"").localeCompare(a.en.date||"");
+            return (b.en.date||"").localeCompare(a.en.date||"");
+          });
           const laborTotal = projectLabor.reduce((s,r) => s + r.amount, 0);
+          const laborFilterHtml = `
+            <div class="form-grid" style="margin-bottom:12px;">
+              <div class="field-row"><label class="field-label">Fáze</label><select id="project-labor-filter-phase">
+                <option value="">Všechny fáze</option>
+                ${laborPhaseIdsPresent.map(pid => { const ph = state.config.phases.find(x => x.id === pid); return `<option value="${esc(pid)}" ${laborFilterPhase === pid ? "selected" : ""}>${esc(pid)}${ph ? ` — ${esc(ph.name)}` : ""}</option>`; }).join("")}
+              </select></div>
+              <div class="field-row"><label class="field-label">Zaměstnanec</label><select id="project-labor-filter-employee">
+                <option value="">Všichni</option>
+                ${laborEmployeeIdsPresent.map(eid => { const emp = state.config.employees.find(x => x.id === eid); return `<option value="${esc(eid)}" ${laborFilterEmployee === eid ? "selected" : ""}>${esc(emp ? emp.name : eid)}</option>`; }).join("")}
+              </select></div>
+              <div class="field-row"><label class="field-label">Seřadit podle</label><select id="project-labor-sort">
+                <option value="date" ${laborSort === "date" ? "selected" : ""}>Data (nejnovější)</option>
+                <option value="phase" ${laborSort === "phase" ? "selected" : ""}>Fáze</option>
+                <option value="hours" ${laborSort === "hours" ? "selected" : ""}>Nejvíc hodin</option>
+                <option value="employee" ${laborSort === "employee" ? "selected" : ""}>Zaměstnance</option>
+              </select></div>
+              ${laborFiltersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="project-labor-filter-reset-btn">Zrušit filtr</button></div>` : ``}
+            </div>`;
           const laborRowsHtml = projectLabor.length ? projectLabor.map(({en, rate, amount}) => {
             const phase = state.config.phases.find(x => x.id === en.phaseId);
             if(state.editingLaborEntryId === en.id){
@@ -1895,22 +1967,24 @@ function projectDetailPageHtml(){
               <span class="entry-num">${fmtKc(amount)}</span>
               <button type="button" class="icon-btn" data-action="edit-labor-entry" data-id="${esc(en.id)}" title="Upravit">✎</button>
             </div>`;
-          }).join("") : `<div class="empty-state">Zatím žádné odpracované hodiny.</div>`;
+          }).join("") : `<div class="empty-state">${allProjectLabor.length === 0 ? "Zatím žádné odpracované hodiny." : "Žádné hodiny neodpovídají zvolenému filtru."}</div>`;
 
           return `
           <div style="margin-top:28px;padding-top:18px;border-top:1px solid var(--line);">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
               <div style="font-weight:700;font-size:15px;">Klasické náklady</div>
-              ${projectCosts.length ? `<button type="button" class="btn btn-danger btn-small" data-action="wipe-project-costs" data-project-id="${esc(p.id)}">Smazat všechny náklady projektu</button>` : ``}
+              ${allProjectCosts.length ? `<button type="button" class="btn btn-danger btn-small" data-action="wipe-project-costs" data-project-id="${esc(p.id)}">Smazat všechny náklady projektu</button>` : ``}
             </div>
-            <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
+            ${allProjectCosts.length ? costsFilterHtml : ``}
+            <p class="q-hint" style="margin:0 0 12px;">${costsFiltersActive ? "Náklady dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
             <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span><span></span></div>
             <div class="entries">${costsRowsHtml}</div>
           </div>
 
           <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
             <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Mzdové náklady</div>
-            <p class="q-hint" style="margin:0 0 12px;">Celkem: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
+            ${allProjectLabor.length ? laborFilterHtml : ``}
+            <p class="q-hint" style="margin:0 0 12px;">${laborFiltersActive ? "Hodiny dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
             <div class="entry-head-labor"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
             <div class="entries">${laborRowsHtml}</div>
           </div>`;
@@ -2469,6 +2543,22 @@ function bindAdmin(){
     showStamp();
     render();
   });
+  const projectCostsFilterPhase = document.getElementById("project-costs-filter-phase");
+  if(projectCostsFilterPhase) projectCostsFilterPhase.addEventListener("change", () => setState({ projectCostsFilterPhase: projectCostsFilterPhase.value }));
+  const projectCostsFilterPayment = document.getElementById("project-costs-filter-payment");
+  if(projectCostsFilterPayment) projectCostsFilterPayment.addEventListener("change", () => setState({ projectCostsFilterPayment: projectCostsFilterPayment.value }));
+  const projectCostsSortSelect = document.getElementById("project-costs-sort");
+  if(projectCostsSortSelect) projectCostsSortSelect.addEventListener("change", () => setState({ projectCostsSort: projectCostsSortSelect.value }));
+  const projectCostsFilterResetBtn = document.getElementById("project-costs-filter-reset-btn");
+  if(projectCostsFilterResetBtn) projectCostsFilterResetBtn.onclick = () => setState({ projectCostsFilterPhase: "", projectCostsFilterPayment: "" });
+  const projectLaborFilterPhase = document.getElementById("project-labor-filter-phase");
+  if(projectLaborFilterPhase) projectLaborFilterPhase.addEventListener("change", () => setState({ projectLaborFilterPhase: projectLaborFilterPhase.value }));
+  const projectLaborFilterEmployee = document.getElementById("project-labor-filter-employee");
+  if(projectLaborFilterEmployee) projectLaborFilterEmployee.addEventListener("change", () => setState({ projectLaborFilterEmployee: projectLaborFilterEmployee.value }));
+  const projectLaborSortSelect = document.getElementById("project-labor-sort");
+  if(projectLaborSortSelect) projectLaborSortSelect.addEventListener("change", () => setState({ projectLaborSort: projectLaborSortSelect.value }));
+  const projectLaborFilterResetBtn = document.getElementById("project-labor-filter-reset-btn");
+  if(projectLaborFilterResetBtn) projectLaborFilterResetBtn.onclick = () => setState({ projectLaborFilterPhase: "", projectLaborFilterEmployee: "" });
   document.querySelectorAll('[data-action="delete-employee"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tohoto zaměstnance i jeho výkazy?")) return;
     const id = b.getAttribute("data-id");
@@ -2513,12 +2603,12 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: b.getAttribute("data-id") });
