@@ -570,6 +570,7 @@ let state = {
   recordsFilterTo: "",
   recordsFilterProjectId: "",
   recordsFilterPhaseId: "",
+  recordsFilterEmployeeId: "",
   clientExportFrom: "",
   clientExportTo: "",
   clientExportProjectId: "",
@@ -1996,11 +1997,13 @@ function adminRecordsTemplate(){
   const entries = state.adminEntriesFlat;
   const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.recordsFilterProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
   const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.recordsFilterPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
+  const filterEmployeeOptions = `<option value="">Všichni zaměstnanci</option>` + state.config.employees.map(emp => `<option value="${esc(emp.id)}" ${state.recordsFilterEmployeeId === emp.id ? "selected" : ""}>${esc(emp.name)}</option>`).join("");
 
   const filterHtml = `
     <div class="form-grid" style="margin-bottom:14px;">
       <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="records-filter-from" value="${esc(state.recordsFilterFrom)}"></div>
       <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="records-filter-to" value="${esc(state.recordsFilterTo)}"></div>
+      <div class="field-row"><label class="field-label">Zaměstnanec</label><select id="records-filter-employee">${filterEmployeeOptions}</select></div>
       <div class="field-row"><label class="field-label">Projekt</label><select id="records-filter-project">${filterProjectOptions}</select></div>
       <div class="field-row"><label class="field-label">Fáze</label><select id="records-filter-phase">${filterPhaseOptions}</select></div>
     </div>`;
@@ -2009,12 +2012,13 @@ function adminRecordsTemplate(){
     return `${filterHtml}<div class="empty-state">Načítání…</div>`;
   }
 
-  const filtersActive = !!(state.recordsFilterFrom || state.recordsFilterTo || state.recordsFilterProjectId || state.recordsFilterPhaseId);
+  const filtersActive = !!(state.recordsFilterFrom || state.recordsFilterTo || state.recordsFilterProjectId || state.recordsFilterPhaseId || state.recordsFilterEmployeeId);
   const filtered = entries.filter(e =>
     (!state.recordsFilterFrom || e.date >= state.recordsFilterFrom) &&
     (!state.recordsFilterTo || e.date <= state.recordsFilterTo) &&
     (!state.recordsFilterProjectId || e.projectId === state.recordsFilterProjectId) &&
-    (!state.recordsFilterPhaseId || e.phaseId === state.recordsFilterPhaseId)
+    (!state.recordsFilterPhaseId || e.phaseId === state.recordsFilterPhaseId) &&
+    (!state.recordsFilterEmployeeId || e.employeeId === state.recordsFilterEmployeeId)
   );
   const totalHours = filtered.reduce((s,e) => s + Number(e.hours||0), 0);
   const totalCost = filtered.reduce((s,e) => s + Number(e.cost||0), 0);
@@ -3769,8 +3773,11 @@ function bindAdmin(){
   if(recordsFilterProject) recordsFilterProject.addEventListener("change", () => setState({ recordsFilterProjectId: recordsFilterProject.value }));
   const recordsFilterPhase = document.getElementById("records-filter-phase");
   if(recordsFilterPhase) recordsFilterPhase.addEventListener("change", () => setState({ recordsFilterPhaseId: recordsFilterPhase.value }));
+  const recordsFilterEmployee = document.getElementById("records-filter-employee");
+  enhanceSearchableSelect(recordsFilterEmployee);
+  if(recordsFilterEmployee) recordsFilterEmployee.addEventListener("change", () => setState({ recordsFilterEmployeeId: recordsFilterEmployee.value }));
   const recordsFilterResetBtn = document.getElementById("records-filter-reset-btn");
-  if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "" });
+  if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "", recordsFilterEmployeeId: "" });
 
   const clientExportFrom = document.getElementById("client-export-from");
   if(clientExportFrom) clientExportFrom.addEventListener("change", () => setState({ clientExportFrom: clientExportFrom.value }));
