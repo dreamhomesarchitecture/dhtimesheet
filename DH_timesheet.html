@@ -1116,7 +1116,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     doc.text(label, marginX, y);
     doc.setFont("Lato", "normal");
     doc.text(String(value), pageWidth - marginX, y, { align: "right" });
-    y += 6.5;
+    y += 5.5;
   });
 
   const bodyRows = entries.map(e => {
@@ -1143,11 +1143,11 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   });
 
   doc.autoTable({
-    startY: y + 9,
+    startY: y + 6,
     head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]],
     body: bodyRows,
-    styles: { font: "Lato", fontSize: 7.5, cellPadding: 1.8, valign: "middle" },
-    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7 },
+    styles: { font: "Lato", fontSize: 6.5, cellPadding: 1.1, valign: "middle" },
+    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 6.5 },
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
       0: { cellWidth: 18 },
@@ -1171,23 +1171,23 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   const vatAmount = subtotal * vatPct / 100;
   const grandTotal = subtotal + vatAmount;
 
-  let ty = doc.lastAutoTable.finalY + 14;
-  if(ty + 55 > pageHeight - 25){
+  let ty = doc.lastAutoTable.finalY + 10;
+  if(ty + 40 > pageHeight - 32){
     doc.addPage();
-    ty = 26;
+    ty = 24;
   }
   const boxLeft = pageWidth - marginX - 80;
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setFont("Lato", "normal");
   doc.text("CENA", boxLeft, ty);
   doc.text(fmtKc(subtotal), pageWidth - marginX, ty, { align: "right" });
-  ty += 7;
+  ty += 6;
   doc.text("DPH", boxLeft, ty);
   doc.text(`${vatPct} %`, pageWidth - marginX, ty, { align: "right" });
-  ty += 5;
+  ty += 4;
   doc.setFillColor(164,172,127);
-  doc.rect(boxLeft - 3, ty, 80 + 3, 9, "F");
-  ty += 6.5;
+  doc.rect(boxLeft - 3, ty, 80 + 3, 8, "F");
+  ty += 5.8;
   doc.setTextColor(255,255,255);
   doc.setFont("Lato", "bold");
   doc.text("CENA CELKEM S DPH", boxLeft, ty);
@@ -1196,8 +1196,8 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
 
   if(signedBy){
     doc.setFont("Lato", "normal");
-    doc.setFontSize(10);
-    doc.text(signedBy, pageWidth - marginX, ty + 28, { align: "right" });
+    doc.setFontSize(9.5);
+    doc.text(signedBy, pageWidth - marginX, ty + 18, { align: "right" });
   }
 
   const pageCount = doc.internal.getNumberOfPages();
