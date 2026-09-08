@@ -568,6 +568,8 @@ let state = {
   clientExportPhaseId: "",
   clientExportOverrides: {},
   clientExportRates: {},
+  clientExportHoursOverrides: {},
+  clientExportCostOverrides: {},
   clientExportExtraCosts: [],
   clientExportSignedBy: "Kamil Plavec",
   closedProjectsYear: "",
@@ -707,6 +709,14 @@ function fmtDateDotsPadded(dateStr){
 function jobNumberSuffix(name){
   const letters = String(name||"").replace(/[^\p{L}]/gu, "");
   return letters.slice(0,3).toLowerCase();
+}
+function clientExportHoursFor(entry){
+  const v = state.clientExportHoursOverrides[entry.id];
+  return v !== undefined ? Number(v) : Number(entry.hours || 0);
+}
+function clientExportCostFor(entry){
+  const v = state.clientExportCostOverrides[entry.id];
+  return v !== undefined ? Number(v) : Number(entry.cost || 0);
 }
 function shiftMonth(monthStr, delta){
   const [y, m] = monthStr.split("-").map(Number);
@@ -868,9 +878,9 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
   entries.forEach(e => {
     const phase = state.config.phases.find(p => p.id === e.phaseId);
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
-    const hours = Number(e.hours || 0);
+    const hours = clientExportHoursFor(e);
     const billable = hours * rate;
-    const cost = Number(e.cost || 0);
+    const cost = clientExportCostFor(e);
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
     const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
     totalHours += hours; totalBillable += billable; totalEntryCosts += cost;
@@ -971,8 +981,8 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   const bodyRows = entries.map(e => {
     const phase = state.config.phases.find(p => p.id === e.phaseId);
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
-    const hours = Number(e.hours || 0);
-    const cost = Number(e.cost || 0);
+    const hours = clientExportHoursFor(e);
+    const cost = clientExportCostFor(e);
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
     const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
     return [
@@ -1011,9 +1021,9 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     margin: { left: marginX, right: marginX }
   });
 
-  const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
-  const totalBillable = entries.reduce((s,e) => s + Number(e.hours||0) * (Number(state.clientExportRates[e.employeeId]) || 0), 0);
-  const totalEntryCosts = entries.reduce((s,e) => s + Number(e.cost||0), 0);
+  const totalHours = entries.reduce((s,e) => s + clientExportHoursFor(e), 0);
+  const totalBillable = entries.reduce((s,e) => s + clientExportHoursFor(e) * (Number(state.clientExportRates[e.employeeId]) || 0), 0);
+  const totalEntryCosts = entries.reduce((s,e) => s + clientExportCostFor(e), 0);
   const totalExtra = (extraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
   const grandTotal = totalBillable + totalEntryCosts + totalExtra;
 
@@ -1941,36 +1951,38 @@ function adminClientExportTemplate(){
       }).join("")}
     </div>`;
 
-  const totalHours = sorted.reduce((s,e) => s + Number(e.hours||0), 0);
+  const totalHours = sorted.reduce((s,e) => s + clientExportHoursFor(e), 0);
   const totalBillable = sorted.reduce((s,e) => {
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
-    return s + Number(e.hours||0) * rate;
+    return s + clientExportHoursFor(e) * rate;
   }, 0);
-  const totalEntryCosts = sorted.reduce((s,e) => s + Number(e.cost||0), 0);
+  const totalEntryCosts = sorted.reduce((s,e) => s + clientExportCostFor(e), 0);
   const grandTotal = totalBillable + totalEntryCosts + totalExtra;
 
   const rows = sorted.map(e => {
     const proj = state.config.projects.find(p => p.id === e.projectId);
     const phase = state.config.phases.find(p => p.id === e.phaseId);
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
-    const billable = Number(e.hours||0) * rate;
+    const hoursVal = clientExportHoursFor(e);
+    const costVal = clientExportCostFor(e);
+    const billable = hoursVal * rate;
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
     return `
     <div class="entry-row-clientexp">
       <span class="entry-date">${esc(e.date)}</span>
       <span>${esc(e.employeeName)}</span>
       <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
-      <span class="entry-num">${fmtH(e.hours)}</span>
+      <input type="number" min="0" step="0.01" class="client-export-hours" data-entry-id="${esc(e.id)}" value="${esc(hoursVal)}" style="padding:6px 8px;font-size:13px;">
       <input type="text" class="client-export-note" data-entry-id="${esc(e.id)}" value="${esc(note)}" placeholder="Popis pro klienta">
       <span class="entry-num">${fmtKc(billable)}</span>
-      <span class="entry-num">${Number(e.cost||0) ? fmtKc(e.cost) : "—"}</span>
+      <input type="number" min="0" step="1" class="client-export-cost" data-entry-id="${esc(e.id)}" value="${costVal ? esc(costVal) : ""}" placeholder="0" style="padding:6px 8px;font-size:13px;">
     </div>`;
   }).join("");
 
   return `
     ${filterHtml}
     ${filtersActive ? `<button class="btn btn-small" type="button" id="client-export-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
-    <p class="q-hint" style="margin:0 0 8px;">Fakturovatelná hodinovka je nezávislá na interní nákladové sazbě — platí jen pro tento export a nikam se neukládá.</p>
+    <p class="q-hint" style="margin:0 0 8px;">Fakturovatelná hodinovka je nezávislá na interní nákladové sazbě — platí jen pro tento export a nikam se neukládá. Hodiny i náklady jde přepsat jen pro tento export, v ostrém výkazu se nic nezmění.</p>
     ${rateFormHtml}
     <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}${totalEntryCosts ? ` · <b style="color:var(--ink);">${fmtKc(totalEntryCosts)}</b> ostatní náklady z výkazu` : ``}</p>
     <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span><span>Náklady</span></div>
@@ -3533,6 +3545,18 @@ function bindAdmin(){
   document.querySelectorAll(".client-export-note").forEach(el => {
     el.addEventListener("change", () => {
       state.clientExportOverrides[el.getAttribute("data-entry-id")] = el.value;
+    });
+  });
+  document.querySelectorAll(".client-export-hours").forEach(el => {
+    el.addEventListener("change", () => {
+      state.clientExportHoursOverrides[el.getAttribute("data-entry-id")] = el.value === "" ? undefined : Number(el.value);
+      render();
+    });
+  });
+  document.querySelectorAll(".client-export-cost").forEach(el => {
+    el.addEventListener("change", () => {
+      state.clientExportCostOverrides[el.getAttribute("data-entry-id")] = el.value === "" ? 0 : Number(el.value);
+      render();
     });
   });
   document.querySelectorAll("#client-export-extra-desc, #client-export-extra-amount").forEach(el => {
