@@ -1159,7 +1159,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
       6: { cellWidth: 20, halign: "right" },
       7: { cellWidth: 20, halign: "right" }
     },
-    margin: { left: marginX, right: marginX }
+    margin: { left: marginX, right: marginX, bottom: 24 }
   });
 
   const totalHours = entries.reduce((s,e) => s + clientExportHoursFor(e), 0);
