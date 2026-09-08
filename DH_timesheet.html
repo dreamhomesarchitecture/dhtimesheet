@@ -1622,6 +1622,29 @@ function timesheetTemplate(){
       ${monthEntries.map(e => {
         const proj = projects.find(p => p.id === e.projectId);
         const phase = phases.find(p => p.id === e.phaseId);
+        if(state.editingEntryId === e.id){
+          const editProject = state.config.projects.find(p => p.id === e.projectId) || projects[0];
+          const editPhaseless = !!(editProject && editProject.phaseless);
+          const editPhases = getFormPhaseOptions(editProject, e.date);
+          const editProjectOptions = projects.map(p => `<option value="${esc(p.id)}" ${e.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+          const editPhaseOptions = editPhases.length
+            ? editPhases.map(p => `<option value="${esc(p.id)}" ${e.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}${isPhaseClosedOnDate(editProject, p.id, e.date) ? " (uzavřeno)" : ""}</option>`).join("")
+            : `<option value="" disabled selected>— žádné fáze —</option>`;
+          return `
+          <div class="entry-row" data-my-entry-edit-row="${esc(e.id)}">
+            <input type="date" class="my-entry-edit-date" value="${esc(e.date)}" style="padding:6px 8px;font-size:13px;">
+            <select class="my-entry-edit-project" style="padding:6px 8px;font-size:13px;">${editProjectOptions}</select>
+            <select class="my-entry-edit-phase" style="padding:6px 8px;font-size:13px;" ${editPhaseless ? "disabled" : ""}>${editPhaseOptions}</select>
+            <input type="number" min="0.01" step="0.01" class="my-entry-edit-hours" value="${esc(e.hours)}" style="padding:6px 8px;font-size:13px;">
+            <input type="number" min="0" step="1" class="my-entry-edit-cost" value="${e.cost ? esc(e.cost) : ""}" placeholder="0" style="padding:6px 8px;font-size:13px;">
+            <input type="text" class="my-entry-edit-note" value="${esc(e.note||"")}" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;">
+            <span style="display:flex;gap:4px;">
+              <button type="button" class="icon-btn" data-action="save-my-entry-edit" title="Uložit">✓</button>
+              <button type="button" class="icon-btn" data-action="cancel-my-entry-edit" title="Zrušit">×</button>
+            </span>
+            ${state.entryError ? `<div class="q-hint" style="color:var(--danger);grid-column:1/-1;margin:6px 0 0;">${esc(state.entryError)}</div>` : ``}
+          </div>`;
+        }
         return `
         <div class="entry-row">
           <span class="entry-date">${esc(e.date)}</span>
@@ -1636,21 +1659,18 @@ function timesheetTemplate(){
       }).join("")}
     </div>` : `<div class="empty-state">Za tento měsíc zatím žádné záznamy.</div>`;
 
-  const editingEntry = state.editingEntryId ? state.entries.find(e => e.id === state.editingEntryId) : null;
-  const formProject = editingEntry
-    ? (state.config.projects.find(p => p.id === editingEntry.projectId) || projects[0])
-    : projects[0];
-  const formDate = editingEntry ? editingEntry.date : todayStr();
+  const formProject = projects[0];
+  const formDate = todayStr();
   const formPhaseless = !!(formProject && formProject.phaseless);
   const formPhases = getFormPhaseOptions(formProject, formDate);
 
-  const projectOptions = projects.map(p => `<option value="${esc(p.id)}" ${editingEntry && editingEntry.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const projectOptions = projects.map(p => `<option value="${esc(p.id)}">#${esc(p.id)} ${esc(p.name)}</option>`).join("");
   const phaseOptions = formPhases.length
-    ? formPhases.map(p => `<option value="${esc(p.id)}" ${editingEntry && editingEntry.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}${isPhaseClosedOnDate(formProject, p.id, formDate) ? " (uzavřeno)" : ""}</option>`).join("")
+    ? formPhases.map(p => `<option value="${esc(p.id)}">${esc(p.id)} — ${esc(p.name)}${isPhaseClosedOnDate(formProject, p.id, formDate) ? " (uzavřeno)" : ""}</option>`).join("")
     : `<option value="" disabled selected>— žádné fáze —</option>`;
   const canSubmitInitially = formPhaseless || formPhases.length > 0;
   const canLogHours = projects.length > 0;
-  const formNoteRequired = editingEntry ? editingEntry.phaseId === "AD" : (formPhases.length > 0 && formPhases[0].id === "AD");
+  const formNoteRequired = formPhases.length > 0 && formPhases[0].id === "AD";
 
   const timesheetOpen = state.showTimesheet;
   const timesheetBody = `
@@ -1675,24 +1695,22 @@ function timesheetTemplate(){
         <div class="empty-state">Nejsou nastavené žádné projekty. <div><button class="btn btn-outline btn-small" id="goto-admin-btn2">Přidat v administraci</button></div></div>
       ` : `
         <form id="add-entry-form" style="margin-bottom:28px;">
-          ${editingEntry ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující záznam.</div>` : ``}
           <div class="entry-form-row">
             <div class="field-row w-date"><label class="field-label">Datum</label><input type="date" name="date" id="entry-date-input" value="${esc(formDate)}" required></div>
-            <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" min="0.01" step="0.01" placeholder="8" value="${editingEntry ? esc(editingEntry.hours) : ""}" required></div>
+            <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" min="0.01" step="0.01" placeholder="8" required></div>
             <div class="field-row w-select"><label class="field-label">Projekt</label><select name="projectId" id="entry-project-select" required>${projectOptions}</select></div>
             <div class="field-row w-select" id="phase-field-row" style="${formPhaseless ? "display:none;" : ""}">
               <label class="field-label">Fáze</label>
               <select name="phaseId" id="entry-phase-select" ${formPhaseless ? "" : "required"}>${phaseOptions}</select>
             </div>
-            <div class="field-row w-cost"><label class="field-label">Náklady (Kč)</label><input type="number" name="cost" min="0" step="1" placeholder="0" value="${editingEntry ? esc(editingEntry.cost) : ""}"></div>
-            <div class="field-row grow"><label class="field-label" id="entry-note-label">Poznámka${formNoteRequired ? " *" : ""}</label><input type="text" name="note" id="entry-note-input" placeholder="${formNoteRequired ? "povinné u autorského dozoru" : "nepovinné"}" value="${editingEntry ? esc(editingEntry.note||"") : ""}" ${formNoteRequired ? "required" : ""}></div>
+            <div class="field-row w-cost"><label class="field-label">Náklady (Kč)</label><input type="number" name="cost" min="0" step="1" placeholder="0"></div>
+            <div class="field-row grow"><label class="field-label" id="entry-note-label">Poznámka${formNoteRequired ? " *" : ""}</label><input type="text" name="note" id="entry-note-input" placeholder="${formNoteRequired ? "povinné u autorského dozoru" : "nepovinné"}" ${formNoteRequired ? "required" : ""}></div>
             <div class="field-row w-btn" style="display:flex;gap:8px;">
-              <button class="btn btn-sage" type="submit" ${canSubmitInitially ? "" : "disabled"}>${editingEntry ? "Uložit změny" : "Přidat záznam"}</button>
-              ${editingEntry ? `<button class="btn btn-outline" type="button" id="cancel-edit-btn">Zrušit</button>` : ``}
+              <button class="btn btn-sage" type="submit" ${canSubmitInitially ? "" : "disabled"}>Přidat záznam</button>
             </div>
           </div>
           <div id="phase-warning" class="q-hint" style="color:var(--danger);margin-top:8px;${canSubmitInitially ? "display:none;" : ""}">Tento projekt nemá pro zvolené datum dostupnou žádnou fázi (buď žádná není přiřazená, nebo jsou k tomuto datu uzavřené).</div>
-          ${state.entryError ? `<div class="q-hint" style="color:var(--danger);margin-top:8px;">${esc(state.entryError)}</div>` : ``}
+          ${state.entryError && !state.editingEntryId ? `<div class="q-hint" style="color:var(--danger);margin-top:8px;">${esc(state.entryError)}</div>` : ``}
         </form>
       `}
 
@@ -2995,13 +3013,10 @@ function bindApp(){
   });
 
   document.querySelectorAll('[data-action="edit-entry"]').forEach(b => b.onclick = () => {
-    setState({ editingEntryId: b.getAttribute("data-id") });
-    const formEl = document.getElementById("add-entry-form");
-    if(formEl) formEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    setState({ editingEntryId: b.getAttribute("data-id"), entryError: "" });
+    const rowEl = document.querySelector(`[data-my-entry-edit-row="${b.getAttribute("data-id")}"]`);
+    if(rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
   });
-
-  const cancelEditBtn = document.getElementById("cancel-edit-btn");
-  if(cancelEditBtn) cancelEditBtn.onclick = () => setState({ editingEntryId: null, entryError: "" });
 
   const addEntryForm = document.getElementById("add-entry-form");
   if(addEntryForm) addEntryForm.addEventListener("submit", async e => {
@@ -3017,17 +3032,85 @@ function bindApp(){
       return;
     }
     state.entryError = "";
-
-    if(state.editingEntryId){
-      const idx = state.entries.findIndex(en => en.id === state.editingEntryId);
-      if(idx !== -1) state.entries[idx] = { ...state.entries[idx], ...fields };
-      state.editingEntryId = null;
-    } else {
-      state.entries.push({ id: uid("e"), ...fields });
-    }
+    state.entries.push({ id: uid("e"), ...fields });
     await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
     showStamp();
     render();
+  });
+
+  document.querySelectorAll('[data-action="cancel-my-entry-edit"]').forEach(b => b.onclick = () => {
+    setState({ editingEntryId: null, entryError: "" });
+  });
+
+  function refreshMyEntryEditPhases(row, entry){
+    const projectSelect = row.querySelector(".my-entry-edit-project");
+    const phaseSelect = row.querySelector(".my-entry-edit-phase");
+    const dateInput = row.querySelector(".my-entry-edit-date");
+    if(!projectSelect || !phaseSelect || !dateInput) return;
+    const project = state.config.projects.find(p => p.id === projectSelect.value);
+    if(project && project.phaseless){
+      phaseSelect.innerHTML = `<option value="">—</option>`;
+      phaseSelect.disabled = true;
+      return;
+    }
+    phaseSelect.disabled = false;
+    const dateStr = dateInput.value;
+    const prevValue = phaseSelect.value;
+    const keepClosedAnyway = (entry.date === dateStr) ? entry.phaseId : null;
+    const availablePhases = phasesForProject(project).filter(ph => ph.id === keepClosedAnyway || !isPhaseClosedOnDate(project, ph.id, dateStr));
+    phaseSelect.innerHTML = availablePhases.length
+      ? availablePhases.map(p => `<option value="${esc(p.id)}">${esc(p.id)} — ${esc(p.name)}${isPhaseClosedOnDate(project, p.id, dateStr) ? " (uzavřeno)" : ""}</option>`).join("")
+      : `<option value="" disabled selected>— žádné fáze —</option>`;
+    if(availablePhases.some(p => p.id === prevValue)) phaseSelect.value = prevValue;
+  }
+
+  document.querySelectorAll("[data-my-entry-edit-row]").forEach(row => {
+    const entryId = row.getAttribute("data-my-entry-edit-row");
+    const entry = state.entries.find(en => en.id === entryId);
+    if(!entry) return;
+    const projectSelect = row.querySelector(".my-entry-edit-project");
+    const dateInput = row.querySelector(".my-entry-edit-date");
+    if(projectSelect) projectSelect.addEventListener("change", () => refreshMyEntryEditPhases(row, entry));
+    if(dateInput) dateInput.addEventListener("change", () => refreshMyEntryEditPhases(row, entry));
+  });
+
+  document.querySelectorAll('[data-action="save-my-entry-edit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest("[data-my-entry-edit-row]");
+    if(!row) return;
+    const entryId = row.getAttribute("data-my-entry-edit-row");
+    const idx = state.entries.findIndex(en => en.id === entryId);
+    if(idx === -1) return;
+    const date = row.querySelector(".my-entry-edit-date").value;
+    const projectId = row.querySelector(".my-entry-edit-project").value;
+    const project = state.config.projects.find(p => p.id === projectId);
+    const phaseSelect = row.querySelector(".my-entry-edit-phase");
+    const isPhaseless = !!(project && project.phaseless);
+    const phaseId = isPhaseless ? "" : phaseSelect.value;
+    const hours = row.querySelector(".my-entry-edit-hours").value;
+    const cost = row.querySelector(".my-entry-edit-cost").value;
+    const note = row.querySelector(".my-entry-edit-note").value.trim();
+    if(!date || !(Number(hours) > 0) || !project) return;
+    if(!isPhaseless && !phaseId){ setState({ entryError: "Vyberte fázi." }); return; }
+    if(phaseId === "AD" && !note){ setState({ entryError: "U autorského dozoru je poznámka povinná." }); return; }
+    if(!isPhaseless && !getFormPhaseOptions(project, date).some(p => p.id === phaseId)){
+      setState({ entryError: "Tato fáze je k zadanému datu uzavřená, hodiny pod ni nelze zapsat." });
+      return;
+    }
+    state.entries[idx] = { ...state.entries[idx], date, projectId, phaseId, hours: Number(hours), cost: cost === "" ? 0 : Number(cost), note };
+    state.editingEntryId = null;
+    state.entryError = "";
+    await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
+    showStamp();
+    render();
+  });
+  document.querySelectorAll("[data-my-entry-edit-row] input").forEach(el => {
+    el.addEventListener("keydown", e => {
+      if(e.key !== "Enter") return;
+      e.preventDefault();
+      const row = el.closest("[data-my-entry-edit-row]");
+      const saveBtn = row && row.querySelector('[data-action="save-my-entry-edit"]');
+      if(saveBtn) saveBtn.click();
+    });
   });
 }
 
