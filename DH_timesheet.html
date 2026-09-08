@@ -939,7 +939,10 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   const pageHeight = doc.internal.pageSize.getHeight();
   const marginX = 18;
 
-  try{ doc.addImage(BRAND_LOGO, "PNG", pageWidth/2 - 13, 12, 26, 26); }catch(e){}
+  try{
+    const logoH = 15, logoW = logoH * (500/278);
+    doc.addImage(BRAND_LOGO, "PNG", pageWidth/2 - logoW/2, 12, logoW, logoH);
+  }catch(e){}
 
   doc.setFont("Lato", "bold");
   doc.setFontSize(19);
@@ -962,7 +965,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     doc.text(label, marginX, y);
     doc.setFont("Lato", "normal");
     doc.text(String(value), pageWidth - marginX, y, { align: "right" });
-    y += 6;
+    y += 5.5;
   });
 
   const bodyRows = entries.map(e => {
@@ -989,11 +992,11 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   });
 
   doc.autoTable({
-    startY: y + 8,
+    startY: y + 6,
     head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]],
     body: bodyRows,
-    styles: { font: "Lato", fontSize: 8, cellPadding: 2, valign: "middle" },
-    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
+    styles: { font: "Lato", fontSize: 7, cellPadding: 1.4, valign: "middle" },
+    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 6.5 },
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
       0: { cellWidth: 18 },
@@ -1014,7 +1017,11 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   const totalExtra = (extraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
   const grandTotal = totalBillable + totalEntryCosts + totalExtra;
 
-  let ty = doc.lastAutoTable.finalY + 12;
+  let ty = doc.lastAutoTable.finalY + 10;
+  if(ty + 50 > pageHeight - 20){
+    doc.addPage();
+    ty = 24;
+  }
   const boxLeft = pageWidth - marginX - 80;
   doc.setFontSize(10);
   doc.setFont("Lato", "normal");
@@ -1030,7 +1037,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   doc.setTextColor(255,255,255);
   doc.setFont("Lato", "bold");
   doc.text("CENA CELKEM S DPH", boxLeft, ty);
-  doc.text(fmtKc(grandTotal), pageWidth - marginX, ty, { align: "right" });
+  doc.text(fmtKc(grandTotal), pageWidth - marginX - 2, ty, { align: "right" });
   doc.setTextColor(0,0,0);
 
   if(signedBy){
@@ -1039,9 +1046,13 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     doc.text(signedBy, pageWidth - marginX, ty + 24, { align: "right" });
   }
 
-  doc.setFontSize(8);
-  doc.setTextColor(120,120,120);
-  doc.text("DREAM HOMES ARCHITECTURE s.r.o.  |  IČ: 091 118 41  |  588 45, dolní cerekev  |  www.dreamhomes.cz", pageWidth/2, pageHeight - 12, { align: "center" });
+  const pageCount = doc.internal.getNumberOfPages();
+  for(let i = 1; i <= pageCount; i++){
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(120,120,120);
+    doc.text("DREAM HOMES ARCHITECTURE s.r.o.  |  IČ: 091 118 41  |  588 45, dolní cerekev  |  www.dreamhomes.cz", pageWidth/2, pageHeight - 12, { align: "center" });
+  }
 
   return doc;
 }
