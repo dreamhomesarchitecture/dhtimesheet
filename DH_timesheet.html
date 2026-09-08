@@ -237,8 +237,8 @@
   .entry-row-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
-  .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 120px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
-  .entry-row-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 120px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-clientexp:hover{ border-color: var(--soft); }
   .client-export-note{ font-size:13px; padding:8px 10px; }
 
@@ -861,18 +861,19 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
     ["datum", fmtDateDotsPadded(todayStr())],
     ["investor", project.investor || ""],
     [],
-    ["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM"]
+    ["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]
   ];
 
-  let totalHours = 0, totalBillable = 0;
+  let totalHours = 0, totalBillable = 0, totalEntryCosts = 0;
   entries.forEach(e => {
     const phase = state.config.phases.find(p => p.id === e.phaseId);
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
     const hours = Number(e.hours || 0);
     const billable = hours * rate;
+    const cost = Number(e.cost || 0);
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
     const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
-    totalHours += hours; totalBillable += billable;
+    totalHours += hours; totalBillable += billable; totalEntryCosts += cost;
     aoa.push([
       fmtDateDots(e.date),
       phase ? `${phase.name} [${phase.id}]` : (e.phaseId || ""),
@@ -880,7 +881,8 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
       surname,
       hours,
       rate,
-      billable
+      billable,
+      cost || ""
     ]);
   });
 
@@ -888,10 +890,10 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
   (extraCosts || []).forEach(item => {
     const amount = Number(item.amount || 0);
     totalExtra += amount;
-    aoa.push(["", "", item.description || "", "", "", "", amount]);
+    aoa.push(["", "", item.description || "", "", "", "", amount, ""]);
   });
 
-  const grandTotal = totalBillable + totalExtra;
+  const grandTotal = totalBillable + totalEntryCosts + totalExtra;
   aoa.push([]);
   aoa.push(["", "", "", "", "", "CENA", grandTotal]);
   aoa.push(["", "", "", "", "", "DPH", "0%"]);
@@ -900,7 +902,7 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
   if(signedBy) aoa.push(["", "", "", "", "", "", signedBy]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 45 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 14 }];
+  ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 45 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 14 }, { wch: 14 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Export pro klienta");
   return wb;
@@ -967,6 +969,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     const phase = state.config.phases.find(p => p.id === e.phaseId);
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
     const hours = Number(e.hours || 0);
+    const cost = Number(e.cost || 0);
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
     const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
     return [
@@ -976,37 +979,40 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
       surname,
       hours.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       `CZK ${rate.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `CZK ${(hours*rate).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      `CZK ${(hours*rate).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      cost ? `CZK ${cost.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""
     ];
   });
   (extraCosts || []).forEach(item => {
     const amount = Number(item.amount || 0);
-    bodyRows.push(["", "", item.description || "", "", "", "", `CZK ${amount.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`]);
+    bodyRows.push(["", "", item.description || "", "", "", "", `CZK ${amount.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, ""]);
   });
 
   doc.autoTable({
     startY: y + 8,
-    head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM"]],
+    head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]],
     body: bodyRows,
     styles: { font: "Lato", fontSize: 8, cellPadding: 2, valign: "middle" },
     headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
       0: { cellWidth: 18 },
-      1: { cellWidth: 28 },
+      1: { cellWidth: 26 },
       2: { cellWidth: "auto" },
-      3: { cellWidth: 18 },
-      4: { cellWidth: 16, halign: "right" },
-      5: { cellWidth: 22, halign: "right" },
-      6: { cellWidth: 22, halign: "right" }
+      3: { cellWidth: 16 },
+      4: { cellWidth: 15, halign: "right" },
+      5: { cellWidth: 20, halign: "right" },
+      6: { cellWidth: 20, halign: "right" },
+      7: { cellWidth: 20, halign: "right" }
     },
     margin: { left: marginX, right: marginX }
   });
 
   const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
   const totalBillable = entries.reduce((s,e) => s + Number(e.hours||0) * (Number(state.clientExportRates[e.employeeId]) || 0), 0);
+  const totalEntryCosts = entries.reduce((s,e) => s + Number(e.cost||0), 0);
   const totalExtra = (extraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
-  const grandTotal = totalBillable + totalExtra;
+  const grandTotal = totalBillable + totalEntryCosts + totalExtra;
 
   let ty = doc.lastAutoTable.finalY + 12;
   const boxLeft = pageWidth - marginX - 80;
@@ -1929,7 +1935,8 @@ function adminClientExportTemplate(){
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
     return s + Number(e.hours||0) * rate;
   }, 0);
-  const grandTotal = totalBillable + totalExtra;
+  const totalEntryCosts = sorted.reduce((s,e) => s + Number(e.cost||0), 0);
+  const grandTotal = totalBillable + totalEntryCosts + totalExtra;
 
   const rows = sorted.map(e => {
     const proj = state.config.projects.find(p => p.id === e.projectId);
@@ -1945,6 +1952,7 @@ function adminClientExportTemplate(){
       <span class="entry-num">${fmtH(e.hours)}</span>
       <input type="text" class="client-export-note" data-entry-id="${esc(e.id)}" value="${esc(note)}" placeholder="Popis pro klienta">
       <span class="entry-num">${fmtKc(billable)}</span>
+      <span class="entry-num">${Number(e.cost||0) ? fmtKc(e.cost) : "—"}</span>
     </div>`;
   }).join("");
 
@@ -1953,8 +1961,8 @@ function adminClientExportTemplate(){
     ${filtersActive ? `<button class="btn btn-small" type="button" id="client-export-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
     <p class="q-hint" style="margin:0 0 8px;">Fakturovatelná hodinovka je nezávislá na interní nákladové sazbě — platí jen pro tento export a nikam se neukládá.</p>
     ${rateFormHtml}
-    <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}</p>
-    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span></div>
+    <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}${totalEntryCosts ? ` · <b style="color:var(--ink);">${fmtKc(totalEntryCosts)}</b> ostatní náklady z výkazu` : ``}</p>
+    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span><span>Náklady</span></div>
     <div class="entries">${rows}</div>
     ${extraCostsHtml}
     <p class="q-hint" style="margin:16px 0 0;">Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b></p>
