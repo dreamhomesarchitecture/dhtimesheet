@@ -557,6 +557,7 @@ let state = {
   expandedEmployeeRatesId: null,
   rateError: "",
   adminEntriesFlat: null,
+  hoursOverviewYear: "",
   costs: null,
   costsLoading: false,
   editingCostId: null,
@@ -2596,6 +2597,45 @@ function adminBudgetsTemplate(){
     </form>`;
 }
 
+function adminHoursOverviewTemplate(){
+  if(state.adminEntriesFlat === null){
+    return `<div class="empty-state">Načítání…</div>`;
+  }
+  const entries = state.adminEntriesFlat;
+  const years = [...new Set(entries.map(e => (e.date || "").slice(0, 4)).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  if(!years.length){
+    return `<div class="empty-state">Zatím nejsou zadané žádné hodiny.</div>`;
+  }
+  const selectedYear = (state.hoursOverviewYear && years.includes(state.hoursOverviewYear)) ? state.hoursOverviewYear : years[0];
+  const yearOptions = years.map(y => `<option value="${esc(y)}" ${selectedYear === y ? "selected" : ""}>${esc(y)}</option>`).join("");
+
+  const yearEntries = entries.filter(e => (e.date || "").slice(0, 4) === selectedYear);
+  const totalHours = yearEntries.reduce((s, e) => s + Number(e.hours || 0), 0);
+  const project000Hours = yearEntries.filter(e => e.projectId === "000").reduce((s, e) => s + Number(e.hours || 0), 0);
+  const project002Hours = yearEntries.filter(e => e.projectId === "002").reduce((s, e) => s + Number(e.hours || 0), 0);
+  const netHours = totalHours - project000Hours - project002Hours;
+
+  return `
+    <div class="field-row" style="max-width:200px;margin-bottom:16px;">
+      <label class="field-label">Rok</label>
+      <select id="hours-overview-year">${yearOptions}</select>
+    </div>
+    <div class="form-grid">
+      <div class="field-row">
+        <label class="field-label">Odpracováno celkem — všichni zaměstnanci</label>
+        <div style="padding:12px 0;font-weight:700;font-size:18px;">${fmtH(totalHours)}</div>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Bez projektů 000 (DH) a 002 (OF – nezatříděné)</label>
+        <div style="padding:12px 0;font-weight:700;font-size:18px;">${fmtH(netHours)}</div>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Z toho projekt 000 (DH)</label>
+        <div style="padding:12px 0;font-weight:700;font-size:18px;">${fmtH(project000Hours)}</div>
+      </div>
+    </div>`;
+}
+
 function adminSectionHeader(key, label, rightHtml){
   const isOpen = state.adminOpenSection === key;
   return `
@@ -2753,6 +2793,11 @@ function adminTemplate(){
       <div class="admin-block">
         ${adminSectionHeader("budgets", "Rozpočty")}
         ${state.adminOpenSection === "budgets" ? adminBudgetsTemplate() : ``}
+      </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("hours-overview", "Přehled hodin")}
+        ${state.adminOpenSection === "hours-overview" ? adminHoursOverviewTemplate() : ``}
       </div>
 
       <div class="admin-block">
@@ -3141,11 +3186,14 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
   });
+
+  const hoursOverviewYear = document.getElementById("hours-overview-year");
+  if(hoursOverviewYear) hoursOverviewYear.addEventListener("change", () => setState({ hoursOverviewYear: hoursOverviewYear.value }));
 
   const adminProjectSearchInput = document.getElementById("admin-project-search-input");
   if(adminProjectSearchInput) adminProjectSearchInput.addEventListener("input", () => {
