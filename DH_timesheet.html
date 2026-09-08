@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   :root{
     --canvas: #ffffff;
@@ -923,18 +924,68 @@ function buildCostsWorkbook(costs){
 }
 
 function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDate, signedBy, vatRate){
+  const OLIVE = "FFA4AC7F";
+  const WHITE = "FFFFFFFF";
+  const SOFT = "FF8B887F";
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Export pro klienta");
+  ws.columns = [
+    { width: 11 }, { width: 24 }, { width: 46 }, { width: 14 },
+    { width: 11 }, { width: 15 }, { width: 14 }, { width: 13 }
+  ];
+
+  const titleRow = ws.addRow(["výkon autorského dozoru"]);
+  ws.mergeCells(titleRow.number, 1, titleRow.number, 8);
+  titleRow.getCell(1).font = { bold: true, size: 16 };
+  titleRow.getCell(1).alignment = { horizontal: "center" };
+  titleRow.height = 24;
+
   const rangeLabel = [czechMonthYear(fromDate), czechMonthYear(toDate)].filter(Boolean).join(" – ");
-  const aoa = [
-    ["výkon autorského dozoru"],
-    rangeLabel ? [rangeLabel] : [],
-    [],
+  if(rangeLabel){
+    const subRow = ws.addRow([rangeLabel]);
+    ws.mergeCells(subRow.number, 1, subRow.number, 8);
+    subRow.getCell(1).font = { size: 11, color: { argb: SOFT } };
+    subRow.getCell(1).alignment = { horizontal: "center" };
+  }
+  ws.addRow([]);
+
+  [
     ["název stavby", project.name || ""],
     ["číslo zakázky", `${project.id}${jobNumberSuffix(project.name)}`],
     ["datum", fmtDateDotsPadded(todayStr())],
-    ["investor", project.investor || ""],
-    [],
-    ["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]
-  ];
+    ["investor", project.investor || ""]
+  ].forEach(([label, value]) => {
+    const row = ws.addRow([label]);
+    row.getCell(1).font = { bold: true };
+    ws.mergeCells(row.number, 2, row.number, 8);
+    const valueCell = row.getCell(2);
+    valueCell.value = value;
+    valueCell.alignment = { horizontal: "right" };
+  });
+  ws.addRow([]);
+
+  const headerRow = ws.addRow(["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]);
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: WHITE }, size: 10 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: OLIVE } };
+    cell.alignment = { vertical: "middle" };
+  });
+  headerRow.height = 18;
+
+  const thinGray = { style: "thin", color: { argb: "FFE7E4DC" } };
+  function addDataRow(values, opts){
+    opts = opts || {};
+    const row = ws.addRow(values);
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.border = { bottom: thinGray };
+      if(colNumber >= 5 && colNumber <= 8) cell.alignment = { horizontal: "right" };
+      if(opts.wrap && colNumber === 3) cell.alignment = { wrapText: true, vertical: "top" };
+    });
+    if(values[4] !== "" && values[4] !== undefined) row.getCell(5).numFmt = "0.00";
+    if(values[6] !== "" && values[6] !== undefined && typeof values[6] === "number") row.getCell(7).numFmt = '#,##0" Kč"';
+    if(typeof values[7] === "number") row.getCell(8).numFmt = '#,##0" Kč"';
+    return row;
+  }
 
   let totalHours = 0, totalBillable = 0, totalEntryCosts = 0;
   entries.forEach(e => {
@@ -946,7 +997,7 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
     const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
     totalHours += hours; totalBillable += billable; totalEntryCosts += cost;
-    aoa.push([
+    addDataRow([
       fmtDateDots(e.date),
       phase ? `${phase.name} [${phase.id}]` : (e.phaseId || ""),
       note,
@@ -955,34 +1006,59 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
       rate,
       billable,
       cost || ""
-    ]);
+    ], { wrap: true });
   });
 
   let totalExtra = 0;
   (extraCosts || []).forEach(item => {
     const amount = Number(item.amount || 0);
     totalExtra += amount;
-    aoa.push(["", "", item.description || "", "", "", "", amount, ""]);
+    addDataRow(["", "", item.description || "", "", "", "", amount, ""]);
   });
 
   const subtotal = totalBillable + totalEntryCosts + totalExtra;
   const vatPct = Number(vatRate) || 0;
   const vatAmount = subtotal * vatPct / 100;
   const grandTotal = subtotal + vatAmount;
-  aoa.push([]);
-  aoa.push(["", "", "", "", "", "CENA", subtotal]);
-  aoa.push(["", "", "", "", "", "DPH", `${vatPct} %`]);
-  aoa.push(["", "", "", "", "", "CENA CELKEM S DPH", grandTotal]);
-  aoa.push([]);
-  if(signedBy) aoa.push(["", "", "", "", "", "", signedBy]);
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 45 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 14 }, { wch: 14 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Export pro klienta");
+  ws.addRow([]);
+  const cenaRow = ws.addRow(["", "", "", "", "", "", "CENA", subtotal]);
+  cenaRow.getCell(7).alignment = { horizontal: "right" };
+  cenaRow.getCell(8).alignment = { horizontal: "right" };
+  cenaRow.getCell(8).numFmt = '#,##0" Kč"';
+
+  const dphRow = ws.addRow(["", "", "", "", "", "", "DPH", `${vatPct} %`]);
+  dphRow.getCell(7).alignment = { horizontal: "right" };
+  dphRow.getCell(8).alignment = { horizontal: "right" };
+
+  const totalRow = ws.addRow(["", "", "", "", "", "", "CENA CELKEM S DPH", grandTotal]);
+  [totalRow.getCell(7), totalRow.getCell(8)].forEach(cell => {
+    cell.font = { bold: true, color: { argb: WHITE } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: OLIVE } };
+  });
+  totalRow.getCell(7).alignment = { horizontal: "right" };
+  totalRow.getCell(8).alignment = { horizontal: "right" };
+  totalRow.getCell(8).numFmt = '#,##0" Kč"';
+
+  ws.addRow([]);
+  if(signedBy){
+    const signRow = ws.addRow(["", "", "", "", "", "", "", signedBy]);
+    signRow.getCell(8).alignment = { horizontal: "right" };
+  }
+
   return wb;
 }
 
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function arrayBufferToBase64(buffer){
   let binary = "";
   const bytes = new Uint8Array(buffer);
@@ -3683,7 +3759,7 @@ function bindAdmin(){
   const clientExportVatSelect = document.getElementById("client-export-vat");
   if(clientExportVatSelect) clientExportVatSelect.addEventListener("change", () => setState({ clientExportVatRate: Number(clientExportVatSelect.value) }));
   const clientExportXlsxBtn = document.getElementById("client-export-xlsx-btn");
-  if(clientExportXlsxBtn) clientExportXlsxBtn.onclick = () => {
+  if(clientExportXlsxBtn) clientExportXlsxBtn.onclick = async () => {
     const project = state.config.projects.find(p => p.id === state.clientExportProjectId);
     if(!project) return;
     const entries = state.adminEntriesFlat || [];
@@ -3696,8 +3772,18 @@ function bindAdmin(){
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
     const extraCosts = state.clientExportExtraCosts || [];
     if(!filtered.length && !extraCosts.length) return;
-    const wb = buildClientExportWorkbook(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy, Number(state.clientExportVatRate) || 0);
-    XLSX.writeFile(wb, `export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.xlsx`);
+    clientExportXlsxBtn.disabled = true;
+    const origText = clientExportXlsxBtn.textContent;
+    clientExportXlsxBtn.textContent = "Generuji…";
+    try{
+      const wb = buildClientExportWorkbook(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy, Number(state.clientExportVatRate) || 0);
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      downloadBlob(blob, `export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.xlsx`);
+    } finally {
+      clientExportXlsxBtn.disabled = false;
+      clientExportXlsxBtn.textContent = origText;
+    }
   };
   const clientExportSignedByInput = document.getElementById("client-export-signed-by");
   if(clientExportSignedByInput) clientExportSignedByInput.addEventListener("change", () => setState({ clientExportSignedBy: clientExportSignedByInput.value }));
