@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --canvas: #ffffff;
@@ -567,6 +569,7 @@ let state = {
   clientExportOverrides: {},
   clientExportRates: {},
   clientExportExtraCosts: [],
+  clientExportSignedBy: "Kamil Plavec",
   closedProjectsYear: "",
   closedProjectsMode: "project",
   closedProjectsPhaseId: "",
@@ -685,6 +688,25 @@ function fmtMonthLabel(monthStr){
   const [y, m] = monthStr.split("-").map(Number);
   const name = MONTH_NAMES_CS[m-1] || monthStr;
   return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${y}`;
+}
+function czechMonthYear(dateStr){
+  if(!dateStr) return "";
+  const [y, m] = dateStr.split("-").map(Number);
+  return `${MONTH_NAMES_CS[m-1] || ""} ${y}`;
+}
+function fmtDateDots(dateStr){
+  if(!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${d}.${m}.${y}`;
+}
+function fmtDateDotsPadded(dateStr){
+  if(!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${String(d).padStart(2,"0")}.${String(m).padStart(2,"0")}.${y}`;
+}
+function jobNumberSuffix(name){
+  const letters = String(name||"").replace(/[^\p{L}]/gu, "");
+  return letters.slice(0,3).toLowerCase();
 }
 function shiftMonth(monthStr, delta){
   const [y, m] = monthStr.split("-").map(Number);
@@ -828,49 +850,194 @@ function buildCostsWorkbook(costs){
   return wb;
 }
 
-function buildClientExportWorkbook(entries, extraCosts){
-  const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
-  const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
-  const header = ["Datum", "Zaměstnanec", "Projekt", "Fáze", "Hodiny", "Popis", "Sazba (Kč/h)", "Fakturováno (Kč)"];
+function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDate, signedBy){
+  const rangeLabel = [czechMonthYear(fromDate), czechMonthYear(toDate)].filter(Boolean).join(" – ");
+  const aoa = [
+    ["výkon autorského dozoru"],
+    rangeLabel ? [rangeLabel] : [],
+    [],
+    ["název stavby", project.name || ""],
+    ["číslo zakázky", `${project.id}${jobNumberSuffix(project.name)}`],
+    ["datum", fmtDateDotsPadded(todayStr())],
+    ["investor", project.investor || ""],
+    [],
+    ["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM"]
+  ];
+
   let totalHours = 0, totalBillable = 0;
-  const rows = entries.map(e => {
+  entries.forEach(e => {
+    const phase = state.config.phases.find(p => p.id === e.phaseId);
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
     const hours = Number(e.hours || 0);
     const billable = hours * rate;
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
+    const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
     totalHours += hours; totalBillable += billable;
-    return [
-      e.date || "",
-      e.employeeName || "",
-      projectsById[e.projectId] || e.projectId || "",
-      phasesById[e.phaseId] || e.phaseId || "",
-      hours,
+    aoa.push([
+      fmtDateDots(e.date),
+      phase ? `${phase.name} [${phase.id}]` : (e.phaseId || ""),
       note,
+      surname,
+      hours,
       rate,
       billable
-    ];
+    ]);
   });
-  rows.push([]);
-  rows.push(["", "", "", "Celkem hodiny", totalHours, "", "", totalBillable]);
 
   let totalExtra = 0;
-  if((extraCosts || []).length){
-    rows.push([]);
-    rows.push(["", "", "", "", "", "Ostatní náklady", "", ""]);
-    extraCosts.forEach(item => {
-      const amount = Number(item.amount || 0);
-      totalExtra += amount;
-      rows.push(["", "", "", "", "", item.description || "", "", amount]);
-    });
-  }
-  rows.push([]);
-  rows.push(["", "", "", "", "", "Celkem k fakturaci", "", totalBillable + totalExtra]);
+  (extraCosts || []).forEach(item => {
+    const amount = Number(item.amount || 0);
+    totalExtra += amount;
+    aoa.push(["", "", item.description || "", "", "", "", amount]);
+  });
 
-  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws["!cols"] = [{ wch: 11 }, { wch: 20 }, { wch: 28 }, { wch: 8 }, { wch: 9 }, { wch: 45 }, { wch: 13 }, { wch: 16 }];
+  const grandTotal = totalBillable + totalExtra;
+  aoa.push([]);
+  aoa.push(["", "", "", "", "", "CENA", grandTotal]);
+  aoa.push(["", "", "", "", "", "DPH", "0%"]);
+  aoa.push(["", "", "", "", "", "CENA CELKEM S DPH", grandTotal]);
+  aoa.push([]);
+  if(signedBy) aoa.push(["", "", "", "", "", "", signedBy]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 45 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 14 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Export pro klienta");
   return wb;
+}
+
+function arrayBufferToBase64(buffer){
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for(let i = 0; i < bytes.length; i += chunkSize){
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+let pdfFontCache = null;
+async function ensurePdfFont(doc){
+  if(!pdfFontCache){
+    const [regBuf, boldBuf] = await Promise.all([
+      fetch("https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lato/Lato-Regular.ttf").then(r => r.arrayBuffer()),
+      fetch("https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lato/Lato-Bold.ttf").then(r => r.arrayBuffer())
+    ]);
+    pdfFontCache = { regular: arrayBufferToBase64(regBuf), bold: arrayBufferToBase64(boldBuf) };
+  }
+  doc.addFileToVFS("Lato-Regular.ttf", pdfFontCache.regular);
+  doc.addFont("Lato-Regular.ttf", "Lato", "normal");
+  doc.addFileToVFS("Lato-Bold.ttf", pdfFontCache.bold);
+  doc.addFont("Lato-Bold.ttf", "Lato", "bold");
+}
+
+async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDate, signedBy){
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  await ensurePdfFont(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 18;
+
+  try{ doc.addImage(BRAND_LOGO, "PNG", pageWidth/2 - 13, 12, 26, 26); }catch(e){}
+
+  doc.setFont("Lato", "bold");
+  doc.setFontSize(19);
+  doc.text("výkon autorského dozoru", pageWidth/2, 46, { align: "center" });
+  doc.setFont("Lato", "normal");
+  doc.setFontSize(11);
+  const rangeLabel = [czechMonthYear(fromDate), czechMonthYear(toDate)].filter(Boolean).join(" – ");
+  if(rangeLabel) doc.text(rangeLabel, pageWidth/2, 53, { align: "center" });
+
+  let y = 68;
+  const infoRows = [
+    ["název stavby", project.name || ""],
+    ["číslo zakázky", `${project.id}${jobNumberSuffix(project.name)}`],
+    ["datum", fmtDateDotsPadded(todayStr())],
+    ["investor", project.investor || ""]
+  ];
+  doc.setFontSize(10);
+  infoRows.forEach(([label, value]) => {
+    doc.setFont("Lato", "bold");
+    doc.text(label, marginX, y);
+    doc.setFont("Lato", "normal");
+    doc.text(String(value), pageWidth - marginX, y, { align: "right" });
+    y += 6;
+  });
+
+  const bodyRows = entries.map(e => {
+    const phase = state.config.phases.find(p => p.id === e.phaseId);
+    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const hours = Number(e.hours || 0);
+    const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
+    const surname = String(e.employeeName || "").trim().split(/\s+/).pop() || "";
+    return [
+      fmtDateDots(e.date),
+      phase ? `${phase.name} [${phase.id}]` : (e.phaseId || ""),
+      note,
+      surname,
+      hours.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      `CZK ${rate.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `CZK ${(hours*rate).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    ];
+  });
+  (extraCosts || []).forEach(item => {
+    const amount = Number(item.amount || 0);
+    bodyRows.push(["", "", item.description || "", "", "", "", `CZK ${amount.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`]);
+  });
+
+  doc.autoTable({
+    startY: y + 8,
+    head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM"]],
+    body: bodyRows,
+    styles: { font: "Lato", fontSize: 8, cellPadding: 2, valign: "middle" },
+    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [246,245,241] },
+    columnStyles: {
+      0: { cellWidth: 18 },
+      1: { cellWidth: 28 },
+      2: { cellWidth: "auto" },
+      3: { cellWidth: 18 },
+      4: { cellWidth: 16, halign: "right" },
+      5: { cellWidth: 22, halign: "right" },
+      6: { cellWidth: 22, halign: "right" }
+    },
+    margin: { left: marginX, right: marginX }
+  });
+
+  const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
+  const totalBillable = entries.reduce((s,e) => s + Number(e.hours||0) * (Number(state.clientExportRates[e.employeeId]) || 0), 0);
+  const totalExtra = (extraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
+  const grandTotal = totalBillable + totalExtra;
+
+  let ty = doc.lastAutoTable.finalY + 12;
+  const boxLeft = pageWidth - marginX - 80;
+  doc.setFontSize(10);
+  doc.setFont("Lato", "normal");
+  doc.text("CENA", boxLeft, ty);
+  doc.text(fmtKc(grandTotal), pageWidth - marginX, ty, { align: "right" });
+  ty += 6;
+  doc.text("DPH", boxLeft, ty);
+  doc.text("0%", pageWidth - marginX, ty, { align: "right" });
+  ty += 4;
+  doc.setFillColor(164,172,127);
+  doc.rect(boxLeft - 3, ty, 80 + 3, 9, "F");
+  ty += 6.5;
+  doc.setTextColor(255,255,255);
+  doc.setFont("Lato", "bold");
+  doc.text("CENA CELKEM S DPH", boxLeft, ty);
+  doc.text(fmtKc(grandTotal), pageWidth - marginX, ty, { align: "right" });
+  doc.setTextColor(0,0,0);
+
+  if(signedBy){
+    doc.setFont("Lato", "normal");
+    doc.setFontSize(10);
+    doc.text(signedBy, pageWidth - marginX, ty + 24, { align: "right" });
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(120,120,120);
+  doc.text("DREAM HOMES ARCHITECTURE s.r.o.  |  IČ: 091 118 41  |  588 45, dolní cerekev  |  www.dreamhomes.cz", pageWidth/2, pageHeight - 12, { align: "center" });
+
+  return doc;
 }
 
 async function renameProjectIdEverywhere(oldId, newId){
@@ -1729,8 +1896,22 @@ function adminClientExportTemplate(){
       </div>
     </div>`;
 
+  const selectedProject = state.clientExportProjectId ? state.config.projects.find(p => p.id === state.clientExportProjectId) : null;
+  const exportButtonsHtml = `
+    <div style="margin-top:16px;">
+      ${selectedProject ? `
+      <div class="form-grid" style="margin-bottom:10px;max-width:320px;">
+        <div class="field-row"><label class="field-label">Podepsal(a)</label><input type="text" id="client-export-signed-by" value="${esc(state.clientExportSignedBy)}"></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button>
+        <button class="btn btn-outline btn-small" type="button" id="client-export-pdf-btn">Exportovat pro klienta (PDF)</button>
+      </div>
+      ` : `<p class="q-hint" style="margin:0;">Pro export vyberte konkrétní projekt ve filtru.</p>`}
+    </div>`;
+
   if(!sorted.length){
-    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}</div>${extraCostsHtml}${extraCosts.length ? `<div style="margin-top:16px;"><button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button></div>` : ``}`;
+    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}</div>${extraCostsHtml}${extraCosts.length ? exportButtonsHtml : ``}`;
   }
 
   const employeeIdsPresent = [...new Set(sorted.map(e => e.employeeId))];
@@ -1777,7 +1958,7 @@ function adminClientExportTemplate(){
     <div class="entries">${rows}</div>
     ${extraCostsHtml}
     <p class="q-hint" style="margin:16px 0 0;">Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b></p>
-    <div style="margin-top:16px;"><button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button></div>`;
+    ${exportButtonsHtml}`;
 }
 
 function projectClosedDate(p){
@@ -3361,6 +3542,8 @@ function bindAdmin(){
   });
   const clientExportXlsxBtn = document.getElementById("client-export-xlsx-btn");
   if(clientExportXlsxBtn) clientExportXlsxBtn.onclick = () => {
+    const project = state.config.projects.find(p => p.id === state.clientExportProjectId);
+    if(!project) return;
     const entries = state.adminEntriesFlat || [];
     const filtered = entries.filter(e =>
       (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
@@ -3370,8 +3553,34 @@ function bindAdmin(){
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
     const extraCosts = state.clientExportExtraCosts || [];
     if(!filtered.length && !extraCosts.length) return;
-    const wb = buildClientExportWorkbook(filtered, extraCosts);
-    XLSX.writeFile(wb, `export-klient-${new Date().toISOString().slice(0,10)}.xlsx`);
+    const wb = buildClientExportWorkbook(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy);
+    XLSX.writeFile(wb, `export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+  const clientExportSignedByInput = document.getElementById("client-export-signed-by");
+  if(clientExportSignedByInput) clientExportSignedByInput.addEventListener("change", () => setState({ clientExportSignedBy: clientExportSignedByInput.value }));
+  const clientExportPdfBtn = document.getElementById("client-export-pdf-btn");
+  if(clientExportPdfBtn) clientExportPdfBtn.onclick = async () => {
+    const project = state.config.projects.find(p => p.id === state.clientExportProjectId);
+    if(!project) return;
+    const entries = state.adminEntriesFlat || [];
+    const filtered = entries.filter(e =>
+      (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
+      (!state.clientExportTo || e.date <= state.clientExportTo) &&
+      (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
+      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
+    ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
+    const extraCosts = state.clientExportExtraCosts || [];
+    if(!filtered.length && !extraCosts.length) return;
+    clientExportPdfBtn.disabled = true;
+    const origText = clientExportPdfBtn.textContent;
+    clientExportPdfBtn.textContent = "Generuji…";
+    try{
+      const doc = await buildClientExportPdf(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy);
+      doc.save(`export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.pdf`);
+    } finally {
+      clientExportPdfBtn.disabled = false;
+      clientExportPdfBtn.textContent = origText;
+    }
   };
 
   const closedProjectsYear = document.getElementById("closed-projects-year");
