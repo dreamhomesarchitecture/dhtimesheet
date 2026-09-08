@@ -237,8 +237,8 @@
   .entry-row-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
-  .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
-  .entry-row-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-clientexp:hover{ border-color: var(--soft); }
   .client-export-note{ font-size:13px; padding:8px 10px; }
 
@@ -579,6 +579,8 @@ let state = {
   clientExportCostOverrides: {},
   clientExportExtraCosts: [],
   clientExportSignedBy: "Kamil Plavec",
+  clientExportExcludedIds: {},
+  clientExportVatRate: 0,
   closedProjectsYear: "",
   closedProjectsMode: "project",
   closedProjectsPhaseId: "",
@@ -920,7 +922,7 @@ function buildCostsWorkbook(costs){
   return wb;
 }
 
-function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDate, signedBy){
+function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDate, signedBy, vatRate){
   const rangeLabel = [czechMonthYear(fromDate), czechMonthYear(toDate)].filter(Boolean).join(" – ");
   const aoa = [
     ["výkon autorského dozoru"],
@@ -963,10 +965,13 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
     aoa.push(["", "", item.description || "", "", "", "", amount, ""]);
   });
 
-  const grandTotal = totalBillable + totalEntryCosts + totalExtra;
+  const subtotal = totalBillable + totalEntryCosts + totalExtra;
+  const vatPct = Number(vatRate) || 0;
+  const vatAmount = subtotal * vatPct / 100;
+  const grandTotal = subtotal + vatAmount;
   aoa.push([]);
-  aoa.push(["", "", "", "", "", "CENA", grandTotal]);
-  aoa.push(["", "", "", "", "", "DPH", "0%"]);
+  aoa.push(["", "", "", "", "", "CENA", subtotal]);
+  aoa.push(["", "", "", "", "", "DPH", `${vatPct} %`]);
   aoa.push(["", "", "", "", "", "CENA CELKEM S DPH", grandTotal]);
   aoa.push([]);
   if(signedBy) aoa.push(["", "", "", "", "", "", signedBy]);
@@ -1002,7 +1007,7 @@ async function ensurePdfFont(doc){
   doc.addFont("Lato-Bold.ttf", "Lato", "bold");
 }
 
-async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDate, signedBy){
+async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDate, signedBy, vatRate){
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
   await ensurePdfFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -1035,7 +1040,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     doc.text(label, marginX, y);
     doc.setFont("Lato", "normal");
     doc.text(String(value), pageWidth - marginX, y, { align: "right" });
-    y += 5.5;
+    y += 6.5;
   });
 
   const bodyRows = entries.map(e => {
@@ -1062,11 +1067,11 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   });
 
   doc.autoTable({
-    startY: y + 6,
+    startY: y + 9,
     head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]],
     body: bodyRows,
-    styles: { font: "Lato", fontSize: 7, cellPadding: 1.4, valign: "middle" },
-    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 6.5 },
+    styles: { font: "Lato", fontSize: 7.5, cellPadding: 1.8, valign: "middle" },
+    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7 },
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
       0: { cellWidth: 18 },
@@ -1085,22 +1090,25 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   const totalBillable = entries.reduce((s,e) => s + clientExportHoursFor(e) * (Number(state.clientExportRates[e.employeeId]) || 0), 0);
   const totalEntryCosts = entries.reduce((s,e) => s + clientExportCostFor(e), 0);
   const totalExtra = (extraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
-  const grandTotal = totalBillable + totalEntryCosts + totalExtra;
+  const subtotal = totalBillable + totalEntryCosts + totalExtra;
+  const vatPct = Number(vatRate) || 0;
+  const vatAmount = subtotal * vatPct / 100;
+  const grandTotal = subtotal + vatAmount;
 
-  let ty = doc.lastAutoTable.finalY + 10;
-  if(ty + 50 > pageHeight - 20){
+  let ty = doc.lastAutoTable.finalY + 14;
+  if(ty + 55 > pageHeight - 25){
     doc.addPage();
-    ty = 24;
+    ty = 26;
   }
   const boxLeft = pageWidth - marginX - 80;
   doc.setFontSize(10);
   doc.setFont("Lato", "normal");
   doc.text("CENA", boxLeft, ty);
-  doc.text(fmtKc(grandTotal), pageWidth - marginX, ty, { align: "right" });
-  ty += 6;
+  doc.text(fmtKc(subtotal), pageWidth - marginX, ty, { align: "right" });
+  ty += 7;
   doc.text("DPH", boxLeft, ty);
-  doc.text("0%", pageWidth - marginX, ty, { align: "right" });
-  ty += 4;
+  doc.text(`${vatPct} %`, pageWidth - marginX, ty, { align: "right" });
+  ty += 5;
   doc.setFillColor(164,172,127);
   doc.rect(boxLeft - 3, ty, 80 + 3, 9, "F");
   ty += 6.5;
@@ -1113,7 +1121,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   if(signedBy){
     doc.setFont("Lato", "normal");
     doc.setFontSize(10);
-    doc.text(signedBy, pageWidth - marginX, ty + 24, { align: "right" });
+    doc.text(signedBy, pageWidth - marginX, ty + 28, { align: "right" });
   }
 
   const pageCount = doc.internal.getNumberOfPages();
@@ -1961,9 +1969,11 @@ function adminClientExportTemplate(){
     (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
     (!state.clientExportTo || e.date <= state.clientExportTo) &&
     (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
-    (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
+    (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId) &&
+    !state.clientExportExcludedIds[e.id]
   );
   const sorted = filtered.slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
+  const excludedCount = Object.keys(state.clientExportExcludedIds).filter(id => state.clientExportExcludedIds[id]).length;
 
   const extraCosts = state.clientExportExtraCosts || [];
   const totalExtra = extraCosts.reduce((s,i) => s + Number(i.amount||0), 0);
@@ -1987,8 +1997,12 @@ function adminClientExportTemplate(){
   const exportButtonsHtml = `
     <div style="margin-top:16px;">
       ${selectedProject ? `
-      <div class="form-grid" style="margin-bottom:10px;max-width:320px;">
+      <div class="form-grid" style="margin-bottom:10px;max-width:480px;">
         <div class="field-row"><label class="field-label">Podepsal(a)</label><input type="text" id="client-export-signed-by" value="${esc(state.clientExportSignedBy)}"></div>
+        <div class="field-row"><label class="field-label">DPH</label><select id="client-export-vat">
+          <option value="0" ${Number(state.clientExportVatRate) === 0 ? "selected" : ""}>0 %</option>
+          <option value="21" ${Number(state.clientExportVatRate) === 21 ? "selected" : ""}>21 %</option>
+        </select></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button>
@@ -1998,7 +2012,7 @@ function adminClientExportTemplate(){
     </div>`;
 
   if(!sorted.length){
-    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}</div>${extraCostsHtml}${extraCosts.length ? exportButtonsHtml : ``}`;
+    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}${excludedCount ? ` (${excludedCount} odebráno z exportu — <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn">Vrátit</button>)` : ``}</div>${extraCostsHtml}${extraCosts.length ? exportButtonsHtml : ``}`;
   }
 
   const employeeIdsPresent = [...new Set(sorted.map(e => e.employeeId))];
@@ -2017,7 +2031,10 @@ function adminClientExportTemplate(){
     return s + clientExportHoursFor(e) * rate;
   }, 0);
   const totalEntryCosts = sorted.reduce((s,e) => s + clientExportCostFor(e), 0);
-  const grandTotal = totalBillable + totalEntryCosts + totalExtra;
+  const subtotal = totalBillable + totalEntryCosts + totalExtra;
+  const vatRate = Number(state.clientExportVatRate) || 0;
+  const vatAmount = subtotal * vatRate / 100;
+  const grandTotal = subtotal + vatAmount;
 
   const rows = sorted.map(e => {
     const proj = state.config.projects.find(p => p.id === e.projectId);
@@ -2036,6 +2053,7 @@ function adminClientExportTemplate(){
       <input type="text" class="client-export-note" data-entry-id="${esc(e.id)}" value="${esc(note)}" placeholder="Popis pro klienta">
       <span class="entry-num">${fmtKc(billable)}</span>
       <input type="number" min="0" step="1" class="client-export-cost" data-entry-id="${esc(e.id)}" value="${costVal ? esc(costVal) : ""}" placeholder="0" style="padding:6px 8px;font-size:13px;">
+      <button type="button" class="icon-btn" data-action="exclude-client-export-entry" data-id="${esc(e.id)}" title="Odebrat z tohoto exportu">×</button>
     </div>`;
   }).join("");
 
@@ -2044,11 +2062,15 @@ function adminClientExportTemplate(){
     ${filtersActive ? `<button class="btn btn-small" type="button" id="client-export-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
     <p class="q-hint" style="margin:0 0 8px;">Fakturovatelná hodinovka je nezávislá na interní nákladové sazbě — platí jen pro tento export a nikam se neukládá. Hodiny i náklady jde přepsat jen pro tento export, v ostrém výkazu se nic nezmění.</p>
     ${rateFormHtml}
-    <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}${totalEntryCosts ? ` · <b style="color:var(--ink);">${fmtKc(totalEntryCosts)}</b> ostatní náklady z výkazu` : ``}</p>
-    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span><span>Náklady</span></div>
+    <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}${totalEntryCosts ? ` · <b style="color:var(--ink);">${fmtKc(totalEntryCosts)}</b> ostatní náklady z výkazu` : ``}${excludedCount ? ` · ${excludedCount} odebráno z exportu <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn" style="margin-left:6px;">Vrátit</button>` : ``}</p>
+    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span><span>Náklady</span><span></span></div>
     <div class="entries">${rows}</div>
     ${extraCostsHtml}
-    <p class="q-hint" style="margin:16px 0 0;">Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b></p>
+    <p class="q-hint" style="margin:16px 0 0;">
+      Základ: <b style="color:var(--ink);">${fmtKc(subtotal)}</b><br>
+      DPH (${vatRate} %): <b style="color:var(--ink);">${fmtKc(vatAmount)}</b><br>
+      Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b>
+    </p>
     ${exportButtonsHtml}`;
 }
 
@@ -3648,6 +3670,18 @@ function bindAdmin(){
     state.clientExportExtraCosts = (state.clientExportExtraCosts || []).filter(i => i.id !== id);
     render();
   });
+  document.querySelectorAll('[data-action="exclude-client-export-entry"]').forEach(b => b.onclick = () => {
+    const id = b.getAttribute("data-id");
+    state.clientExportExcludedIds[id] = true;
+    render();
+  });
+  const clientExportRestoreExcludedBtn = document.getElementById("client-export-restore-excluded-btn");
+  if(clientExportRestoreExcludedBtn) clientExportRestoreExcludedBtn.onclick = () => {
+    state.clientExportExcludedIds = {};
+    render();
+  };
+  const clientExportVatSelect = document.getElementById("client-export-vat");
+  if(clientExportVatSelect) clientExportVatSelect.addEventListener("change", () => setState({ clientExportVatRate: Number(clientExportVatSelect.value) }));
   const clientExportXlsxBtn = document.getElementById("client-export-xlsx-btn");
   if(clientExportXlsxBtn) clientExportXlsxBtn.onclick = () => {
     const project = state.config.projects.find(p => p.id === state.clientExportProjectId);
@@ -3657,11 +3691,12 @@ function bindAdmin(){
       (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
       (!state.clientExportTo || e.date <= state.clientExportTo) &&
       (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
-      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
+      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId) &&
+      !state.clientExportExcludedIds[e.id]
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
     const extraCosts = state.clientExportExtraCosts || [];
     if(!filtered.length && !extraCosts.length) return;
-    const wb = buildClientExportWorkbook(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy);
+    const wb = buildClientExportWorkbook(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy, Number(state.clientExportVatRate) || 0);
     XLSX.writeFile(wb, `export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.xlsx`);
   };
   const clientExportSignedByInput = document.getElementById("client-export-signed-by");
@@ -3675,7 +3710,8 @@ function bindAdmin(){
       (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
       (!state.clientExportTo || e.date <= state.clientExportTo) &&
       (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
-      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
+      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId) &&
+      !state.clientExportExcludedIds[e.id]
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
     const extraCosts = state.clientExportExtraCosts || [];
     if(!filtered.length && !extraCosts.length) return;
@@ -3683,7 +3719,7 @@ function bindAdmin(){
     const origText = clientExportPdfBtn.textContent;
     clientExportPdfBtn.textContent = "Generuji…";
     try{
-      const doc = await buildClientExportPdf(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy);
+      const doc = await buildClientExportPdf(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy, Number(state.clientExportVatRate) || 0);
       doc.save(`export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.pdf`);
     } finally {
       clientExportPdfBtn.disabled = false;
