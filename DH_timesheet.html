@@ -1534,7 +1534,7 @@ function timesheetTemplate(){
           ${editingEntry ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující záznam.</div>` : ``}
           <div class="entry-form-row">
             <div class="field-row w-date"><label class="field-label">Datum</label><input type="date" name="date" id="entry-date-input" value="${esc(formDate)}" required></div>
-            <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" min="0.25" step="0.25" placeholder="8" value="${editingEntry ? esc(editingEntry.hours) : ""}" required></div>
+            <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" min="0.01" step="0.01" placeholder="8" value="${editingEntry ? esc(editingEntry.hours) : ""}" required></div>
             <div class="field-row w-select"><label class="field-label">Projekt</label><select name="projectId" id="entry-project-select" required>${projectOptions}</select></div>
             <div class="field-row w-select" id="phase-field-row" style="${formPhaseless ? "display:none;" : ""}">
               <label class="field-label">Fáze</label>
