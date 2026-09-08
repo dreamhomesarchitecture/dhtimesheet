@@ -964,7 +964,7 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
   });
   ws.addRow([]);
 
-  const headerRow = ws.addRow(["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]);
+  const headerRow = ws.addRow(["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "OSTATNÍ NÁKLADY"]);
   headerRow.eachCell(cell => {
     cell.font = { bold: true, color: { argb: WHITE }, size: 10 };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: OLIVE } };
@@ -1144,7 +1144,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
 
   doc.autoTable({
     startY: y + 6,
-    head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "NÁKLADY"]],
+    head: [["DATUM", "FÁZE", "POZNÁMKA", "JMÉNO", "POČET HODIN", "HODINOVÁ SAZBA", "CELKEM", "OSTATNÍ NÁKLADY"]],
     body: bodyRows,
     styles: { font: "Lato", fontSize: 6.5, cellPadding: 1.1, valign: "middle" },
     headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 6.5 },
@@ -2139,7 +2139,7 @@ function adminClientExportTemplate(){
     <p class="q-hint" style="margin:0 0 8px;">Fakturovatelná hodinovka je nezávislá na interní nákladové sazbě — platí jen pro tento export a nikam se neukládá. Hodiny i náklady jde přepsat jen pro tento export, v ostrém výkazu se nic nezmění.</p>
     ${rateFormHtml}
     <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}${totalEntryCosts ? ` · <b style="color:var(--ink);">${fmtKc(totalEntryCosts)}</b> ostatní náklady z výkazu` : ``}${excludedCount ? ` · ${excludedCount} odebráno z exportu <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn" style="margin-left:6px;">Vrátit</button>` : ``}</p>
-    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span><span>Náklady</span><span></span></div>
+    <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span><span>Ostatní náklady</span><span></span></div>
     <div class="entries">${rows}</div>
     ${extraCostsHtml}
     <p class="q-hint" style="margin:16px 0 0;">
