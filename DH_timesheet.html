@@ -2114,7 +2114,8 @@ function adminClientExportTemplate(){
     <div class="form-grid" style="margin-bottom:14px;">
       ${employeeIdsPresent.map(eid => {
         const emp = state.config.employees.find(x => x.id === eid);
-        const rate = state.clientExportRates[eid] !== undefined ? state.clientExportRates[eid] : "";
+        const savedRate = selectedProject && selectedProject.clientBillableRates ? selectedProject.clientBillableRates[eid] : undefined;
+        const rate = state.clientExportRates[eid] !== undefined ? state.clientExportRates[eid] : (savedRate !== undefined ? savedRate : "");
         return `<div class="field-row"><label class="field-label">${esc(emp ? emp.name : eid)} (Kč/h)</label><input type="number" min="0" step="1" class="client-export-rate" data-employee-id="${esc(eid)}" value="${esc(rate)}" placeholder="0"></div>`;
       }).join("")}
     </div>`;
@@ -3777,14 +3778,23 @@ function bindAdmin(){
   if(clientExportTo) clientExportTo.addEventListener("change", () => setState({ clientExportTo: clientExportTo.value }));
   const clientExportProject = document.getElementById("client-export-project");
   enhanceSearchableSelect(clientExportProject);
-  if(clientExportProject) clientExportProject.addEventListener("change", () => setState({ clientExportProjectId: clientExportProject.value }));
+  if(clientExportProject) clientExportProject.addEventListener("change", () => setState({ clientExportProjectId: clientExportProject.value, clientExportRates: {} }));
   const clientExportPhase = document.getElementById("client-export-phase");
   if(clientExportPhase) clientExportPhase.addEventListener("change", () => setState({ clientExportPhaseId: clientExportPhase.value }));
   const clientExportFilterResetBtn = document.getElementById("client-export-filter-reset-btn");
-  if(clientExportFilterResetBtn) clientExportFilterResetBtn.onclick = () => setState({ clientExportFrom: "", clientExportTo: "", clientExportProjectId: "", clientExportPhaseId: "" });
+  if(clientExportFilterResetBtn) clientExportFilterResetBtn.onclick = () => setState({ clientExportFrom: "", clientExportTo: "", clientExportProjectId: "", clientExportPhaseId: "", clientExportRates: {} });
   document.querySelectorAll(".client-export-rate").forEach(el => {
-    el.addEventListener("change", () => {
-      state.clientExportRates[el.getAttribute("data-employee-id")] = el.value === "" ? undefined : Number(el.value);
+    el.addEventListener("change", async () => {
+      const eid = el.getAttribute("data-employee-id");
+      const value = el.value === "" ? undefined : Number(el.value);
+      state.clientExportRates[eid] = value;
+      const project = state.config.projects.find(p => p.id === state.clientExportProjectId);
+      if(project){
+        if(!project.clientBillableRates) project.clientBillableRates = {};
+        if(value === undefined) delete project.clientBillableRates[eid];
+        else project.clientBillableRates[eid] = value;
+        await saveConfig();
+      }
       render();
     });
   });
