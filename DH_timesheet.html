@@ -566,6 +566,7 @@ let state = {
   clientExportPhaseId: "",
   clientExportOverrides: {},
   clientExportRates: {},
+  clientExportExtraCosts: [],
   closedProjectsYear: "",
   closedProjectsMode: "project",
   closedProjectsPhaseId: "",
@@ -827,7 +828,7 @@ function buildCostsWorkbook(costs){
   return wb;
 }
 
-function buildClientExportWorkbook(entries){
+function buildClientExportWorkbook(entries, extraCosts){
   const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
   const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
   const header = ["Datum", "Zaměstnanec", "Projekt", "Fáze", "Hodiny", "Popis", "Sazba (Kč/h)", "Fakturováno (Kč)"];
@@ -850,7 +851,21 @@ function buildClientExportWorkbook(entries){
     ];
   });
   rows.push([]);
-  rows.push(["", "", "", "Celkem", totalHours, "", "", totalBillable]);
+  rows.push(["", "", "", "Celkem hodiny", totalHours, "", "", totalBillable]);
+
+  let totalExtra = 0;
+  if((extraCosts || []).length){
+    rows.push([]);
+    rows.push(["", "", "", "", "", "Ostatní náklady", "", ""]);
+    extraCosts.forEach(item => {
+      const amount = Number(item.amount || 0);
+      totalExtra += amount;
+      rows.push(["", "", "", "", "", item.description || "", "", amount]);
+    });
+  }
+  rows.push([]);
+  rows.push(["", "", "", "", "", "Celkem k fakturaci", "", totalBillable + totalExtra]);
+
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   ws["!cols"] = [{ wch: 11 }, { wch: 20 }, { wch: 28 }, { wch: 8 }, { wch: 9 }, { wch: 45 }, { wch: 13 }, { wch: 16 }];
   const wb = XLSX.utils.book_new();
@@ -1696,8 +1711,26 @@ function adminClientExportTemplate(){
   );
   const sorted = filtered.slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
 
+  const extraCosts = state.clientExportExtraCosts || [];
+  const totalExtra = extraCosts.reduce((s,i) => s + Number(i.amount||0), 0);
+  const extraCostsHtml = `
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
+      <div style="font-weight:700;font-size:15px;margin-bottom:8px;">Ostatní náklady (tisk, doprava, apod.)</div>
+      ${extraCosts.length ? extraCosts.map(item => `
+        <div class="admin-project-head" style="margin-bottom:8px;">
+          <span class="grow">${esc(item.description)}</span>
+          <span style="font-weight:700;">${fmtKc(item.amount)}</span>
+          <button type="button" class="icon-btn" data-action="delete-client-export-extra" data-id="${esc(item.id)}" title="Smazat">×</button>
+        </div>`).join("") : `<div class="q-hint" style="margin:0 0 10px;">Zatím žádné ostatní náklady.</div>`}
+      <div class="form-grid" style="margin-top:10px;">
+        <div class="field-row grow"><label class="field-label">Popis</label><input type="text" id="client-export-extra-desc" placeholder="např. Tisk dokumentace"></div>
+        <div class="field-row"><label class="field-label">Částka (Kč)</label><input type="number" min="0" step="1" id="client-export-extra-amount"></div>
+        <div class="field-row"><button type="button" class="btn btn-outline btn-small" id="client-export-extra-add-btn">+ Přidat náklad</button></div>
+      </div>
+    </div>`;
+
   if(!sorted.length){
-    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}</div>`;
+    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}</div>${extraCostsHtml}${extraCosts.length ? `<div style="margin-top:16px;"><button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button></div>` : ``}`;
   }
 
   const employeeIdsPresent = [...new Set(sorted.map(e => e.employeeId))];
@@ -1715,6 +1748,7 @@ function adminClientExportTemplate(){
     const rate = Number(state.clientExportRates[e.employeeId]) || 0;
     return s + Number(e.hours||0) * rate;
   }, 0);
+  const grandTotal = totalBillable + totalExtra;
 
   const rows = sorted.map(e => {
     const proj = state.config.projects.find(p => p.id === e.projectId);
@@ -1741,6 +1775,8 @@ function adminClientExportTemplate(){
     <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalBillable ? ` · <b style="color:var(--ink);">${fmtKc(totalBillable)}</b> k fakturaci` : ``}</p>
     <div class="entry-head-clientexp"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Popis</span><span>Fakturováno</span></div>
     <div class="entries">${rows}</div>
+    ${extraCostsHtml}
+    <p class="q-hint" style="margin:16px 0 0;">Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b></p>
     <div style="margin-top:16px;"><button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button></div>`;
 }
 
@@ -3299,6 +3335,30 @@ function bindAdmin(){
       state.clientExportOverrides[el.getAttribute("data-entry-id")] = el.value;
     });
   });
+  document.querySelectorAll("#client-export-extra-desc, #client-export-extra-amount").forEach(el => {
+    el.addEventListener("keydown", e => {
+      if(e.key !== "Enter") return;
+      e.preventDefault();
+      const btn = document.getElementById("client-export-extra-add-btn");
+      if(btn) btn.click();
+    });
+  });
+  const clientExportExtraAddBtn = document.getElementById("client-export-extra-add-btn");
+  if(clientExportExtraAddBtn) clientExportExtraAddBtn.onclick = () => {
+    const descInput = document.getElementById("client-export-extra-desc");
+    const amountInput = document.getElementById("client-export-extra-amount");
+    const description = descInput.value.trim();
+    const amount = Number(amountInput.value);
+    if(!description || !(amount >= 0)) return;
+    if(!state.clientExportExtraCosts) state.clientExportExtraCosts = [];
+    state.clientExportExtraCosts.push({ id: uid("xcost"), description, amount });
+    render();
+  };
+  document.querySelectorAll('[data-action="delete-client-export-extra"]').forEach(b => b.onclick = () => {
+    const id = b.getAttribute("data-id");
+    state.clientExportExtraCosts = (state.clientExportExtraCosts || []).filter(i => i.id !== id);
+    render();
+  });
   const clientExportXlsxBtn = document.getElementById("client-export-xlsx-btn");
   if(clientExportXlsxBtn) clientExportXlsxBtn.onclick = () => {
     const entries = state.adminEntriesFlat || [];
@@ -3308,8 +3368,9 @@ function bindAdmin(){
       (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
       (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId)
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
-    if(!filtered.length) return;
-    const wb = buildClientExportWorkbook(filtered);
+    const extraCosts = state.clientExportExtraCosts || [];
+    if(!filtered.length && !extraCosts.length) return;
+    const wb = buildClientExportWorkbook(filtered, extraCosts);
     XLSX.writeFile(wb, `export-klient-${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
