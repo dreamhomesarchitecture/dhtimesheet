@@ -2597,6 +2597,45 @@ function adminBudgetsTemplate(){
     </form>`;
 }
 
+const HOURS_OVERVIEW_MONTH_NAMES = ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"];
+
+function hoursOverviewGroupRows(entries, keyFn, labelFn, sortFn){
+  const groups = {};
+  entries.forEach(e => {
+    const key = keyFn(e);
+    if(key === null || key === undefined || key === "") return;
+    if(!groups[key]) groups[key] = { key, total: 0, p000: 0, p002: 0 };
+    const h = Number(e.hours || 0);
+    groups[key].total += h;
+    if(e.projectId === "000") groups[key].p000 += h;
+    if(e.projectId === "002") groups[key].p002 += h;
+  });
+  const rows = Object.values(groups).map(g => ({ label: labelFn(g.key), total: g.total, net: g.total - g.p000 - g.p002, p000: g.p000 }));
+  rows.sort(sortFn);
+  return rows;
+}
+
+function hoursOverviewTable(title, rows){
+  if(!rows.length){
+    return `<div style="margin-top:22px;"><h4 style="margin:0 0 8px;font-size:14px;">${esc(title)}</h4><div class="q-hint" style="margin:0;">Žádná data.</div></div>`;
+  }
+  const body = rows.map(r => `
+    <div style="display:grid;grid-template-columns:1fr 110px 150px 110px;gap:12px;padding:8px 4px;border-bottom:1px solid var(--line);align-items:center;">
+      <span>${esc(r.label)}</span>
+      <span style="text-align:right;font-variant-numeric:tabular-nums;">${fmtH(r.total)}</span>
+      <span style="text-align:right;font-variant-numeric:tabular-nums;">${fmtH(r.net)}</span>
+      <span style="text-align:right;font-variant-numeric:tabular-nums;">${fmtH(r.p000)}</span>
+    </div>`).join("");
+  return `
+    <div style="margin-top:22px;">
+      <h4 style="margin:0 0 8px;font-size:14px;">${esc(title)}</h4>
+      <div style="display:grid;grid-template-columns:1fr 110px 150px 110px;gap:12px;padding:0 4px 6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);">
+        <span></span><span style="text-align:right;">Celkem</span><span style="text-align:right;">Bez 000/002</span><span style="text-align:right;">Projekt 000</span>
+      </div>
+      ${body}
+    </div>`;
+}
+
 function adminHoursOverviewTemplate(){
   if(state.adminEntriesFlat === null){
     return `<div class="empty-state">Načítání…</div>`;
@@ -2614,6 +2653,20 @@ function adminHoursOverviewTemplate(){
   const project000Hours = yearEntries.filter(e => e.projectId === "000").reduce((s, e) => s + Number(e.hours || 0), 0);
   const project002Hours = yearEntries.filter(e => e.projectId === "002").reduce((s, e) => s + Number(e.hours || 0), 0);
   const netHours = totalHours - project000Hours - project002Hours;
+
+  const monthRows = hoursOverviewGroupRows(
+    yearEntries,
+    e => (e.date || "").slice(5, 7),
+    key => HOURS_OVERVIEW_MONTH_NAMES[Number(key) - 1] || key,
+    (a, b) => HOURS_OVERVIEW_MONTH_NAMES.indexOf(a.label) - HOURS_OVERVIEW_MONTH_NAMES.indexOf(b.label)
+  );
+
+  const employeeRows = hoursOverviewGroupRows(
+    yearEntries,
+    e => e.employeeId,
+    key => (yearEntries.find(e => e.employeeId === key) || {}).employeeName || key,
+    (a, b) => b.total - a.total
+  );
 
   return `
     <div class="field-row" style="max-width:200px;margin-bottom:16px;">
@@ -2633,7 +2686,9 @@ function adminHoursOverviewTemplate(){
         <label class="field-label">Z toho projekt 000 (DH)</label>
         <div style="padding:12px 0;font-weight:700;font-size:18px;">${fmtH(project000Hours)}</div>
       </div>
-    </div>`;
+    </div>
+    ${hoursOverviewTable("Podle měsíců", monthRows)}
+    ${hoursOverviewTable("Podle zaměstnanců", employeeRows)}`;
 }
 
 function adminSectionHeader(key, label, rightHtml){
@@ -2731,6 +2786,11 @@ function adminTemplate(){
       </div>
 
       <div class="admin-block">
+        ${adminSectionHeader("hours-overview", "Přehled hodin")}
+        ${state.adminOpenSection === "hours-overview" ? adminHoursOverviewTemplate() : ""}
+      </div>
+
+      <div class="admin-block">
         ${adminSectionHeader("project-costs", "Náklady projektů")}
         ${state.adminOpenSection === "project-costs" ? adminCostsTemplate() : ""}
       </div>
@@ -2793,11 +2853,6 @@ function adminTemplate(){
       <div class="admin-block">
         ${adminSectionHeader("budgets", "Rozpočty")}
         ${state.adminOpenSection === "budgets" ? adminBudgetsTemplate() : ``}
-      </div>
-
-      <div class="admin-block">
-        ${adminSectionHeader("hours-overview", "Přehled hodin")}
-        ${state.adminOpenSection === "hours-overview" ? adminHoursOverviewTemplate() : ``}
       </div>
 
       <div class="admin-block">
