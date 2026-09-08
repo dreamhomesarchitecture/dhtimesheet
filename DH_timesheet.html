@@ -242,6 +242,13 @@
   .entry-row-clientexp:hover{ border-color: var(--soft); }
   .client-export-note{ font-size:13px; padding:8px 10px; }
 
+  .combo-wrap{ position:relative; }
+  .combo-input{ width:100%; }
+  .combo-list{ position:absolute; z-index:60; top:calc(100% + 4px); left:0; min-width:280px; max-height:240px; overflow-y:auto; background:#fff; border:1.5px solid var(--line); border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.08); }
+  .combo-item{ padding:9px 13px; font-size:14px; cursor:pointer; }
+  .combo-item:hover, .combo-item.active{ background:var(--sage-tint); }
+  .combo-empty{ padding:9px 13px; font-size:13px; color:var(--soft); }
+
   .closed-head{ display:grid; grid-template-columns: 1fr 130px 130px 90px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:6px; }
   .closed-row{ display:grid; grid-template-columns: 1fr 130px 130px 90px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; }
   .closed-row .num{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -605,6 +612,59 @@ let state = {
 };
 
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function enhanceSearchableSelect(selectEl){
+  if(!selectEl || selectEl.dataset.comboBound) return;
+  selectEl.dataset.comboBound = "1";
+  selectEl.style.display = "none";
+
+  const wrap = document.createElement("div");
+  wrap.className = "combo-wrap";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "combo-input";
+  input.autocomplete = "off";
+  input.placeholder = "Hledat…";
+  const list = document.createElement("div");
+  list.className = "combo-list";
+  list.hidden = true;
+
+  selectEl.insertAdjacentElement("afterend", wrap);
+  wrap.appendChild(input);
+  wrap.appendChild(list);
+
+  const options = Array.from(selectEl.options).map(o => ({ value: o.value, label: o.textContent }));
+
+  function syncInputFromSelect(){
+    const opt = options.find(o => o.value === selectEl.value);
+    input.value = opt ? opt.label : "";
+  }
+  syncInputFromSelect();
+
+  function renderList(filterText){
+    const q = filterText.trim().toLowerCase();
+    const matches = q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
+    list.innerHTML = matches.length
+      ? matches.slice(0, 300).map(o => `<div class="combo-item" data-value="${esc(o.value)}">${esc(o.label)}</div>`).join("")
+      : `<div class="combo-empty">Nic nenalezeno</div>`;
+    list.hidden = false;
+  }
+
+  input.addEventListener("focus", () => renderList(input.value === (options.find(o=>o.value===selectEl.value)||{}).label ? "" : input.value));
+  input.addEventListener("input", () => renderList(input.value));
+  input.addEventListener("blur", () => {
+    setTimeout(() => { list.hidden = true; syncInputFromSelect(); }, 150);
+  });
+  list.addEventListener("mousedown", e => {
+    const item = e.target.closest(".combo-item");
+    if(!item) return;
+    e.preventDefault();
+    selectEl.value = item.getAttribute("data-value");
+    selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    syncInputFromSelect();
+    list.hidden = true;
+  });
+}
 function pad2(n){ return String(n).padStart(2, "0"); }
 function excelDateToISO(dateVal){
   if(dateVal instanceof Date){
@@ -2712,6 +2772,7 @@ function bindApp(){
   });
 
   const projectSelect = document.getElementById("entry-project-select");
+  enhanceSearchableSelect(projectSelect);
   const phaseSelect = document.getElementById("entry-phase-select");
   const phaseFieldRow = document.getElementById("phase-field-row");
   const phaseWarning = document.getElementById("phase-warning");
@@ -3338,6 +3399,7 @@ function bindAdmin(){
   if(importCancelBtn) importCancelBtn.onclick = () => setState({ importPreview: null, importError: "" });
 
   const costProjectSelect = document.getElementById("cost-project-select");
+  enhanceSearchableSelect(costProjectSelect);
   const costPhaseSelect = document.getElementById("cost-phase-select");
   if(costProjectSelect && costPhaseSelect) costProjectSelect.addEventListener("change", () => {
     const project = state.config.projects.find(p => p.id === costProjectSelect.value);
@@ -3507,6 +3569,7 @@ function bindAdmin(){
   };
 
   const costFilterProject = document.getElementById("cost-filter-project");
+  enhanceSearchableSelect(costFilterProject);
   if(costFilterProject) costFilterProject.addEventListener("change", () => setState({ costFilterProjectId: costFilterProject.value }));
   const costFilterPhase = document.getElementById("cost-filter-phase");
   if(costFilterPhase) costFilterPhase.addEventListener("change", () => setState({ costFilterPhaseId: costFilterPhase.value }));
@@ -3520,6 +3583,7 @@ function bindAdmin(){
   const recordsFilterTo = document.getElementById("records-filter-to");
   if(recordsFilterTo) recordsFilterTo.addEventListener("change", () => setState({ recordsFilterTo: recordsFilterTo.value }));
   const recordsFilterProject = document.getElementById("records-filter-project");
+  enhanceSearchableSelect(recordsFilterProject);
   if(recordsFilterProject) recordsFilterProject.addEventListener("change", () => setState({ recordsFilterProjectId: recordsFilterProject.value }));
   const recordsFilterPhase = document.getElementById("records-filter-phase");
   if(recordsFilterPhase) recordsFilterPhase.addEventListener("change", () => setState({ recordsFilterPhaseId: recordsFilterPhase.value }));
@@ -3531,6 +3595,7 @@ function bindAdmin(){
   const clientExportTo = document.getElementById("client-export-to");
   if(clientExportTo) clientExportTo.addEventListener("change", () => setState({ clientExportTo: clientExportTo.value }));
   const clientExportProject = document.getElementById("client-export-project");
+  enhanceSearchableSelect(clientExportProject);
   if(clientExportProject) clientExportProject.addEventListener("change", () => setState({ clientExportProjectId: clientExportProject.value }));
   const clientExportPhase = document.getElementById("client-export-phase");
   if(clientExportPhase) clientExportPhase.addEventListener("change", () => setState({ clientExportPhaseId: clientExportPhase.value }));
