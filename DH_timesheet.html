@@ -2186,6 +2186,14 @@ function projectClosedDate(p){
   return dates.reduce((max,d) => (d > max ? d : max), dates[0]);
 }
 
+function lastPhaseActivityDate(projectId, phaseId){
+  const entryDates = (state.adminEntriesFlat || []).filter(en => en.projectId === projectId && en.phaseId === phaseId).map(en => en.date);
+  const costDates = (state.costs || []).filter(c => c.projectId === projectId && c.phaseId === phaseId).map(c => c.date);
+  const all = entryDates.concat(costDates).filter(Boolean);
+  if(!all.length) return null;
+  return all.reduce((max,d) => (d > max ? d : max), all[0]);
+}
+
 function adminClosedProjectsTemplate(){
   if(state.adminEntriesFlat === null || state.costs === null){
     return `<div class="empty-state">Načítání…</div>`;
@@ -2376,7 +2384,7 @@ function projectDetailPageHtml(){
                   <span class="meta">Uzavřeno od ${esc(closedFrom)}</span>
                   <button class="btn btn-outline btn-small" type="button" data-action="reopen-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Znovu otevřít</button>
                 ` : `
-                  <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+                  <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(lastPhaseActivityDate(p.id, pid) || todayStr())}">
                   <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
                 `}
                 <span class="grow"></span>
@@ -2614,7 +2622,7 @@ function adminBudgetsTemplate(){
             <span class="meta">Uzavřeno od ${esc(closedFrom)}</span>
             <button class="btn btn-outline btn-small" type="button" data-action="reopen-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Znovu otevřít</button>
           ` : `
-            <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+            <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(lastPhaseActivityDate(p.id, pid) || todayStr())}">
             <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
           `}
         </div>
@@ -3278,7 +3286,7 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budgets"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
