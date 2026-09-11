@@ -234,8 +234,8 @@
   .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-cost:hover{ border-color: var(--soft); }
 
-  .entry-head-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
-  .entry-row-labor{ display:grid; grid-template-columns: 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
+  .entry-head-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
+  .entry-row-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1.5px solid var(--line); border-radius:10px; padding:11px 14px; transition:border-color .12s; }
   .entry-row-labor:hover{ border-color: var(--soft); }
 
   .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px 28px; gap:10px; padding:0 14px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); margin-bottom:2px; }
@@ -594,6 +594,8 @@ let state = {
   month: new Date().toISOString().slice(0,7),
   editingEntryId: null,
   editingLaborEntryId: null,
+  laborBulkSelectedIds: {},
+  laborBulkPhaseId: "",
   editingProjectCostId: null,
   projectCostsFilterPhase: "",
   projectCostsFilterPayment: "",
@@ -1337,7 +1339,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     };
@@ -2489,6 +2491,21 @@ function projectDetailPageHtml(){
             return (b.en.date||"").localeCompare(a.en.date||"");
           });
           const laborTotal = projectLabor.reduce((s,r) => s + r.amount, 0);
+          const laborBulkSelected = state.laborBulkSelectedIds || {};
+          const laborVisibleIds = projectLabor.map(r => r.en.id);
+          const laborSelectedCount = laborVisibleIds.filter(id => laborBulkSelected[id]).length;
+          const laborAllVisibleSelected = laborVisibleIds.length > 0 && laborSelectedCount === laborVisibleIds.length;
+          const laborBulkPhaseOptions = phasesForProject(p).map(ph => `<option value="${esc(ph.id)}" ${state.laborBulkPhaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
+          const laborBulkBarHtml = laborSelectedCount ? `
+            <div class="phase-block" style="margin-bottom:12px;background:var(--sage-tint);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span style="font-weight:700;font-size:13px;">Vybráno: ${laborSelectedCount}</span>
+              <select id="project-labor-bulk-phase" style="padding:6px 8px;font-size:13px;">
+                <option value="">— vybrat fázi —</option>
+                ${laborBulkPhaseOptions}
+              </select>
+              <button type="button" class="btn btn-tan btn-small" id="project-labor-bulk-apply-btn" ${state.laborBulkPhaseId ? "" : "disabled"}>Přepsat fázi u vybraných</button>
+              <button type="button" class="btn btn-outline btn-small" id="project-labor-bulk-clear-btn">Zrušit výběr</button>
+            </div>` : ``;
           const laborFilterHtml = `
             <div class="form-grid" style="margin-bottom:12px;">
               <div class="field-row"><label class="field-label">Fáze</label><select id="project-labor-filter-phase">
@@ -2513,6 +2530,7 @@ function projectDetailPageHtml(){
               const phaseOptions = phasesForProject(p).map(ph => `<option value="${esc(ph.id)}" ${en.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
               return `
               <div class="entry-row-labor" data-labor-edit-row="${esc(en.id)}" data-employee-id="${esc(en.employeeId)}">
+                <span></span>
                 <input type="date" class="labor-edit-date" value="${esc(en.date)}" style="padding:6px 8px;font-size:13px;">
                 <span>${esc(en.employeeName)}</span>
                 <select class="labor-edit-phase" style="padding:6px 8px;font-size:13px;">${phaseOptions}</select>
@@ -2527,6 +2545,7 @@ function projectDetailPageHtml(){
             }
             return `
             <div class="entry-row-labor">
+              <span><input type="checkbox" class="labor-bulk-checkbox" data-id="${esc(en.id)}" data-employee-id="${esc(en.employeeId)}" ${laborBulkSelected[en.id] ? "checked" : ""}></span>
               <span class="entry-date">${esc(en.date)}</span>
               <span>${esc(en.employeeName)}</span>
               <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
@@ -2553,7 +2572,8 @@ function projectDetailPageHtml(){
             <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Mzdové náklady</div>
             ${allProjectLabor.length ? laborFilterHtml : ``}
             <p class="q-hint" style="margin:0 0 12px;">${laborFiltersActive ? "Hodiny dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
-            <div class="entry-head-labor"><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
+            ${laborBulkBarHtml}
+            <div class="entry-head-labor"><span><input type="checkbox" id="project-labor-select-all" title="Vybrat vše" ${laborAllVisibleSelected ? "checked" : ""}></span><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
             <div class="entries">${laborRowsHtml}</div>
           </div>`;
         })()}
@@ -3344,12 +3364,12 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date" });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: b.getAttribute("data-id") });
@@ -3408,6 +3428,56 @@ function bindAdmin(){
     showStamp();
     render();
   });
+  document.querySelectorAll('.labor-bulk-checkbox').forEach(cb => cb.addEventListener("change", () => {
+    const id = cb.getAttribute("data-id");
+    const selected = { ...(state.laborBulkSelectedIds || {}) };
+    if(cb.checked) selected[id] = true;
+    else delete selected[id];
+    setState({ laborBulkSelectedIds: selected });
+  }));
+  const laborSelectAll = document.getElementById("project-labor-select-all");
+  if(laborSelectAll) laborSelectAll.addEventListener("change", () => {
+    const selected = { ...(state.laborBulkSelectedIds || {}) };
+    document.querySelectorAll('.labor-bulk-checkbox').forEach(cb => {
+      const id = cb.getAttribute("data-id");
+      if(laborSelectAll.checked) selected[id] = true;
+      else delete selected[id];
+    });
+    setState({ laborBulkSelectedIds: selected });
+  });
+  const laborBulkPhaseSelect = document.getElementById("project-labor-bulk-phase");
+  if(laborBulkPhaseSelect) laborBulkPhaseSelect.addEventListener("change", () => setState({ laborBulkPhaseId: laborBulkPhaseSelect.value }));
+  const laborBulkClearBtn = document.getElementById("project-labor-bulk-clear-btn");
+  if(laborBulkClearBtn) laborBulkClearBtn.onclick = () => setState({ laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
+  const laborBulkApplyBtn = document.getElementById("project-labor-bulk-apply-btn");
+  if(laborBulkApplyBtn) laborBulkApplyBtn.onclick = async () => {
+    const phaseId = state.laborBulkPhaseId;
+    if(!phaseId) return;
+    const selectedIds = Object.keys(state.laborBulkSelectedIds || {}).filter(id => state.laborBulkSelectedIds[id]);
+    if(!selectedIds.length) return;
+    const byEmployee = {};
+    (state.adminEntriesFlat || []).forEach(en => {
+      if(selectedIds.includes(en.id)){
+        if(!byEmployee[en.employeeId]) byEmployee[en.employeeId] = [];
+        byEmployee[en.employeeId].push(en.id);
+      }
+    });
+    for(const employeeId of Object.keys(byEmployee)){
+      const entries = await loadEntries(employeeId);
+      byEmployee[employeeId].forEach(entryId => {
+        const idx = entries.findIndex(e => e.id === entryId);
+        if(idx !== -1) entries[idx] = { ...entries[idx], phaseId };
+      });
+      await saveEntries(employeeId, "", entries);
+    }
+    if(state.adminEntriesFlat){
+      state.adminEntriesFlat = state.adminEntriesFlat.map(en => selectedIds.includes(en.id) ? { ...en, phaseId } : en);
+    }
+    state.laborBulkSelectedIds = {};
+    state.laborBulkPhaseId = "";
+    showStamp();
+    render();
+  };
   document.querySelectorAll('[data-cost-edit-row] input, [data-cost-edit-row] select').forEach(el => {
     el.addEventListener("keydown", e => {
       if(e.key !== "Enter") return;
