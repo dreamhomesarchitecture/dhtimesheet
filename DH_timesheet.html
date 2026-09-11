@@ -216,6 +216,7 @@
   .entry-date{ font-size:13px; color:var(--soft); }
   .entry-proj{ font-size:12.5px; background: var(--sage-tint); color:var(--ink); border-radius:6px; padding:3px 8px; display:inline-block; }
   .entry-proj.gone{ background: var(--tan-tint); color:var(--tan); }
+  .entry-proj.closed{ background: rgba(20,19,15,0.12); color: var(--soft); }
   .entry-phase{ font-size:12px; background: var(--tan-tint); color: var(--tan); border-radius:6px; padding:3px 8px; display:inline-block; }
   .entry-phase.gone{ background: var(--sage-tint); color:var(--soft); }
   .entry-num{ font-size:14px; text-align:right; }
@@ -1869,11 +1870,12 @@ function adminProjectsOverviewTemplate(){
       ? `<span class="project-hours zero">…</span>`
       : `<span class="project-hours ${hours ? "" : "zero"}">${fmtH(hours)}</span>`;
     const isOpen = state.expandedAdminProjectOverviewId === p.id;
+    const isClosed = !!projectClosedDate(p);
     return `
     <div class="project-item ${isOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
       <div class="project-row" data-action="toggle-admin-project-overview" data-id="${esc(p.id)}">
         <span class="chevron">▸</span>
-        <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
+        <span class="entry-proj ${isClosed ? "closed" : ""}" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         ${hoursHtml}
       </div>
