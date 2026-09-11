@@ -2377,6 +2377,9 @@ function projectDetailPageHtml(){
                   <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
                   <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
                 `}
+                <span class="grow"></span>
+                <label class="field-label" style="margin:0;">Rozpočet</label>
+                <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" class="phase-detail-budget-input" data-phase-id="${esc(pid)}" value="${esc(budget)}">
               </div>
             </div>`;
           }).join("");
@@ -3527,6 +3530,13 @@ function bindAdmin(){
     project.name = newName;
     project.investor = (data.investor || "").trim();
     project.location = (data.location || "").trim();
+    projectModalForm.querySelectorAll("input.phase-detail-budget-input[data-phase-id]").forEach(input => {
+      const phaseId = input.getAttribute("data-phase-id");
+      if(!project.phaseBudgets) project.phaseBudgets = {};
+      const raw = input.value;
+      if(raw !== ""){ project.phaseBudgets[phaseId] = Number(raw); }
+      else { delete project.phaseBudgets[phaseId]; }
+    });
     state.editProjError = "";
     state.editingProjectId = newId;
     state.allEntriesFlat = null;
