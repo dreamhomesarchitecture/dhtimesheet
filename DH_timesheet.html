@@ -2596,11 +2596,23 @@ function adminBudgetsTemplate(){
       const ph = state.config.phases.find(x => x.id === pid);
       const label = ph ? esc(ph.name) : esc(pid);
       const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
+      const closedFrom = (p.closedPhases && p.closedPhases[pid]) || null;
       return `
-      <div class="admin-project-head" style="margin-bottom:8px;">
-        <span class="entry-phase">${esc(pid)}</span>
-        <span class="grow">${label}</span>
-        <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+      <div style="margin-bottom:14px;">
+        <div class="admin-project-head" style="margin-bottom:6px;">
+          <span class="entry-phase">${esc(pid)}</span>
+          <span class="grow">${label}</span>
+          <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+        </div>
+        <div class="admin-project-head" style="flex-wrap:wrap;row-gap:8px;">
+          ${closedFrom ? `
+            <span class="meta">Uzavřeno od ${esc(closedFrom)}</span>
+            <button class="btn btn-outline btn-small" type="button" data-action="reopen-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Znovu otevřít</button>
+          ` : `
+            <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+            <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
+          `}
+        </div>
       </div>`;
     }).join("");
     return `
