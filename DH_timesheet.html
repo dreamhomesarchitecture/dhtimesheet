@@ -2361,7 +2361,7 @@ function projectDetailPageHtml(){
     <div class="sheet">
       <button class="logout-link" data-action="back-to-projects">← Zpět na projekty</button>
       <div class="eyebrow" style="margin-top:18px;">Projekt #${esc(p.id)}</div>
-      <div class="q-title">${esc(p.name)}</div>
+      <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
 
       <form id="project-modal-form" data-id="${esc(p.id)}" style="margin-top:24px;">
         <div class="form-grid">
