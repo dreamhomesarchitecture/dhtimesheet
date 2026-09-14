@@ -819,6 +819,11 @@ function clientExportCostFor(entry){
   const v = state.clientExportCostOverrides[entry.id];
   return v !== undefined ? Number(v) : Number(entry.cost || 0);
 }
+function clientExportRateFor(project, employeeId){
+  if(state.clientExportRates[employeeId] !== undefined) return Number(state.clientExportRates[employeeId]) || 0;
+  const saved = project && project.clientBillableRates ? project.clientBillableRates[employeeId] : undefined;
+  return saved !== undefined ? (Number(saved) || 0) : 0;
+}
 function shiftMonth(monthStr, delta){
   const [y, m] = monthStr.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
@@ -1028,7 +1033,7 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
   let totalHours = 0, totalBillable = 0, totalEntryCosts = 0;
   entries.forEach(e => {
     const phase = state.config.phases.find(p => p.id === e.phaseId);
-    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const rate = clientExportRateFor(project, e.employeeId);
     const hours = clientExportHoursFor(e);
     const billable = hours * rate;
     const cost = clientExportCostFor(e);
@@ -1159,7 +1164,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
 
   const bodyRows = entries.map(e => {
     const phase = state.config.phases.find(p => p.id === e.phaseId);
-    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const rate = clientExportRateFor(project, e.employeeId);
     const hours = clientExportHoursFor(e);
     const cost = clientExportCostFor(e);
     const note = state.clientExportOverrides[e.id] !== undefined ? state.clientExportOverrides[e.id] : (e.note || "");
@@ -1201,7 +1206,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   });
 
   const totalHours = entries.reduce((s,e) => s + clientExportHoursFor(e), 0);
-  const totalBillable = entries.reduce((s,e) => s + clientExportHoursFor(e) * (Number(state.clientExportRates[e.employeeId]) || 0), 0);
+  const totalBillable = entries.reduce((s,e) => s + clientExportHoursFor(e) * clientExportRateFor(project, e.employeeId), 0);
   const totalEntryCosts = entries.reduce((s,e) => s + clientExportCostFor(e), 0);
   const totalExtra = (extraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
   const subtotal = totalBillable + totalEntryCosts + totalExtra;
@@ -2164,7 +2169,7 @@ function adminClientExportTemplate(){
 
   const totalHours = sorted.reduce((s,e) => s + clientExportHoursFor(e), 0);
   const totalBillable = sorted.reduce((s,e) => {
-    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const rate = clientExportRateFor(selectedProject, e.employeeId);
     return s + clientExportHoursFor(e) * rate;
   }, 0);
   const totalEntryCosts = sorted.reduce((s,e) => s + clientExportCostFor(e), 0);
@@ -2176,7 +2181,7 @@ function adminClientExportTemplate(){
   const rows = sorted.map(e => {
     const proj = state.config.projects.find(p => p.id === e.projectId);
     const phase = state.config.phases.find(p => p.id === e.phaseId);
-    const rate = Number(state.clientExportRates[e.employeeId]) || 0;
+    const rate = clientExportRateFor(selectedProject, e.employeeId);
     const hoursVal = clientExportHoursFor(e);
     const costVal = clientExportCostFor(e);
     const billable = hoursVal * rate;
