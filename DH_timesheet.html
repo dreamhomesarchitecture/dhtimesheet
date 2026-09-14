@@ -742,9 +742,17 @@ function getFormPhaseOptions(project, dateStr){
   const keepClosedAnyway = editingEntry && project && editingEntry.projectId === project.id && editingEntry.date === dateStr ? editingEntry.phaseId : null;
   return phasesForProject(project).filter(ph => ph.id === keepClosedAnyway || !isPhaseClosedOnDate(project, ph.id, dateStr));
 }
+function phaseBudgetItems(p, pid){
+  return (p.phaseBudgetItems && p.phaseBudgetItems[pid]) || [];
+}
+function phaseBudgetTotal(p, pid){
+  const items = phaseBudgetItems(p, pid);
+  if(items.length) return items.reduce((s,it) => s + (Number(it.amount)||0), 0);
+  const legacy = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
+  return legacy === "" ? 0 : (Number(legacy) || 0);
+}
 function phaseFinancials(p, pid){
-  const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
-  const totalBudget = budget === "" ? 0 : Number(budget) || 0;
+  const totalBudget = phaseBudgetTotal(p, pid);
   const totalCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid).reduce((s,c) => s + Number(c.amount||0), 0);
   const totalLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid).reduce((s,en) => {
     const emp = state.config.employees.find(x => x.id === en.employeeId);
@@ -2374,6 +2382,7 @@ function projectDetailPageHtml(){
             const ph = state.config.phases.find(x => x.id === pid);
             const label = ph ? esc(ph.name) : esc(pid);
             const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
+            const budgetItems = phaseBudgetItems(p, pid);
             const closedFrom = (p.closedPhases && p.closedPhases[pid]) || null;
             const phaseEntries = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid);
             const phaseCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid);
@@ -2382,7 +2391,7 @@ function projectDetailPageHtml(){
               const emp = state.config.employees.find(x => x.id === en.employeeId);
               return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
             }, 0);
-            const budgetNum = budget === "" ? 0 : Number(budget) || 0;
+            const budgetNum = phaseBudgetTotal(p, pid);
             const status = budgetNum - costsSum - laborSum;
             const statusColor = status < 0 ? "var(--danger)" : "var(--sage)";
             totalBudget += budgetNum; totalCosts += costsSum; totalLabor += laborSum;
@@ -2414,7 +2423,21 @@ function projectDetailPageHtml(){
                 `}
                 <span class="grow"></span>
                 <label class="field-label" style="margin:0;">Rozpočet</label>
-                <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" class="phase-detail-budget-input" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+                ${budgetItems.length ? `
+                  <span style="font-weight:700;font-size:14px;">${fmtKc(budgetNum)} <span class="meta" style="font-weight:400;">(${budgetItems.length} ${budgetItems.length === 1 ? "položka" : budgetItems.length < 5 ? "položky" : "položek"})</span></span>
+                ` : `
+                  <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" class="phase-detail-budget-input" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+                `}
+              </div>
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
+                <div class="field-label" style="margin-bottom:8px;">Položky rozpočtu</div>
+                ${budgetItems.map(it => `
+                  <div class="admin-project-head" data-budget-item-row="${esc(it.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" style="margin-bottom:6px;">
+                    <input type="text" class="budget-item-label grow" placeholder="Položka (např. Dodatek č. 1)" style="padding:6px 8px;font-size:13px;" value="${esc(it.label || "")}">
+                    <input type="number" min="0" step="1" class="budget-item-amount" placeholder="Kč" style="width:120px;padding:6px 8px;font-size:13px;" value="${esc(it.amount)}">
+                    <button type="button" class="icon-btn" data-action="delete-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" data-item-id="${esc(it.id)}" title="Smazat položku">×</button>
+                  </div>`).join("")}
+                <button type="button" class="btn btn-outline btn-small" data-action="add-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">+ Přidat položku</button>
               </div>
             </div>`;
           }).join("");
@@ -2634,13 +2657,16 @@ function adminBudgetsTemplate(){
       const ph = state.config.phases.find(x => x.id === pid);
       const label = ph ? esc(ph.name) : esc(pid);
       const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
+      const itemized = phaseBudgetItems(p, pid).length > 0;
       const closedFrom = (p.closedPhases && p.closedPhases[pid]) || null;
       return `
       <div style="margin-bottom:14px;">
         <div class="admin-project-head" style="margin-bottom:6px;">
           <span class="entry-phase">${esc(pid)}</span>
           <span class="grow">${label}</span>
-          <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+          ${itemized
+            ? `<span class="meta" style="white-space:nowrap;">${fmtKc(phaseBudgetTotal(p, pid))} (více položek v detailu projektu)</span>`
+            : `<input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" value="${esc(budget)}">`}
         </div>
         <div class="admin-project-head" style="flex-wrap:wrap;row-gap:8px;">
           ${closedFrom ? `
@@ -3614,6 +3640,46 @@ function bindAdmin(){
     await saveConfig();
     render();
   });
+  document.querySelectorAll('[data-action="add-budget-item"]').forEach(b => b.onclick = async () => {
+    const projectId = b.getAttribute("data-project-id");
+    const phaseId = b.getAttribute("data-phase-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    if(!project.phaseBudgetItems) project.phaseBudgetItems = {};
+    if(!project.phaseBudgetItems[phaseId]) project.phaseBudgetItems[phaseId] = [];
+    const isFirst = project.phaseBudgetItems[phaseId].length === 0;
+    const legacy = project.phaseBudgets && project.phaseBudgets[phaseId] !== undefined ? project.phaseBudgets[phaseId] : "";
+    project.phaseBudgetItems[phaseId].push({ id: uid("bi"), label: "", amount: (isFirst && legacy !== "") ? Number(legacy) : 0 });
+    if(isFirst && project.phaseBudgets) delete project.phaseBudgets[phaseId];
+    await saveConfig();
+    render();
+  });
+  document.querySelectorAll('[data-action="delete-budget-item"]').forEach(b => b.onclick = async () => {
+    const projectId = b.getAttribute("data-project-id");
+    const phaseId = b.getAttribute("data-phase-id");
+    const itemId = b.getAttribute("data-item-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project || !project.phaseBudgetItems || !project.phaseBudgetItems[phaseId]) return;
+    project.phaseBudgetItems[phaseId] = project.phaseBudgetItems[phaseId].filter(it => it.id !== itemId);
+    await saveConfig();
+    render();
+  });
+  document.querySelectorAll('.budget-item-label, .budget-item-amount').forEach(el => el.addEventListener("change", async () => {
+    const row = el.closest("[data-budget-item-row]");
+    if(!row) return;
+    const projectId = row.getAttribute("data-project-id");
+    const phaseId = row.getAttribute("data-phase-id");
+    const itemId = row.getAttribute("data-budget-item-row");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project || !project.phaseBudgetItems || !project.phaseBudgetItems[phaseId]) return;
+    const item = project.phaseBudgetItems[phaseId].find(it => it.id === itemId);
+    if(!item) return;
+    item.label = row.querySelector(".budget-item-label").value.trim();
+    const amountRaw = row.querySelector(".budget-item-amount").value;
+    item.amount = amountRaw === "" ? 0 : Number(amountRaw);
+    await saveConfig();
+    render();
+  }));
   document.querySelectorAll('[data-action="delete-phase"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tuto fázi?")) return;
     state.config.phases = state.config.phases.filter(x => x.id !== b.getAttribute("data-id"));
