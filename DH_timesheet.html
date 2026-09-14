@@ -824,6 +824,26 @@ function clientExportRateFor(project, employeeId){
   const saved = project && project.clientBillableRates ? project.clientBillableRates[employeeId] : undefined;
   return saved !== undefined ? (Number(saved) || 0) : 0;
 }
+const CZ_MONTH_SLUGS = ["leden","unor","brezen","duben","kveten","cerven","cervenec","srpen","zari","rijen","listopad","prosinec"];
+function slugifyCz(str){
+  return String(str || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+function clientExportFileBaseName(project, phaseId, fromDate, toDate){
+  const toStr = toDate || todayStr();
+  const fromStr = fromDate || toStr;
+  const [ty, tm, td] = toStr.split("-");
+  const dateSlug = `${ty.slice(2)}${tm}${td}`;
+  const phase = phaseId ? state.config.phases.find(p => p.id === phaseId) : null;
+  const nameSlug = phase ? slugifyCz(phase.name) : slugifyCz(project.name);
+  const fromMonth = CZ_MONTH_SLUGS[Number(fromStr.split("-")[1]) - 1] || "";
+  const toMonth = CZ_MONTH_SLUGS[Number(toStr.split("-")[1]) - 1] || "";
+  const monthSlug = fromMonth === toMonth ? fromMonth : `${fromMonth}-${toMonth}`;
+  return `${dateSlug}_${nameSlug}_${monthSlug}`;
+}
 function shiftMonth(monthStr, delta){
   const [y, m] = monthStr.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
@@ -4180,7 +4200,7 @@ function bindAdmin(){
       const wb = buildClientExportWorkbook(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy, Number(state.clientExportVatRate) || 0);
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      downloadBlob(blob, `export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.xlsx`);
+      downloadBlob(blob, `${clientExportFileBaseName(project, state.clientExportPhaseId, state.clientExportFrom, state.clientExportTo)}.xlsx`);
     } finally {
       clientExportXlsxBtn.disabled = false;
       clientExportXlsxBtn.textContent = origText;
@@ -4207,7 +4227,7 @@ function bindAdmin(){
     clientExportPdfBtn.textContent = "Generuji…";
     try{
       const doc = await buildClientExportPdf(filtered, extraCosts, project, state.clientExportFrom, state.clientExportTo, state.clientExportSignedBy, Number(state.clientExportVatRate) || 0);
-      doc.save(`export-klient-${project.id}-${new Date().toISOString().slice(0,10)}.pdf`);
+      doc.save(`${clientExportFileBaseName(project, state.clientExportPhaseId, state.clientExportFrom, state.clientExportTo)}.pdf`);
     } finally {
       clientExportPdfBtn.disabled = false;
       clientExportPdfBtn.textContent = origText;
