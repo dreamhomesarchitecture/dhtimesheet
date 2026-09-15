@@ -620,6 +620,7 @@ let state = {
   entries: [],
   month: new Date().toISOString().slice(0,7),
   entryTimerStart: null,
+  entryTimerAccumulated: 0,
   editingEntryId: null,
   editingLaborEntryId: null,
   laborBulkSelectedIds: {},
@@ -796,6 +797,32 @@ function fmtTimerElapsed(ms){
   const s = String(totalSec % 60).padStart(2, "0");
   return `${h}:${m}:${s}`;
 }
+function currentTimerElapsedMs(){
+  return (state.entryTimerAccumulated || 0) + (state.entryTimerStart ? (Date.now() - state.entryTimerStart) : 0);
+}
+function updateEntryTimerButtonsUI(){
+  const startBtn = document.getElementById("entry-timer-start-btn");
+  const pauseBtn = document.getElementById("entry-timer-pause-btn");
+  const stopBtn = document.getElementById("entry-timer-stop-btn");
+  if(!startBtn || !pauseBtn || !stopBtn) return;
+  const running = !!state.entryTimerStart;
+  const hasTime = running || !!state.entryTimerAccumulated;
+  startBtn.disabled = running;
+  startBtn.title = (state.entryTimerAccumulated && !running) ? "Pokračovat v měření" : "Spustit měření času";
+  pauseBtn.disabled = !running;
+  stopBtn.disabled = !hasTime;
+  let display = document.getElementById("entry-timer-display");
+  if(hasTime && !display){
+    display = document.createElement("span");
+    display.id = "entry-timer-display";
+    display.className = "meta";
+    display.style.cssText = "font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;align-self:center;white-space:nowrap;";
+    stopBtn.insertAdjacentElement("afterend", display);
+  } else if(!hasTime && display){
+    display.remove();
+  }
+  if(display) display.textContent = fmtTimerElapsed(currentTimerElapsedMs());
+}
 function startEntryTimerTick(){
   if(entryTimerIntervalId){ clearInterval(entryTimerIntervalId); entryTimerIntervalId = null; }
   if(!state.entryTimerStart) return;
@@ -804,7 +831,7 @@ function startEntryTimerTick(){
   const tick = () => {
     const el = document.getElementById("entry-timer-display");
     if(!el || !state.entryTimerStart){ clearInterval(entryTimerIntervalId); entryTimerIntervalId = null; return; }
-    el.textContent = fmtTimerElapsed(Date.now() - state.entryTimerStart);
+    el.textContent = fmtTimerElapsed(currentTimerElapsedMs());
   };
   tick();
   entryTimerIntervalId = setInterval(tick, 1000);
@@ -1792,9 +1819,10 @@ function timesheetTemplate(){
             <div class="field-row w-cost"><label class="field-label">Náklady (Kč)</label><input type="number" name="cost" min="0" step="1" placeholder="0"></div>
             <div class="field-row grow"><label class="field-label" id="entry-note-label">Poznámka${formNoteRequired ? " *" : ""}</label><input type="text" name="note" id="entry-note-input" placeholder="${formNoteRequired ? "povinné u autorského dozoru" : "nepovinné"}" ${formNoteRequired ? "required" : ""}></div>
             <div class="field-row w-btn" style="display:flex;gap:8px;align-items:end;">
-              <button type="button" class="icon-btn" id="entry-timer-start-btn" title="Spustit měření času" ${state.entryTimerStart ? "disabled" : ""} style="width:38px;height:38px;font-size:14px;">▶</button>
-              <button type="button" class="icon-btn" id="entry-timer-stop-btn" title="Zastavit měření a vyplnit hodiny" ${state.entryTimerStart ? "" : "disabled"} style="width:38px;height:38px;font-size:14px;">⏹</button>
-              ${state.entryTimerStart ? `<span id="entry-timer-display" class="meta" style="font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;align-self:center;white-space:nowrap;">00:00:00</span>` : ``}
+              <button type="button" class="icon-btn" id="entry-timer-start-btn" title="${state.entryTimerAccumulated ? "Pokračovat v měření" : "Spustit měření času"}" ${state.entryTimerStart ? "disabled" : ""} style="width:38px;height:38px;font-size:14px;">▶</button>
+              <button type="button" class="icon-btn" id="entry-timer-pause-btn" title="Pozastavit měření" ${state.entryTimerStart ? "" : "disabled"} style="width:38px;height:38px;font-size:14px;">⏸</button>
+              <button type="button" class="icon-btn" id="entry-timer-stop-btn" title="Zastavit a rovnou uložit záznam" ${(state.entryTimerStart || state.entryTimerAccumulated) ? "" : "disabled"} style="width:38px;height:38px;font-size:14px;">⏹</button>
+              ${(state.entryTimerStart || state.entryTimerAccumulated) ? `<span id="entry-timer-display" class="meta" style="font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;align-self:center;white-space:nowrap;">${fmtTimerElapsed(currentTimerElapsedMs())}</span>` : ``}
               <button class="btn btn-sage" type="submit" ${canSubmitInitially ? "" : "disabled"}>Přidat záznam</button>
             </div>
           </div>
@@ -3365,15 +3393,30 @@ function bindApp(){
     });
   });
   const entryTimerStartBtn = document.getElementById("entry-timer-start-btn");
-  if(entryTimerStartBtn) entryTimerStartBtn.onclick = () => setState({ entryTimerStart: Date.now() });
+  if(entryTimerStartBtn) entryTimerStartBtn.onclick = () => {
+    state.entryTimerStart = Date.now();
+    updateEntryTimerButtonsUI();
+    startEntryTimerTick();
+  };
+  const entryTimerPauseBtn = document.getElementById("entry-timer-pause-btn");
+  if(entryTimerPauseBtn) entryTimerPauseBtn.onclick = () => {
+    if(!state.entryTimerStart) return;
+    state.entryTimerAccumulated = currentTimerElapsedMs();
+    state.entryTimerStart = null;
+    updateEntryTimerButtonsUI();
+    startEntryTimerTick();
+  };
   const entryTimerStopBtn = document.getElementById("entry-timer-stop-btn");
   if(entryTimerStopBtn) entryTimerStopBtn.onclick = () => {
-    if(!state.entryTimerStart) return;
-    const hours = (Date.now() - state.entryTimerStart) / 3600000;
-    state.entryTimerStart = null;
-    render();
+    if(!state.entryTimerStart && !state.entryTimerAccumulated) return;
+    const hours = Math.max(0.01, Math.round((currentTimerElapsedMs() / 3600000) * 100) / 100);
     const hoursInput = document.getElementById("entry-hours-input");
-    if(hoursInput) hoursInput.value = Math.max(0.01, Math.round(hours * 100) / 100);
+    if(hoursInput) hoursInput.value = hours;
+    const form = document.getElementById("add-entry-form");
+    if(form && !form.reportValidity()) return;
+    state.entryTimerStart = null;
+    state.entryTimerAccumulated = 0;
+    if(form) form.requestSubmit();
   };
   startEntryTimerTick();
 }
