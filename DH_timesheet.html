@@ -209,6 +209,7 @@
   .entry-form-row .w-btn .btn{ padding:10px 22px; white-space:nowrap; }
   .icon-btn{ background:none; border:1px solid var(--line); border-radius:9px; width:29px; height:29px; cursor:pointer; font-size:13px; color:var(--soft); line-height:1; flex:none; transition: all .15s; }
   .icon-btn:hover{ border-color:var(--ink); color:var(--ink); background:var(--sage-tint); }
+  .icon-btn:disabled{ opacity:.35; cursor:not-allowed; background:none; }
 
   .btn{ font-family:'DM Sans', sans-serif; font-weight:700; font-size:14px; border-radius:999px; padding:13px 26px; cursor:pointer; border:1.5px solid var(--ink); transition: transform .15s, box-shadow .15s, opacity .15s; }
   .btn:hover{ transform: translateY(-1px); box-shadow: var(--shadow-sm); }
@@ -618,6 +619,7 @@ let state = {
   currentEmployee: null,
   entries: [],
   month: new Date().toISOString().slice(0,7),
+  entryTimerStart: null,
   editingEntryId: null,
   editingLaborEntryId: null,
   laborBulkSelectedIds: {},
@@ -786,6 +788,27 @@ function fmtStatusPct(status, budget){
   return (Number(status)/Number(budget)*100).toLocaleString("cs-CZ",{maximumFractionDigits:1}) + " %";
 }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
+let entryTimerIntervalId = null;
+function fmtTimerElapsed(ms){
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+  const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+  const s = String(totalSec % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+function startEntryTimerTick(){
+  if(entryTimerIntervalId){ clearInterval(entryTimerIntervalId); entryTimerIntervalId = null; }
+  if(!state.entryTimerStart) return;
+  const display = document.getElementById("entry-timer-display");
+  if(!display) return;
+  const tick = () => {
+    const el = document.getElementById("entry-timer-display");
+    if(!el || !state.entryTimerStart){ clearInterval(entryTimerIntervalId); entryTimerIntervalId = null; return; }
+    el.textContent = fmtTimerElapsed(Date.now() - state.entryTimerStart);
+  };
+  tick();
+  entryTimerIntervalId = setInterval(tick, 1000);
+}
 const MONTH_NAMES_CS = ["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];
 function fmtMonthLabel(monthStr){
   const [y, m] = monthStr.split("-").map(Number);
@@ -1760,7 +1783,7 @@ function timesheetTemplate(){
         <form id="add-entry-form" style="margin-bottom:28px;">
           <div class="entry-form-row">
             <div class="field-row w-date"><label class="field-label">Datum</label><input type="date" name="date" id="entry-date-input" value="${esc(formDate)}" required></div>
-            <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" min="0.01" step="0.01" placeholder="8" required></div>
+            <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" id="entry-hours-input" min="0.01" step="0.01" placeholder="8" required></div>
             <div class="field-row w-select"><label class="field-label">Projekt</label><select name="projectId" id="entry-project-select" required>${projectOptions}</select></div>
             <div class="field-row w-select" id="phase-field-row" style="${formPhaseless ? "display:none;" : ""}">
               <label class="field-label">Fáze</label>
@@ -1768,7 +1791,10 @@ function timesheetTemplate(){
             </div>
             <div class="field-row w-cost"><label class="field-label">Náklady (Kč)</label><input type="number" name="cost" min="0" step="1" placeholder="0"></div>
             <div class="field-row grow"><label class="field-label" id="entry-note-label">Poznámka${formNoteRequired ? " *" : ""}</label><input type="text" name="note" id="entry-note-input" placeholder="${formNoteRequired ? "povinné u autorského dozoru" : "nepovinné"}" ${formNoteRequired ? "required" : ""}></div>
-            <div class="field-row w-btn" style="display:flex;gap:8px;">
+            <div class="field-row w-btn" style="display:flex;gap:8px;align-items:end;">
+              <button type="button" class="icon-btn" id="entry-timer-start-btn" title="Spustit měření času" ${state.entryTimerStart ? "disabled" : ""} style="width:38px;height:38px;font-size:14px;">▶</button>
+              <button type="button" class="icon-btn" id="entry-timer-stop-btn" title="Zastavit měření a vyplnit hodiny" ${state.entryTimerStart ? "" : "disabled"} style="width:38px;height:38px;font-size:14px;">⏹</button>
+              ${state.entryTimerStart ? `<span id="entry-timer-display" class="meta" style="font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;align-self:center;white-space:nowrap;">00:00:00</span>` : ``}
               <button class="btn btn-sage" type="submit" ${canSubmitInitially ? "" : "disabled"}>Přidat záznam</button>
             </div>
           </div>
@@ -3338,6 +3364,18 @@ function bindApp(){
       if(saveBtn) saveBtn.click();
     });
   });
+  const entryTimerStartBtn = document.getElementById("entry-timer-start-btn");
+  if(entryTimerStartBtn) entryTimerStartBtn.onclick = () => setState({ entryTimerStart: Date.now() });
+  const entryTimerStopBtn = document.getElementById("entry-timer-stop-btn");
+  if(entryTimerStopBtn) entryTimerStopBtn.onclick = () => {
+    if(!state.entryTimerStart) return;
+    const hours = (Date.now() - state.entryTimerStart) / 3600000;
+    state.entryTimerStart = null;
+    render();
+    const hoursInput = document.getElementById("entry-hours-input");
+    if(hoursInput) hoursInput.value = Math.max(0.01, Math.round(hours * 100) / 100);
+  };
+  startEntryTimerTick();
 }
 
 function bindAdmin(){
