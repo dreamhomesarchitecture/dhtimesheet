@@ -264,6 +264,10 @@
   .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-cost:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
+  .entry-head-paycal{ display:grid; grid-template-columns: 70px 1fr 130px 170px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row-paycal{ display:grid; grid-template-columns: 70px 1fr 130px 170px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-row-paycal:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
+
   .entry-head-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
   .entry-row-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-labor:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
@@ -312,6 +316,8 @@
     .entry-row-wide{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-cost{ display:none; }
     .entry-row-cost{ grid-template-columns: 1fr; gap:6px; }
+    .entry-head-paycal{ display:none; }
+    .entry-row-paycal{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-labor{ display:none; }
     .entry-row-labor{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-clientexp{ display:none; }
@@ -588,6 +594,7 @@ let state = {
   adminOpenSection: null,
   adminSubTab: "settings",
   expandedAdminProjectOverviewId: null,
+  expandedPaymentCalendarProjectId: null,
   expandedEmployeeRatesId: null,
   rateError: "",
   adminEntriesFlat: null,
@@ -761,6 +768,28 @@ function phaseBudgetTotal(p, pid){
   if(items.length) return items.reduce((s,it) => s + (Number(it.amount)||0), 0);
   const legacy = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
   return legacy === "" ? 0 : (Number(legacy) || 0);
+}
+function phaseBudgetPaymentDate(p, pid){
+  return (p.phaseBudgetPaymentDates && p.phaseBudgetPaymentDates[pid]) || "";
+}
+function paymentCalendarRows(p){
+  const rows = [];
+  (p.phaseIds || []).forEach(pid => {
+    const ph = state.config.phases.find(x => x.id === pid);
+    const phaseLabel = ph ? ph.name : pid;
+    const items = phaseBudgetItems(p, pid);
+    if(items.length){
+      items.forEach(it => {
+        rows.push({ phaseId: pid, phaseLabel, itemId: it.id, label: it.label || phaseLabel, amount: Number(it.amount)||0, paidDate: it.paidDate || "" });
+      });
+    } else {
+      const legacy = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
+      if(legacy !== ""){
+        rows.push({ phaseId: pid, phaseLabel, itemId: null, label: phaseLabel, amount: Number(legacy)||0, paidDate: phaseBudgetPaymentDate(p, pid) });
+      }
+    }
+  });
+  return rows;
 }
 function phaseFinancials(p, pid){
   const totalBudget = phaseBudgetTotal(p, pid);
@@ -1339,6 +1368,90 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
     doc.setFontSize(9.5);
     doc.text(signedBy, pageWidth - marginX, ty + 18, { align: "right" });
   }
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for(let i = 1; i <= pageCount; i++){
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(120,120,120);
+    doc.text("DREAM HOMES ARCHITECTURE s.r.o.  |  IČ: 091 118 41  |  588 45, dolní cerekev  |  www.dreamhomes.cz", pageWidth/2, pageHeight - 12, { align: "center" });
+  }
+
+  return doc;
+}
+
+async function buildPaymentCalendarPdf(project, rows){
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  await ensurePdfFont(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 18;
+
+  try{
+    const logoH = 15, logoW = logoH * (500/278);
+    doc.addImage(BRAND_LOGO, "PNG", pageWidth/2 - logoW/2, 12, logoW, logoH);
+  }catch(e){}
+
+  doc.setFont("Lato", "bold");
+  doc.setFontSize(19);
+  doc.text("platební kalendář", pageWidth/2, 46, { align: "center" });
+
+  let y = 62;
+  const infoRows = [
+    ["název stavby", project.name || ""],
+    ["číslo zakázky", `${project.id}${jobNumberSuffix(project.name)}`],
+    ["datum", fmtDateDotsPadded(todayStr())],
+    ["investor", project.investor || ""]
+  ];
+  doc.setFontSize(10);
+  infoRows.forEach(([label, value]) => {
+    doc.setFont("Lato", "bold");
+    doc.text(label, marginX, y);
+    doc.setFont("Lato", "normal");
+    doc.text(String(value), pageWidth - marginX, y, { align: "right" });
+    y += 5.5;
+  });
+
+  const bodyRows = rows.map(r => [
+    r.phaseId,
+    r.label,
+    fmtKc(r.amount),
+    r.paidDate ? fmtDateDots(r.paidDate) : ""
+  ]);
+
+  doc.autoTable({
+    startY: y + 6,
+    head: [["FÁZE", "POLOŽKA ROZPOČTU", "CENA Z ROZPOČTU", "DATUM ÚHRADY"]],
+    body: bodyRows,
+    styles: { font: "Lato", fontSize: 8, cellPadding: 1.8, valign: "middle" },
+    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [246,245,241] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: "auto" },
+      2: { cellWidth: 35, halign: "right" },
+      3: { cellWidth: 35, halign: "right" }
+    },
+    margin: { left: marginX, right: marginX, bottom: 24 }
+  });
+
+  const total = rows.reduce((s,r) => s + r.amount, 0);
+
+  let ty = doc.lastAutoTable.finalY + 10;
+  if(ty + 20 > pageHeight - 32){
+    doc.addPage();
+    ty = 24;
+  }
+  const boxLeft = pageWidth - marginX - 80;
+  doc.setFillColor(164,172,127);
+  doc.rect(boxLeft - 3, ty, 80 + 3, 8, "F");
+  ty += 5.8;
+  doc.setTextColor(255,255,255);
+  doc.setFont("Lato", "bold");
+  doc.setFontSize(9.5);
+  doc.text("ROZPOČET CELKEM", boxLeft, ty);
+  doc.text(fmtKc(total), pageWidth - marginX - 2, ty, { align: "right" });
+  doc.setTextColor(0,0,0);
 
   const pageCount = doc.internal.getNumberOfPages();
   for(let i = 1; i <= pageCount; i++){
@@ -2047,6 +2160,55 @@ function adminProjectsOverviewTemplate(){
     </div>
     <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Hodiny celkem</span></div>
     <div class="project-list" id="admin-project-list">${rows}</div>
+    `}`;
+}
+
+function buildPaymentCalendarDetail(projectId){
+  const p = state.config.projects.find(x => x.id === projectId);
+  if(!p) return "";
+  const rows = paymentCalendarRows(p);
+  const total = rows.reduce((s,r) => s + r.amount, 0);
+  const rowsHtml = rows.length ? rows.map(r => `
+    <div class="entry-row-paycal">
+      <span class="entry-phase">${esc(r.phaseId)}</span>
+      <span>${esc(r.label)}</span>
+      <span class="entry-num">${fmtKc(r.amount)}</span>
+      <input type="date" class="payment-calendar-date-input" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${r.itemId ? esc(r.itemId) : "legacy"}" value="${esc(r.paidDate)}">
+    </div>`).join("") : `<div class="empty-state">U tohoto projektu zatím není vepsaný žádný rozpočet.</div>`;
+  return `
+    <div class="project-detail">
+      ${rows.length ? `<div class="project-detail-total"><span>Rozpočet celkem</span><b>${fmtKc(total)}</b></div>` : ``}
+      ${rows.length ? `<div class="entry-head-paycal"><span>Fáze</span><span>Položka rozpočtu</span><span style="text-align:right;">Cena z rozpočtu</span><span>Datum úhrady</span></div>` : ``}
+      <div class="entries">${rowsHtml}</div>
+      ${rows.length ? `<div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-btn" data-project-id="${esc(p.id)}">Exportovat PDF</button></div>` : ``}
+    </div>`;
+}
+
+function adminPaymentCalendarTemplate(){
+  const projects = sortedProjects().filter(p => (p.phaseIds || []).length > 0);
+  const rows = projects.map(p => {
+    const isOpen = state.expandedPaymentCalendarProjectId === p.id;
+    const total = paymentCalendarRows(p).reduce((s,r) => s + r.amount, 0);
+    return `
+    <div class="project-item ${isOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
+      <div class="project-row" data-action="toggle-payment-calendar-project" data-id="${esc(p.id)}">
+        <span class="chevron">▸</span>
+        <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
+        <span class="name">${esc(p.name)}</span>
+        <span class="project-hours ${total ? "" : "zero"}">${fmtKc(total)}</span>
+      </div>
+      ${isOpen ? buildPaymentCalendarDetail(p.id) : ""}
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="q-hint" style="margin:0 0 14px;">${projects.length} projektů. Klikněte na projekt pro rozpis podle fází a položek rozpočtu.</div>
+    ${projects.length === 0 ? `<div class="empty-state">Zatím žádné projekty s přiřazenými fázemi.</div>` : `
+    <div class="field-row project-search">
+      <input type="text" id="payment-calendar-search-input" placeholder="Hledat…">
+    </div>
+    <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Rozpočet celkem</span></div>
+    <div class="project-list" id="payment-calendar-project-list">${rows}</div>
     `}`;
 }
 
@@ -3035,6 +3197,11 @@ function adminTemplate(){
       </div>
 
       <div class="admin-block">
+        ${adminSectionHeader("payment-calendar", "Platební kalendář")}
+        ${state.adminOpenSection === "payment-calendar" ? adminPaymentCalendarTemplate() : ""}
+      </div>
+
+      <div class="admin-block">
         ${adminSectionHeader("records-filter", "Filtr záznamů")}
         ${state.adminOpenSection === "records-filter" ? adminRecordsTemplate() : ""}
       </div>
@@ -3538,6 +3705,53 @@ function bindAdmin(){
     const id = row.getAttribute("data-id");
     setState({ expandedAdminProjectOverviewId: state.expandedAdminProjectOverviewId === id ? null : id });
   });
+
+  const paymentCalendarSearchInput = document.getElementById("payment-calendar-search-input");
+  if(paymentCalendarSearchInput) paymentCalendarSearchInput.addEventListener("input", () => {
+    const q = paymentCalendarSearchInput.value.trim().toLowerCase();
+    document.querySelectorAll("#payment-calendar-project-list .project-item").forEach(item => {
+      item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
+    });
+  });
+  document.querySelectorAll('[data-action="toggle-payment-calendar-project"]').forEach(row => row.onclick = () => {
+    const id = row.getAttribute("data-id");
+    setState({ expandedPaymentCalendarProjectId: state.expandedPaymentCalendarProjectId === id ? null : id });
+  });
+  document.querySelectorAll('.payment-calendar-date-input').forEach(el => el.addEventListener("change", async () => {
+    const projectId = el.getAttribute("data-project-id");
+    const phaseId = el.getAttribute("data-phase-id");
+    const itemId = el.getAttribute("data-item-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    if(itemId && itemId !== "legacy"){
+      const items = project.phaseBudgetItems && project.phaseBudgetItems[phaseId];
+      const item = items && items.find(it => it.id === itemId);
+      if(item) item.paidDate = el.value;
+    } else {
+      if(!project.phaseBudgetPaymentDates) project.phaseBudgetPaymentDates = {};
+      project.phaseBudgetPaymentDates[phaseId] = el.value;
+    }
+    await saveConfig();
+    showStamp();
+  }));
+  const paymentCalendarPdfBtn = document.getElementById("payment-calendar-pdf-btn");
+  if(paymentCalendarPdfBtn) paymentCalendarPdfBtn.onclick = async () => {
+    const projectId = paymentCalendarPdfBtn.getAttribute("data-project-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const rows = paymentCalendarRows(project);
+    if(!rows.length) return;
+    paymentCalendarPdfBtn.disabled = true;
+    const origText = paymentCalendarPdfBtn.textContent;
+    paymentCalendarPdfBtn.textContent = "Generuji…";
+    try{
+      const doc = await buildPaymentCalendarPdf(project, rows);
+      doc.save(`platebni-kalendar_${project.id}_${todayStr()}.pdf`);
+    } finally {
+      paymentCalendarPdfBtn.disabled = false;
+      paymentCalendarPdfBtn.textContent = origText;
+    }
+  };
 
   document.querySelectorAll('[data-action="wipe-employee-data"]').forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-id");
