@@ -196,6 +196,7 @@
   .field-row{ margin-bottom:13px; }
   .field-label{ font-size:10.5px; font-weight:700; color:var(--soft); text-transform:uppercase; letter-spacing:.08em; display:block; margin-bottom:6px; }
   .form-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(130px,1fr)); gap:12px; align-items:end; }
+  .project-form-grid{ grid-template-columns: 0.5fr 2fr 1fr 1fr; }
   .entry-form-row{ display:flex; flex-wrap:wrap; gap:9px; align-items:end; }
   .entry-form-row .field-row{ margin-bottom:0; flex:0 0 auto; }
   .entry-form-row input, .entry-form-row select{ padding:10px 11px; font-size:13.5px; }
@@ -304,6 +305,7 @@
     .entry-row{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-mine{ display:none; }
     .entry-row-mine{ grid-template-columns: 1fr; gap:6px; }
+    .project-form-grid{ grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); }
     .entry-head-compact{ display:none; }
     .entry-row-compact{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-wide{ display:none; }
@@ -2460,7 +2462,7 @@ function projectDetailPageHtml(){
       <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
 
       <form id="project-modal-form" data-id="${esc(p.id)}" style="margin-top:24px;">
-        <div class="form-grid">
+        <div class="form-grid project-form-grid">
           <div class="field-row"><label class="field-label">Číslo projektu</label><input type="text" name="id" value="${esc(p.id)}" required></div>
           <div class="field-row"><label class="field-label">Název</label><input type="text" name="name" value="${esc(p.name)}" required></div>
           <div class="field-row"><label class="field-label">Investor</label><input type="text" name="investor" value="${esc(p.investor || "")}"></div>
