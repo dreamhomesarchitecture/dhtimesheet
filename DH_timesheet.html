@@ -785,6 +785,25 @@ function sortedProjects(){
   });
 }
 function uid(prefix){ return prefix + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7); }
+
+const REMEMBER_LOGIN_KEY = "dh_remembered_login";
+const REMEMBER_LOGIN_MAX_AGE_MS = 96 * 3600000;
+function saveRememberedLogin(employeeId){
+  try{ localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({ employeeId, loggedInAt: Date.now() })); }catch(e){}
+}
+function clearRememberedLogin(){
+  try{ localStorage.removeItem(REMEMBER_LOGIN_KEY); }catch(e){}
+}
+function readRememberedLogin(){
+  try{
+    const raw = localStorage.getItem(REMEMBER_LOGIN_KEY);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    if(!data || !data.employeeId || !data.loggedInAt) return null;
+    if(Date.now() - data.loggedInAt > REMEMBER_LOGIN_MAX_AGE_MS){ clearRememberedLogin(); return null; }
+    return data;
+  }catch(e){ return null; }
+}
 function initials(name){ return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
 function fmtH(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:2}) + " h"; }
 function fmtHShort(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:1}); }
@@ -1403,6 +1422,17 @@ async function init(){
   }
   if(needsSave) await saveConfig();
 
+  const remembered = readRememberedLogin();
+  if(remembered){
+    const emp = state.config.employees.find(e => e.id === remembered.employeeId);
+    if(emp){
+      state.currentEmployee = emp;
+      state.entries = await loadEntries(emp.id);
+    } else {
+      clearRememberedLogin();
+    }
+  }
+
   state.loading = false;
   render();
 }
@@ -1437,7 +1467,7 @@ function render(){
   homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false });
   homeBtn.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); homeBtn.onclick(); } });
   const logoutBtn = document.getElementById("logout-btn");
-  if(logoutBtn) logoutBtn.onclick = () => setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null });
+  if(logoutBtn) logoutBtn.onclick = () => { clearRememberedLogin(); setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null }); };
 
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
@@ -1676,6 +1706,10 @@ function pickerTemplate(){
         <p>Zadejte heslo pro <b style="color:var(--ink);">${esc(emp.name)}</b>.</p>
         <input type="password" id="login-pass-input" placeholder="Heslo">
         ${state.loginError ? `<div class="q-hint" style="color:var(--danger);margin-bottom:12px;">Nesprávné heslo, zkuste to znovu.</div>` : ``}
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px;font-size:13px;color:var(--soft);cursor:pointer;">
+          <input type="checkbox" id="login-remember-input">
+          Zapamatovat si mě na tomto počítači (na 96 hodin)
+        </label>
         <div><button class="btn btn-sage" id="login-submit-btn">Vstoupit</button></div>
       </div>`;
   }
@@ -3263,6 +3297,8 @@ function bindApp(){
         state.selectedEmployeeId = null;
         state.loginError = false;
         state.month = new Date().toISOString().slice(0,7);
+        const rememberInput = document.getElementById("login-remember-input");
+        if(rememberInput && rememberInput.checked) saveRememberedLogin(emp.id);
         render();
       } else {
         setState({ loginError: true });
