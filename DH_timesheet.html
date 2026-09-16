@@ -1456,6 +1456,7 @@ function bindProjectLinks(){
       setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
+      window.scrollTo(0, 0);
     };
   });
 }
@@ -3564,9 +3565,11 @@ function bindAdmin(){
     setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
+    window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
     setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
+    window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: b.getAttribute("data-id") });
