@@ -239,9 +239,11 @@
   .entry-head{ display:grid; grid-template-columns: 92px 1fr 90px 64px 84px 1fr 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
   .entry-row{ display:grid; grid-template-columns: 92px 1fr 90px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
-  .entry-head-mine{ display:grid; grid-template-columns: 92px 1fr 90px 64px 84px 1fr 28px 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row-mine{ display:grid; grid-template-columns: 92px 1fr 90px 64px 84px 1fr 28px 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-head-mine{ display:grid; grid-template-columns: 1fr 90px 64px 84px 1fr 28px 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row-mine{ display:grid; grid-template-columns: 1fr 90px 64px 84px 1fr 28px 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-mine:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
+  .entry-day-header{ font-size:12.5px; font-weight:700; color:var(--ink); padding:14px 4px 6px; }
+  .entry-day-header:first-child{ padding-top:0; }
   .entry-date{ font-size:13px; color:var(--soft); }
   .entry-proj{ font-size:12px; background: var(--sage-tint); color:var(--ink); border-radius:999px; padding:4px 10px; display:inline-block; font-weight:600; }
   .entry-proj.gone{ background: var(--tan-tint); color:var(--tan); }
@@ -912,6 +914,14 @@ function fmtDateDotsPadded(dateStr){
   if(!dateStr) return "";
   const [y, m, d] = dateStr.split("-").map(Number);
   return `${String(d).padStart(2,"0")}.${String(m).padStart(2,"0")}.${y}`;
+}
+const WEEKDAY_NAMES_CS = ["neděle","pondělí","úterý","středa","čtvrtek","pátek","sobota"];
+function fmtDayHeader(dateStr){
+  if(!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const weekday = WEEKDAY_NAMES_CS[new Date(y, m-1, d).getDay()] || "";
+  const weekdayCap = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  return `${weekdayCap} ${d}. ${MONTH_NAMES_CS[m-1] || ""}`;
 }
 function jobNumberSuffix(name){
   const letters = String(name||"").replace(/[^\p{L}]/gu, "");
@@ -1886,9 +1896,13 @@ function timesheetTemplate(){
   const yearOverviewHtml = buildYearOverview(currentYear, hoursByMonthNum, yearTotalHours, currentMonthNum);
 
   const rows = monthEntries.length ? `
-    <div class="entry-head-mine"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span><span></span><span></span><span></span></div>
+    <div class="entry-head-mine"><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span><span></span><span></span><span></span></div>
     <div class="entries">
-      ${monthEntries.map(e => {
+      ${(() => {
+      let lastEntryDate = null;
+      return monthEntries.map(e => {
+        const dayHeaderHtml = e.date !== lastEntryDate ? `<div class="entry-day-header">${esc(fmtDayHeader(e.date))}</div>` : "";
+        lastEntryDate = e.date;
         const proj = projects.find(p => p.id === e.projectId);
         const phase = phases.find(p => p.id === e.phaseId);
         if(state.editingEntryId === e.id){
@@ -1899,7 +1913,7 @@ function timesheetTemplate(){
           const editPhaseOptions = editPhases.length
             ? editPhases.map(p => `<option value="${esc(p.id)}" ${e.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}${isPhaseClosedOnDate(editProject, p.id, e.date) ? " (uzavřeno)" : ""}</option>`).join("")
             : `<option value="" disabled selected>— žádné fáze —</option>`;
-          return `
+          return dayHeaderHtml + `
           <div class="entry-row-mine" data-my-entry-edit-row="${esc(e.id)}">
             <input type="date" class="my-entry-edit-date" value="${esc(e.date)}" style="padding:6px 8px;font-size:13px;">
             <select class="my-entry-edit-project" style="padding:6px 8px;font-size:13px;">${editProjectOptions}</select>
@@ -1914,9 +1928,8 @@ function timesheetTemplate(){
             ${state.entryError ? `<div class="q-hint" style="color:var(--danger);grid-column:1/-1;margin:6px 0 0;">${esc(state.entryError)}</div>` : ``}
           </div>`;
         }
-        return `
+        return dayHeaderHtml + `
         <div class="entry-row-mine">
-          <span class="entry-date">${esc(e.date)}</span>
           <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
           <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : e.phaseId ? `<span class="entry-phase gone">smazaná fáze</span>` : ``}</span>
           <span class="entry-num">${fmtH(e.hours)}</span>
@@ -1926,7 +1939,8 @@ function timesheetTemplate(){
           <button class="icon-btn" data-action="copy-entry" data-id="${esc(e.id)}" title="Zkopírovat s dnešním datem">⎘</button>
           <button class="icon-btn" data-action="delete-entry" data-id="${esc(e.id)}" title="Smazat">×</button>
         </div>`;
-      }).join("")}
+      }).join("");
+      })()}
     </div>` : `<div class="empty-state">Za tento měsíc zatím žádné záznamy.</div>`;
 
   const formProject = projects[0];
