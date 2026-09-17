@@ -244,6 +244,7 @@
   .entry-row-mine:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
   .entry-day-header{ font-size:12.5px; font-weight:700; color:var(--ink); padding:14px 4px 6px; }
   .entry-day-header:first-child{ padding-top:0; }
+  .payment-note-input{ flex:1 1 0%; min-width:0; }
   .entry-date{ font-size:13px; color:var(--soft); }
   .entry-proj{ font-size:12px; background: var(--sage-tint); color:var(--ink); border-radius:999px; padding:4px 10px; display:inline-block; font-weight:600; }
   .entry-proj.gone{ background: var(--tan-tint); color:var(--tan); }
@@ -299,6 +300,8 @@
   .app-foot{ color: var(--soft); font-size:12px; text-align:center; margin-top:36px; line-height:1.7; max-width:520px; margin-left:auto; margin-right:auto; }
 
   @media (max-width:520px){
+    [data-payment-row]{ flex-wrap: wrap; }
+    [data-payment-row] .payment-note-input{ flex: 1 1 100%; }
     .sheet{ padding:12px 2px 22px; }
     .topbar{ padding: 18px 18px 16px; }
     .brand img{ height:56px; }
@@ -1432,25 +1435,26 @@ async function buildPaymentCalendarPdf(project, rows){
   rows.forEach(r => {
     if(r.payments && r.payments.length){
       r.payments.forEach(pay => {
-        bodyRows.push([r.phaseId, r.label, fmtKc(Number(pay.amount)||0), pay.date ? fmtDateDots(pay.date) : ""]);
+        bodyRows.push([r.phaseId, r.label, fmtKc(Number(pay.amount)||0), pay.date ? fmtDateDots(pay.date) : "", pay.note || ""]);
       });
     } else {
-      bodyRows.push([r.phaseId, r.label, fmtKc(r.amount), ""]);
+      bodyRows.push([r.phaseId, r.label, fmtKc(r.amount), "", ""]);
     }
   });
 
   doc.autoTable({
     startY: y + 6,
-    head: [["FÁZE", "POLOŽKA ROZPOČTU", "CENA Z ROZPOČTU", "DATUM ÚHRADY"]],
+    head: [["FÁZE", "POLOŽKA ROZPOČTU", "CENA Z ROZPOČTU", "DATUM ÚHRADY", "POZNÁMKA"]],
     body: bodyRows,
     styles: { font: "Lato", fontSize: 8, cellPadding: 1.8, valign: "middle" },
     headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
       0: { cellWidth: 22 },
-      1: { cellWidth: "auto" },
-      2: { cellWidth: 35, halign: "right" },
-      3: { cellWidth: 35, halign: "right" }
+      1: { cellWidth: 55 },
+      2: { cellWidth: 32, halign: "right" },
+      3: { cellWidth: 30, halign: "right" },
+      4: { cellWidth: "auto" }
     },
     margin: { left: marginX, right: marginX, bottom: 24 }
   });
@@ -2202,9 +2206,9 @@ function buildPaymentCalendarDetail(projectId){
       : `Zatím nic uhrazeno`;
     const paymentsHtml = r.payments.map(pay => `
       <div class="admin-project-head" data-payment-row="${esc(pay.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" style="margin-bottom:6px;">
-        <input type="number" min="0" step="1" class="payment-amount-input" placeholder="Kč" style="width:120px;padding:6px 8px;font-size:13px;" value="${esc(pay.amount)}">
-        <input type="date" class="payment-date-input" style="padding:6px 8px;font-size:13px;" value="${esc(pay.date||"")}">
-        <span class="grow"></span>
+        <input type="number" min="0" step="1" class="payment-amount-input" placeholder="Kč" style="flex:0 0 auto;width:120px;padding:6px 8px;font-size:13px;" value="${esc(pay.amount)}">
+        <input type="date" class="payment-date-input" style="flex:0 0 auto;width:160px;padding:6px 8px;font-size:13px;" value="${esc(pay.date||"")}">
+        <input type="text" class="payment-note-input" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;" value="${esc(pay.note||"")}">
         <button type="button" class="icon-btn" data-action="delete-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" data-payment-id="${esc(pay.id)}" title="Smazat platbu">×</button>
       </div>`).join("");
     return `
@@ -3783,7 +3787,7 @@ function bindAdmin(){
     const totalAmount = row ? row.amount : 0;
     const alreadyPaid = payments.reduce((s,pay) => s + (Number(pay.amount)||0), 0);
     const remaining = Math.max(0, totalAmount - alreadyPaid);
-    payments.push({ id: uid("pay"), amount: remaining, date: "" });
+    payments.push({ id: uid("pay"), amount: remaining, date: "", note: "" });
     await saveConfig();
     showStamp();
     render();
@@ -3803,7 +3807,7 @@ function bindAdmin(){
     showStamp();
     render();
   });
-  document.querySelectorAll('.payment-amount-input, .payment-date-input').forEach(el => el.addEventListener("change", async () => {
+  document.querySelectorAll('.payment-amount-input, .payment-date-input, .payment-note-input').forEach(el => el.addEventListener("change", async () => {
     const row = el.closest("[data-payment-row]");
     if(!row) return;
     const projectId = row.getAttribute("data-project-id");
@@ -3818,6 +3822,7 @@ function bindAdmin(){
     const amountRaw = row.querySelector(".payment-amount-input").value;
     payment.amount = amountRaw === "" ? 0 : Number(amountRaw);
     payment.date = row.querySelector(".payment-date-input").value;
+    payment.note = row.querySelector(".payment-note-input").value.trim();
     await saveConfig();
     showStamp();
     render();
