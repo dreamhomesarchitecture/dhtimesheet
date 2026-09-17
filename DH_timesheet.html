@@ -595,6 +595,7 @@ let state = {
   adminSubTab: "settings",
   expandedAdminProjectOverviewId: null,
   expandedPaymentCalendarProjectId: null,
+  paymentCalendarExcludedPhases: {},
   expandedEmployeeRatesId: null,
   rateError: "",
   adminEntriesFlat: null,
@@ -2198,6 +2199,7 @@ function buildPaymentCalendarDetail(projectId){
   const total = rows.reduce((s,r) => s + r.amount, 0);
   const rowsHtml = rows.length ? rows.map(r => {
     const itemKey = r.itemId ? esc(r.itemId) : "legacy";
+    const phaseExcluded = !!state.paymentCalendarExcludedPhases[`${p.id}:${r.phaseId}`];
     const paid = r.payments.reduce((s,pay) => s + (Number(pay.amount)||0), 0);
     const remaining = r.amount - paid;
     const paidColor = remaining <= 0 && paid > 0 ? "var(--sage)" : (paid > 0 ? "var(--tan)" : "var(--soft)");
@@ -2212,8 +2214,11 @@ function buildPaymentCalendarDetail(projectId){
         <button type="button" class="icon-btn" data-action="delete-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" data-payment-id="${esc(pay.id)}" title="Smazat platbu">×</button>
       </div>`).join("");
     return `
-    <div class="phase-block" style="margin-bottom:10px;">
-      <div class="phase-block-head"><span class="entry-phase">${esc(r.phaseId)}</span> ${esc(r.label)} <b>${fmtKc(r.amount)}</b></div>
+    <div class="phase-block" style="margin-bottom:10px;${phaseExcluded ? "opacity:.5;" : ""}">
+      <div class="phase-block-head">
+        <input type="checkbox" class="payment-calendar-phase-checkbox" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" title="Zahrnout fázi do PDF exportu" ${phaseExcluded ? "" : "checked"}>
+        <span class="entry-phase">${esc(r.phaseId)}</span> ${esc(r.label)} <b>${fmtKc(r.amount)}</b>
+      </div>
       <div class="phase-employees">
         ${paymentsHtml}
         <button type="button" class="btn btn-outline btn-small" data-action="add-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}">+ Přidat platbu</button>
@@ -2224,6 +2229,7 @@ function buildPaymentCalendarDetail(projectId){
   return `
     <div class="project-detail">
       ${rows.length ? `<div class="project-detail-total"><span>Rozpočet celkem</span><b>${fmtKc(total)}</b></div>` : ``}
+      ${rows.length ? `<p class="q-hint" style="margin:0 0 4px;">Zaškrtnutím fáze určíte, jestli se má zahrnout do PDF exportu. Výchozí stav je zahrnuto vše.</p>` : ``}
       <div style="margin-top:10px;">${rowsHtml}</div>
       ${rows.length ? `<div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-btn" data-project-id="${esc(p.id)}">Exportovat PDF</button></div>` : ``}
     </div>`;
@@ -3762,6 +3768,13 @@ function bindAdmin(){
     const id = row.getAttribute("data-id");
     setState({ expandedPaymentCalendarProjectId: state.expandedPaymentCalendarProjectId === id ? null : id });
   });
+  document.querySelectorAll('.payment-calendar-phase-checkbox').forEach(cb => cb.addEventListener("change", () => {
+    const key = `${cb.getAttribute("data-project-id")}:${cb.getAttribute("data-phase-id")}`;
+    const excluded = { ...state.paymentCalendarExcludedPhases };
+    if(cb.checked) delete excluded[key];
+    else excluded[key] = true;
+    setState({ paymentCalendarExcludedPhases: excluded });
+  }));
   function resolvePaymentsArray(project, phaseId, itemId){
     if(itemId && itemId !== "legacy"){
       const items = project.phaseBudgetItems && project.phaseBudgetItems[phaseId];
@@ -3832,7 +3845,7 @@ function bindAdmin(){
     const projectId = paymentCalendarPdfBtn.getAttribute("data-project-id");
     const project = state.config.projects.find(x => x.id === projectId);
     if(!project) return;
-    const rows = paymentCalendarRows(project);
+    const rows = paymentCalendarRows(project).filter(r => !state.paymentCalendarExcludedPhases[`${project.id}:${r.phaseId}`]);
     if(!rows.length) return;
     paymentCalendarPdfBtn.disabled = true;
     const origText = paymentCalendarPdfBtn.textContent;
