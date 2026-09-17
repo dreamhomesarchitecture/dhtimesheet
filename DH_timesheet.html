@@ -2206,13 +2206,17 @@ function buildPaymentCalendarDetail(projectId){
     const paidLabel = paid > 0
       ? (remaining > 0 ? `Uhrazeno ${fmtKc(paid)} z ${fmtKc(r.amount)} (zbývá ${fmtKc(remaining)})` : `Uhrazeno v plné výši (${fmtKc(paid)})`)
       : `Zatím nic uhrazeno`;
-    const paymentsHtml = r.payments.map(pay => `
+    const paymentsHtml = r.payments.map(pay => {
+      const payPercent = r.amount > 0 ? Math.round((Number(pay.amount)||0) / r.amount * 1000) / 10 : "";
+      return `
       <div class="admin-project-head" data-payment-row="${esc(pay.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" style="margin-bottom:6px;">
+        <input type="number" min="0" max="100" step="0.1" class="payment-percent-input" placeholder="%" title="Procento z ceny fáze — dopočítá částku" style="flex:0 0 auto;width:70px;padding:6px 8px;font-size:13px;" value="${esc(payPercent)}">
         <input type="number" min="0" step="1" class="payment-amount-input" placeholder="Kč" style="flex:0 0 auto;width:120px;padding:6px 8px;font-size:13px;" value="${esc(pay.amount)}">
         <input type="date" class="payment-date-input" style="flex:0 0 auto;width:160px;padding:6px 8px;font-size:13px;" value="${esc(pay.date||"")}">
         <input type="text" class="payment-note-input" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;" value="${esc(pay.note||"")}">
         <button type="button" class="icon-btn" data-action="delete-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" data-payment-id="${esc(pay.id)}" title="Smazat platbu">×</button>
-      </div>`).join("");
+      </div>`;
+    }).join("");
     return `
     <div class="phase-block" style="margin-bottom:10px;${phaseExcluded ? "opacity:.5;" : ""}">
       <div class="phase-block-head">
@@ -3820,7 +3824,7 @@ function bindAdmin(){
     showStamp();
     render();
   });
-  document.querySelectorAll('.payment-amount-input, .payment-date-input, .payment-note-input').forEach(el => el.addEventListener("change", async () => {
+  document.querySelectorAll('.payment-amount-input, .payment-date-input, .payment-note-input, .payment-percent-input').forEach(el => el.addEventListener("change", async () => {
     const row = el.closest("[data-payment-row]");
     if(!row) return;
     const projectId = row.getAttribute("data-project-id");
@@ -3832,6 +3836,14 @@ function bindAdmin(){
     const payments = resolvePaymentsArray(project, phaseId, itemId);
     const payment = payments && payments.find(pay => pay.id === paymentId);
     if(!payment) return;
+    if(el.classList.contains("payment-percent-input")){
+      const percentRaw = el.value;
+      const calRow = paymentCalendarRows(project).find(r => r.phaseId === phaseId && (r.itemId || "legacy") === itemId);
+      const totalAmount = calRow ? calRow.amount : 0;
+      if(percentRaw !== "" && totalAmount > 0){
+        row.querySelector(".payment-amount-input").value = Math.round(totalAmount * Number(percentRaw) / 100);
+      }
+    }
     const amountRaw = row.querySelector(".payment-amount-input").value;
     payment.amount = amountRaw === "" ? 0 : Number(amountRaw);
     payment.date = row.querySelector(".payment-date-input").value;
