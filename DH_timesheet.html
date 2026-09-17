@@ -266,9 +266,6 @@
   .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-cost:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
-  .entry-head-paycal{ display:grid; grid-template-columns: 70px 1fr 130px 170px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row-paycal{ display:grid; grid-template-columns: 70px 1fr 130px 170px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
-  .entry-row-paycal:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
   .entry-head-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
   .entry-row-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
@@ -318,8 +315,6 @@
     .entry-row-wide{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-cost{ display:none; }
     .entry-row-cost{ grid-template-columns: 1fr; gap:6px; }
-    .entry-head-paycal{ display:none; }
-    .entry-row-paycal{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-labor{ display:none; }
     .entry-row-labor{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-clientexp{ display:none; }
@@ -771,8 +766,12 @@ function phaseBudgetTotal(p, pid){
   const legacy = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
   return legacy === "" ? 0 : (Number(legacy) || 0);
 }
-function phaseBudgetPaymentDate(p, pid){
-  return (p.phaseBudgetPaymentDates && p.phaseBudgetPaymentDates[pid]) || "";
+function normalizedPayments(holder, fallbackAmount){
+  if(!Array.isArray(holder.payments)){
+    holder.payments = holder.paidDate ? [{ id: uid("pay"), amount: Number(fallbackAmount)||0, date: holder.paidDate }] : [];
+    delete holder.paidDate;
+  }
+  return holder.payments;
 }
 function paymentCalendarRows(p){
   const rows = [];
@@ -782,12 +781,19 @@ function paymentCalendarRows(p){
     const items = phaseBudgetItems(p, pid);
     if(items.length){
       items.forEach(it => {
-        rows.push({ phaseId: pid, phaseLabel, itemId: it.id, label: it.label || phaseLabel, amount: Number(it.amount)||0, paidDate: it.paidDate || "" });
+        const amount = Number(it.amount)||0;
+        rows.push({ phaseId: pid, phaseLabel, itemId: it.id, label: it.label || phaseLabel, amount, payments: normalizedPayments(it, amount) });
       });
     } else {
       const legacy = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
       if(legacy !== ""){
-        rows.push({ phaseId: pid, phaseLabel, itemId: null, label: phaseLabel, amount: Number(legacy)||0, paidDate: phaseBudgetPaymentDate(p, pid) });
+        const amount = Number(legacy)||0;
+        if(!p.phaseBudgetPayments) p.phaseBudgetPayments = {};
+        if(!Array.isArray(p.phaseBudgetPayments[pid])){
+          const oldDate = p.phaseBudgetPaymentDates && p.phaseBudgetPaymentDates[pid];
+          p.phaseBudgetPayments[pid] = oldDate ? [{ id: uid("pay"), amount, date: oldDate }] : [];
+        }
+        rows.push({ phaseId: pid, phaseLabel, itemId: null, label: phaseLabel, amount, payments: p.phaseBudgetPayments[pid] });
       }
     }
   });
@@ -1422,12 +1428,16 @@ async function buildPaymentCalendarPdf(project, rows){
     y += 5.5;
   });
 
-  const bodyRows = rows.map(r => [
-    r.phaseId,
-    r.label,
-    fmtKc(r.amount),
-    r.paidDate ? fmtDateDots(r.paidDate) : ""
-  ]);
+  const bodyRows = [];
+  rows.forEach(r => {
+    if(r.payments && r.payments.length){
+      r.payments.forEach(pay => {
+        bodyRows.push([r.phaseId, r.label, fmtKc(Number(pay.amount)||0), pay.date ? fmtDateDots(pay.date) : ""]);
+      });
+    } else {
+      bodyRows.push([r.phaseId, r.label, fmtKc(r.amount), ""]);
+    }
+  });
 
   doc.autoTable({
     startY: y + 6,
@@ -2182,18 +2192,35 @@ function buildPaymentCalendarDetail(projectId){
   if(!p) return "";
   const rows = paymentCalendarRows(p);
   const total = rows.reduce((s,r) => s + r.amount, 0);
-  const rowsHtml = rows.length ? rows.map(r => `
-    <div class="entry-row-paycal">
-      <span class="entry-phase">${esc(r.phaseId)}</span>
-      <span>${esc(r.label)}</span>
-      <span class="entry-num">${fmtKc(r.amount)}</span>
-      <input type="date" class="payment-calendar-date-input" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${r.itemId ? esc(r.itemId) : "legacy"}" value="${esc(r.paidDate)}">
-    </div>`).join("") : `<div class="empty-state">U tohoto projektu zatím není vepsaný žádný rozpočet.</div>`;
+  const rowsHtml = rows.length ? rows.map(r => {
+    const itemKey = r.itemId ? esc(r.itemId) : "legacy";
+    const paid = r.payments.reduce((s,pay) => s + (Number(pay.amount)||0), 0);
+    const remaining = r.amount - paid;
+    const paidColor = remaining <= 0 && paid > 0 ? "var(--sage)" : (paid > 0 ? "var(--tan)" : "var(--soft)");
+    const paidLabel = paid > 0
+      ? (remaining > 0 ? `Uhrazeno ${fmtKc(paid)} z ${fmtKc(r.amount)} (zbývá ${fmtKc(remaining)})` : `Uhrazeno v plné výši (${fmtKc(paid)})`)
+      : `Zatím nic uhrazeno`;
+    const paymentsHtml = r.payments.map(pay => `
+      <div class="admin-project-head" data-payment-row="${esc(pay.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" style="margin-bottom:6px;">
+        <input type="number" min="0" step="1" class="payment-amount-input" placeholder="Kč" style="width:120px;padding:6px 8px;font-size:13px;" value="${esc(pay.amount)}">
+        <input type="date" class="payment-date-input" style="padding:6px 8px;font-size:13px;" value="${esc(pay.date||"")}">
+        <span class="grow"></span>
+        <button type="button" class="icon-btn" data-action="delete-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" data-payment-id="${esc(pay.id)}" title="Smazat platbu">×</button>
+      </div>`).join("");
+    return `
+    <div class="phase-block" style="margin-bottom:10px;">
+      <div class="phase-block-head"><span class="entry-phase">${esc(r.phaseId)}</span> ${esc(r.label)} <b>${fmtKc(r.amount)}</b></div>
+      <div class="phase-employees">
+        ${paymentsHtml}
+        <button type="button" class="btn btn-outline btn-small" data-action="add-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}">+ Přidat platbu</button>
+      </div>
+      <div class="q-hint" style="margin:8px 0 0;color:${paidColor};">${paidLabel}</div>
+    </div>`;
+  }).join("") : `<div class="empty-state">U tohoto projektu zatím není vepsaný žádný rozpočet.</div>`;
   return `
     <div class="project-detail">
       ${rows.length ? `<div class="project-detail-total"><span>Rozpočet celkem</span><b>${fmtKc(total)}</b></div>` : ``}
-      ${rows.length ? `<div class="entry-head-paycal"><span>Fáze</span><span>Položka rozpočtu</span><span style="text-align:right;">Cena z rozpočtu</span><span>Datum úhrady</span></div>` : ``}
-      <div class="entries">${rowsHtml}</div>
+      <div style="margin-top:10px;">${rowsHtml}</div>
       ${rows.length ? `<div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-btn" data-project-id="${esc(p.id)}">Exportovat PDF</button></div>` : ``}
     </div>`;
 }
@@ -3731,22 +3758,69 @@ function bindAdmin(){
     const id = row.getAttribute("data-id");
     setState({ expandedPaymentCalendarProjectId: state.expandedPaymentCalendarProjectId === id ? null : id });
   });
-  document.querySelectorAll('.payment-calendar-date-input').forEach(el => el.addEventListener("change", async () => {
-    const projectId = el.getAttribute("data-project-id");
-    const phaseId = el.getAttribute("data-phase-id");
-    const itemId = el.getAttribute("data-item-id");
-    const project = state.config.projects.find(x => x.id === projectId);
-    if(!project) return;
+  function resolvePaymentsArray(project, phaseId, itemId){
     if(itemId && itemId !== "legacy"){
       const items = project.phaseBudgetItems && project.phaseBudgetItems[phaseId];
       const item = items && items.find(it => it.id === itemId);
-      if(item) item.paidDate = el.value;
-    } else {
-      if(!project.phaseBudgetPaymentDates) project.phaseBudgetPaymentDates = {};
-      project.phaseBudgetPaymentDates[phaseId] = el.value;
+      if(!item) return null;
+      if(!Array.isArray(item.payments)) item.payments = [];
+      return item.payments;
     }
+    if(!project.phaseBudgetPayments) project.phaseBudgetPayments = {};
+    if(!Array.isArray(project.phaseBudgetPayments[phaseId])) project.phaseBudgetPayments[phaseId] = [];
+    return project.phaseBudgetPayments[phaseId];
+  }
+  document.querySelectorAll('[data-action="add-payment"]').forEach(b => b.onclick = async () => {
+    const projectId = b.getAttribute("data-project-id");
+    const phaseId = b.getAttribute("data-phase-id");
+    const itemId = b.getAttribute("data-item-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const payments = resolvePaymentsArray(project, phaseId, itemId);
+    if(!payments) return;
+    const rows = paymentCalendarRows(project);
+    const row = rows.find(r => r.phaseId === phaseId && (r.itemId || "legacy") === itemId);
+    const totalAmount = row ? row.amount : 0;
+    const alreadyPaid = payments.reduce((s,pay) => s + (Number(pay.amount)||0), 0);
+    const remaining = Math.max(0, totalAmount - alreadyPaid);
+    payments.push({ id: uid("pay"), amount: remaining, date: "" });
     await saveConfig();
     showStamp();
+    render();
+  });
+  document.querySelectorAll('[data-action="delete-payment"]').forEach(b => b.onclick = async () => {
+    const projectId = b.getAttribute("data-project-id");
+    const phaseId = b.getAttribute("data-phase-id");
+    const itemId = b.getAttribute("data-item-id");
+    const paymentId = b.getAttribute("data-payment-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const payments = resolvePaymentsArray(project, phaseId, itemId);
+    if(!payments) return;
+    const idx = payments.findIndex(pay => pay.id === paymentId);
+    if(idx !== -1) payments.splice(idx, 1);
+    await saveConfig();
+    showStamp();
+    render();
+  });
+  document.querySelectorAll('.payment-amount-input, .payment-date-input').forEach(el => el.addEventListener("change", async () => {
+    const row = el.closest("[data-payment-row]");
+    if(!row) return;
+    const projectId = row.getAttribute("data-project-id");
+    const phaseId = row.getAttribute("data-phase-id");
+    const itemId = row.getAttribute("data-item-id");
+    const paymentId = row.getAttribute("data-payment-row");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const payments = resolvePaymentsArray(project, phaseId, itemId);
+    const payment = payments && payments.find(pay => pay.id === paymentId);
+    if(!payment) return;
+    const amountRaw = row.querySelector(".payment-amount-input").value;
+    payment.amount = amountRaw === "" ? 0 : Number(amountRaw);
+    payment.date = row.querySelector(".payment-date-input").value;
+    await saveConfig();
+    showStamp();
+    render();
   }));
   const paymentCalendarPdfBtn = document.getElementById("payment-calendar-pdf-btn");
   if(paymentCalendarPdfBtn) paymentCalendarPdfBtn.onclick = async () => {
