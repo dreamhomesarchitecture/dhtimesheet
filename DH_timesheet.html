@@ -597,6 +597,7 @@ let state = {
   expandedPaymentCalendarProjectId: null,
   paymentCalendarExcludedPhases: {},
   expandedEmployeeRatesId: null,
+  editingRateId: null,
   rateError: "",
   adminEntriesFlat: null,
   hoursOverviewYear: "",
@@ -3179,11 +3180,24 @@ function adminTemplate(){
   const empRows = state.config.employees.map(e => {
     const ratesOpen = state.expandedEmployeeRatesId === e.id;
     const rates = (e.rates || []).slice().sort((a,b) => (b.from||"").localeCompare(a.from||""));
-    const rateRows = rates.length ? rates.map(r => `
+    const rateRows = rates.length ? rates.map(r => {
+      if(state.editingRateId === r.id){
+        return `
+      <div class="admin-project-head" data-rate-edit-row="${esc(r.id)}" data-id="${esc(e.id)}" style="margin-bottom:6px;flex-wrap:wrap;row-gap:6px;">
+        <input type="date" class="rate-edit-from" value="${esc(r.from)}" style="flex:0 0 auto;width:150px;padding:6px 8px;font-size:13px;">
+        <input type="date" class="rate-edit-to" value="${esc(r.to||"")}" style="flex:0 0 auto;width:150px;padding:6px 8px;font-size:13px;">
+        <input type="number" min="0" step="1" class="rate-edit-amount" value="${esc(r.amount)}" style="flex:0 0 auto;width:100px;padding:6px 8px;font-size:13px;">
+        <span class="grow"></span>
+        <button type="button" class="icon-btn" data-action="save-rate-edit" title="Uložit">✓</button>
+        <button type="button" class="icon-btn" data-action="cancel-rate-edit" title="Zrušit">×</button>
+      </div>`;
+      }
+      return `
       <div class="phase-employee-row">
         <span>${esc(r.from)} – ${r.to ? esc(r.to) : "dosud"}</span>
-        <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat" style="margin-left:6px;">×</button></span>
-      </div>`).join("") : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
+        <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit" style="margin-left:6px;">✎</button> <button class="icon-btn" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">×</button></span>
+      </div>`;
+    }).join("") : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
     return `
     <div class="admin-project-item">
       <div class="admin-project-head">
@@ -3956,6 +3970,35 @@ function bindAdmin(){
     await saveConfig();
     render();
   }));
+  document.querySelectorAll('[data-action="edit-rate"]').forEach(b => b.onclick = () => {
+    setState({ editingRateId: b.getAttribute("data-rate-id"), rateError: "" });
+  });
+  document.querySelectorAll('[data-action="cancel-rate-edit"]').forEach(b => b.onclick = () => {
+    setState({ editingRateId: null, rateError: "" });
+  });
+  document.querySelectorAll('[data-action="save-rate-edit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest("[data-rate-edit-row]");
+    if(!row) return;
+    const rateId = row.getAttribute("data-rate-edit-row");
+    const empId = row.getAttribute("data-id");
+    const emp = state.config.employees.find(x => x.id === empId);
+    if(!emp || !emp.rates) return;
+    const rate = emp.rates.find(r => r.id === rateId);
+    if(!rate) return;
+    const from = row.querySelector(".rate-edit-from").value;
+    const to = row.querySelector(".rate-edit-to").value;
+    const amount = Number(row.querySelector(".rate-edit-amount").value);
+    if(!from || !(amount >= 0)) return;
+    if(to && to < from){ setState({ rateError: "Datum 'do' nemůže být dříve než 'od'." }); return; }
+    rate.from = from;
+    rate.to = to;
+    rate.amount = amount;
+    state.editingRateId = null;
+    state.rateError = "";
+    await saveConfig();
+    showStamp();
+    render();
+  });
   document.querySelectorAll('[data-action="delete-rate"]').forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-id");
     const rateId = b.getAttribute("data-rate-id");
@@ -4095,6 +4138,15 @@ function bindAdmin(){
       e.preventDefault();
       const row = el.closest("[data-cost-edit-row]");
       const saveBtn = row && row.querySelector('[data-action="save-project-cost-edit"]');
+      if(saveBtn) saveBtn.click();
+    });
+  });
+  document.querySelectorAll('[data-rate-edit-row] input').forEach(el => {
+    el.addEventListener("keydown", e => {
+      if(e.key !== "Enter") return;
+      e.preventDefault();
+      const row = el.closest("[data-rate-edit-row]");
+      const saveBtn = row && row.querySelector('[data-action="save-rate-edit"]');
       if(saveBtn) saveBtn.click();
     });
   });
