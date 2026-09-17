@@ -2200,7 +2200,7 @@ function buildPaymentCalendarDetail(projectId){
   const rowsHtml = rows.length ? rows.map(r => {
     const itemKey = r.itemId ? esc(r.itemId) : "legacy";
     const phaseExcluded = !!state.paymentCalendarExcludedPhases[`${p.id}:${r.phaseId}`];
-    const paid = r.payments.reduce((s,pay) => s + (Number(pay.amount)||0), 0);
+    const paid = r.payments.filter(pay => pay.date).reduce((s,pay) => s + (Number(pay.amount)||0), 0);
     const remaining = r.amount - paid;
     const paidColor = remaining <= 0 && paid > 0 ? "var(--sage)" : (paid > 0 ? "var(--tan)" : "var(--soft)");
     const paidLabel = paid > 0
