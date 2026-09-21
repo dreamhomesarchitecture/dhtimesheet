@@ -2272,17 +2272,15 @@ function buildPaymentCalendarDetail(projectId){
 function adminPaymentCalendarTemplate(){
   const projects = sortedProjects().filter(p => (p.phaseIds || []).length > 0);
   const rows = projects.map(p => {
-    const isOpen = state.expandedPaymentCalendarProjectId === p.id;
     const total = paymentCalendarRows(p).reduce((s,r) => s + r.amount, 0);
     return `
-    <div class="project-item ${isOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
-      <div class="project-row" data-action="toggle-payment-calendar-project" data-id="${esc(p.id)}">
+    <div class="project-item" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
+      <div class="project-row" data-action="open-payment-calendar-project" data-id="${esc(p.id)}" style="cursor:pointer;">
         <span class="chevron">▸</span>
         <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         <span class="project-hours ${total ? "" : "zero"}">${fmtKc(total)}</span>
       </div>
-      ${isOpen ? buildPaymentCalendarDetail(p.id) : ""}
     </div>`;
   }).join("");
 
@@ -2295,6 +2293,26 @@ function adminPaymentCalendarTemplate(){
     <div class="project-head"><span></span><span>Kód</span><span>Název</span><span style="text-align:right;">Rozpočet celkem</span></div>
     <div class="project-list" id="payment-calendar-project-list">${rows}</div>
     `}`;
+}
+
+function paymentCalendarPageHtml(){
+  const p = state.config.projects.find(x => x.id === state.expandedPaymentCalendarProjectId);
+  if(!p){
+    return `
+    <div class="sheet">
+      <button class="logout-link" data-action="back-to-payment-calendar">← Zpět na platební kalendář</button>
+      <div class="empty-state" style="margin-top:20px;">Projekt nenalezen.</div>
+    </div>`;
+  }
+  return `
+    <div class="sheet">
+      <button class="logout-link" data-action="back-to-payment-calendar">← Zpět na platební kalendář</button>
+      <div class="eyebrow" style="margin-top:18px;">Platební kalendář</div>
+      <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
+      <div style="margin-top:24px;">
+        ${buildPaymentCalendarDetail(p.id)}
+      </div>
+    </div>`;
 }
 
 function adminCostsTemplate(){
@@ -3206,6 +3224,10 @@ function adminTemplate(){
     return projectDetailPageHtml();
   }
 
+  if(state.expandedPaymentCalendarProjectId){
+    return paymentCalendarPageHtml();
+  }
+
   const empRows = state.config.employees.map(e => {
     const ratesOpen = state.expandedEmployeeRatesId === e.id;
     const rates = (e.rates || []).slice().sort((a,b) => (b.from||"").localeCompare(a.from||""));
@@ -3811,9 +3833,13 @@ function bindAdmin(){
       item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
     });
   });
-  document.querySelectorAll('[data-action="toggle-payment-calendar-project"]').forEach(row => row.onclick = () => {
-    const id = row.getAttribute("data-id");
-    setState({ expandedPaymentCalendarProjectId: state.expandedPaymentCalendarProjectId === id ? null : id });
+  document.querySelectorAll('[data-action="open-payment-calendar-project"]').forEach(row => row.onclick = () => {
+    setState({ expandedPaymentCalendarProjectId: row.getAttribute("data-id") });
+    window.scrollTo(0, 0);
+  });
+  document.querySelectorAll('[data-action="back-to-payment-calendar"]').forEach(b => b.onclick = () => {
+    setState({ expandedPaymentCalendarProjectId: null });
+    window.scrollTo(0, 0);
   });
   document.querySelectorAll('.payment-calendar-phase-checkbox').forEach(cb => cb.addEventListener("change", () => {
     const key = `${cb.getAttribute("data-project-id")}:${cb.getAttribute("data-phase-id")}`;
