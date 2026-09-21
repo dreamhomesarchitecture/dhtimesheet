@@ -2725,6 +2725,7 @@ function projectDetailPageHtml(){
       <button class="logout-link" data-action="back-to-projects">← Zpět na projekty</button>
       <div class="eyebrow" style="margin-top:18px;">Projekt #${esc(p.id)}</div>
       <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
+      <div style="margin-top:12px;"><button type="button" class="btn btn-outline btn-small" data-action="open-payment-calendar-from-project" data-id="${esc(p.id)}">Správa plateb</button></div>
 
       <form id="project-modal-form" data-id="${esc(p.id)}" style="margin-top:24px;">
         <div class="form-grid project-form-grid">
@@ -4100,6 +4101,17 @@ function bindAdmin(){
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
     setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
+    window.scrollTo(0, 0);
+  });
+  document.querySelectorAll('[data-action="open-payment-calendar-from-project"]').forEach(b => b.onclick = () => {
+    setState({
+      editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null,
+      projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date",
+      projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date",
+      laborBulkSelectedIds: {}, laborBulkPhaseId: "",
+      adminSubTab: "reports", adminOpenSection: "payment-calendar",
+      expandedPaymentCalendarProjectId: b.getAttribute("data-id")
+    });
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
