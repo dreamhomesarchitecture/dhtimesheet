@@ -804,6 +804,15 @@ function paymentCalendarRows(p){
   });
   return rows;
 }
+function paymentCalendarNumbersAvailable(p){
+  const rows = paymentCalendarRows(p);
+  return [...new Set(rows.flatMap(r => r.payments.map(pay => String(pay.number||"").trim()).filter(Boolean)))].sort();
+}
+function paymentCalendarRowsForNumber(p, number){
+  return paymentCalendarRows(p)
+    .map(r => ({ ...r, payments: r.payments.filter(pay => String(pay.number||"").trim() === number) }))
+    .filter(r => r.payments.length > 0);
+}
 function phaseFinancials(p, pid){
   const totalBudget = phaseBudgetTotal(p, pid);
   const totalCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid).reduce((s,c) => s + Number(c.amount||0), 0);
@@ -1401,7 +1410,8 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   return doc;
 }
 
-async function buildPaymentCalendarPdf(project, rows){
+async function buildPaymentCalendarPdf(project, rows, opts){
+  opts = opts || {};
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
   await ensurePdfFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -1437,31 +1447,33 @@ async function buildPaymentCalendarPdf(project, rows){
   rows.forEach(r => {
     if(r.payments && r.payments.length){
       r.payments.forEach(pay => {
-        bodyRows.push([r.phaseId, r.label, fmtKc(Number(pay.amount)||0), pay.date ? fmtDateDots(pay.date) : "", pay.note || ""]);
+        bodyRows.push([r.phaseId, r.label, pay.number || "", fmtKc(Number(pay.amount)||0), pay.date ? fmtDateDots(pay.date) : "", pay.note || ""]);
       });
     } else {
-      bodyRows.push([r.phaseId, r.label, fmtKc(r.amount), "", ""]);
+      bodyRows.push([r.phaseId, r.label, "", fmtKc(r.amount), "", ""]);
     }
   });
 
   doc.autoTable({
     startY: y + 6,
-    head: [["FÁZE", "POLOŽKA ROZPOČTU", "CENA Z ROZPOČTU", "DATUM ÚHRADY", "POZNÁMKA"]],
+    head: [["FÁZE", "POLOŽKA ROZPOČTU", "Č. PLATBY", "CENA Z ROZPOČTU", "DATUM ÚHRADY", "POZNÁMKA"]],
     body: bodyRows,
     styles: { font: "Lato", fontSize: 8, cellPadding: 1.8, valign: "middle" },
     headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
-      0: { cellWidth: 22 },
-      1: { cellWidth: 55 },
-      2: { cellWidth: 32, halign: "right" },
+      0: { cellWidth: 20 },
+      1: { cellWidth: 45 },
+      2: { cellWidth: 22 },
       3: { cellWidth: 30, halign: "right" },
-      4: { cellWidth: "auto" }
+      4: { cellWidth: 26, halign: "right" },
+      5: { cellWidth: "auto" }
     },
     margin: { left: marginX, right: marginX, bottom: 24 }
   });
 
-  const total = rows.reduce((s,r) => s + r.amount, 0);
+  const total = opts.totalAmount !== undefined ? opts.totalAmount : rows.reduce((s,r) => s + r.amount, 0);
+  const totalLabel = opts.totalLabel || "ROZPOČET CELKEM";
 
   let ty = doc.lastAutoTable.finalY + 10;
   if(ty + 20 > pageHeight - 32){
@@ -1475,7 +1487,7 @@ async function buildPaymentCalendarPdf(project, rows){
   doc.setTextColor(255,255,255);
   doc.setFont("Lato", "bold");
   doc.setFontSize(9.5);
-  doc.text("ROZPOČET CELKEM", boxLeft, ty);
+  doc.text(totalLabel, boxLeft, ty);
   doc.text(fmtKc(total), pageWidth - marginX - 2, ty, { align: "right" });
   doc.setTextColor(0,0,0);
 
@@ -2198,6 +2210,7 @@ function buildPaymentCalendarDetail(projectId){
   if(!p) return "";
   const rows = paymentCalendarRows(p);
   const total = rows.reduce((s,r) => s + r.amount, 0);
+  const numbersAvailable = paymentCalendarNumbersAvailable(p);
   const rowsHtml = rows.length ? rows.map(r => {
     const itemKey = r.itemId ? esc(r.itemId) : "legacy";
     const phaseExcluded = !!state.paymentCalendarExcludedPhases[`${p.id}:${r.phaseId}`];
@@ -2211,6 +2224,7 @@ function buildPaymentCalendarDetail(projectId){
       const payPercent = r.amount > 0 ? Math.round((Number(pay.amount)||0) / r.amount * 1000) / 10 : "";
       return `
       <div class="admin-project-head" data-payment-row="${esc(pay.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" style="margin-bottom:6px;">
+        <input type="text" class="payment-number-input" placeholder="Č. platby" title="Číslo platby / faktury" style="flex:0 0 auto;width:90px;padding:6px 8px;font-size:13px;" value="${esc(pay.number||"")}">
         <input type="number" min="0" max="100" step="0.1" class="payment-percent-input" placeholder="%" title="Procento z ceny fáze — dopočítá částku" style="flex:0 0 auto;width:70px;padding:6px 8px;font-size:13px;" value="${esc(payPercent)}">
         <input type="number" min="0" step="1" class="payment-amount-input" placeholder="Kč" style="flex:0 0 auto;width:120px;padding:6px 8px;font-size:13px;" value="${esc(pay.amount)}">
         <input type="date" class="payment-date-input" style="flex:0 0 auto;width:160px;padding:6px 8px;font-size:13px;" value="${esc(pay.date||"")}">
@@ -2236,7 +2250,15 @@ function buildPaymentCalendarDetail(projectId){
       ${rows.length ? `<div class="project-detail-total"><span>Rozpočet celkem</span><b>${fmtKc(total)}</b></div>` : ``}
       ${rows.length ? `<p class="q-hint" style="margin:0 0 4px;">Zaškrtnutím fáze určíte, jestli se má zahrnout do PDF exportu. Výchozí stav je zahrnuto vše.</p>` : ``}
       <div style="margin-top:10px;">${rowsHtml}</div>
-      ${rows.length ? `<div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-btn" data-project-id="${esc(p.id)}">Exportovat PDF</button></div>` : ``}
+      ${rows.length ? `<div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-btn" data-project-id="${esc(p.id)}">Exportovat PDF (zaškrtnuté fáze)</button></div>` : ``}
+      ${numbersAvailable.length ? `
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="payment-calendar-number-select" style="width:auto;min-width:150px;">
+          <option value="">— vyberte číslo platby —</option>
+          ${numbersAvailable.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}
+        </select>
+        <button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-number-btn" data-project-id="${esc(p.id)}">Exportovat jen tuto platbu</button>
+      </div>` : ``}
     </div>`;
 }
 
@@ -3838,7 +3860,7 @@ function bindAdmin(){
     showStamp();
     render();
   });
-  document.querySelectorAll('.payment-amount-input, .payment-date-input, .payment-note-input, .payment-percent-input').forEach(el => el.addEventListener("change", async () => {
+  document.querySelectorAll('.payment-amount-input, .payment-date-input, .payment-note-input, .payment-percent-input, .payment-number-input').forEach(el => el.addEventListener("change", async () => {
     const row = el.closest("[data-payment-row]");
     if(!row) return;
     const projectId = row.getAttribute("data-project-id");
@@ -3862,6 +3884,7 @@ function bindAdmin(){
     payment.amount = amountRaw === "" ? 0 : Number(amountRaw);
     payment.date = row.querySelector(".payment-date-input").value;
     payment.note = row.querySelector(".payment-note-input").value.trim();
+    payment.number = row.querySelector(".payment-number-input").value.trim();
     await saveConfig();
     showStamp();
     render();
@@ -3882,6 +3905,28 @@ function bindAdmin(){
     } finally {
       paymentCalendarPdfBtn.disabled = false;
       paymentCalendarPdfBtn.textContent = origText;
+    }
+  };
+  const paymentCalendarPdfNumberBtn = document.getElementById("payment-calendar-pdf-number-btn");
+  if(paymentCalendarPdfNumberBtn) paymentCalendarPdfNumberBtn.onclick = async () => {
+    const projectId = paymentCalendarPdfNumberBtn.getAttribute("data-project-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const numberSelect = document.getElementById("payment-calendar-number-select");
+    const number = numberSelect ? numberSelect.value : "";
+    if(!number) return;
+    const rows = paymentCalendarRowsForNumber(project, number);
+    if(!rows.length) return;
+    const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
+    paymentCalendarPdfNumberBtn.disabled = true;
+    const origText = paymentCalendarPdfNumberBtn.textContent;
+    paymentCalendarPdfNumberBtn.textContent = "Generuji…";
+    try{
+      const doc = await buildPaymentCalendarPdf(project, rows, { totalLabel: "FAKTUROVÁNO CELKEM", totalAmount });
+      doc.save(`platebni-kalendar_${project.id}_platba-${number}_${todayStr()}.pdf`);
+    } finally {
+      paymentCalendarPdfNumberBtn.disabled = false;
+      paymentCalendarPdfNumberBtn.textContent = origText;
     }
   };
 
