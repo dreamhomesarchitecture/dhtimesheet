@@ -974,10 +974,14 @@ function previousMonthRange(){
   if(m0 < 0){ m0 = 11; y -= 1; }
   return monthRangeFromDate(y, m0);
 }
-function shiftMonthRange(anchorDateStr, deltaMonths){
-  const [y, m] = (anchorDateStr || todayStr()).split("-").map(Number);
-  const base = new Date(y, (m - 1) + deltaMonths, 1);
-  return monthRangeFromDate(base.getFullYear(), base.getMonth());
+function shiftDateByMonths(dateStr, deltaMonths){
+  if(!dateStr) return dateStr;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const targetM0 = (m - 1) + deltaMonths;
+  const targetFirst = new Date(y, targetM0, 1);
+  const targetY = targetFirst.getFullYear(), targetMonth0 = targetFirst.getMonth();
+  const lastDayOfTarget = new Date(targetY, targetMonth0 + 1, 0).getDate();
+  return `${targetY}-${pad2(targetMonth0+1)}-${pad2(Math.min(d, lastDayOfTarget))}`;
 }
 function fmtDateDots(dateStr){
   if(!dateStr) return "";
@@ -4809,13 +4813,17 @@ function bindAdmin(){
 
   const clientExportMonthPrevBtn = document.getElementById("client-export-month-prev");
   if(clientExportMonthPrevBtn) clientExportMonthPrevBtn.onclick = () => {
-    const range = shiftMonthRange(state.clientExportFrom, -1);
-    setState({ clientExportFrom: range.from, clientExportTo: range.to });
+    setState({
+      clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), -1),
+      clientExportTo: shiftDateByMonths(state.clientExportTo || todayStr(), -1)
+    });
   };
   const clientExportMonthNextBtn = document.getElementById("client-export-month-next");
   if(clientExportMonthNextBtn) clientExportMonthNextBtn.onclick = () => {
-    const range = shiftMonthRange(state.clientExportFrom, 1);
-    setState({ clientExportFrom: range.from, clientExportTo: range.to });
+    setState({
+      clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), 1),
+      clientExportTo: shiftDateByMonths(state.clientExportTo || todayStr(), 1)
+    });
   };
   const clientExportFrom = document.getElementById("client-export-from");
   if(clientExportFrom) clientExportFrom.addEventListener("change", () => setState({ clientExportFrom: clientExportFrom.value }));
