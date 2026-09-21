@@ -1456,7 +1456,7 @@ async function buildPaymentCalendarPdf(project, rows, opts){
 
   doc.autoTable({
     startY: y + 6,
-    head: [["FÁZE", "POLOŽKA ROZPOČTU", "Č. PLATBY", "CENA Z ROZPOČTU", "DATUM ÚHRADY", "POZNÁMKA"]],
+    head: [["FÁZE", "POLOŽKA ROZPOČTU", "Č. PLATBY", "CENA BEZ DPH", "DATUM ÚHRADY", "POZNÁMKA"]],
     body: bodyRows,
     styles: { font: "Lato", fontSize: 8, cellPadding: 1.8, valign: "middle" },
     headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
@@ -1473,7 +1473,7 @@ async function buildPaymentCalendarPdf(project, rows, opts){
   });
 
   const total = opts.totalAmount !== undefined ? opts.totalAmount : rows.reduce((s,r) => s + r.amount, 0);
-  const totalLabel = opts.totalLabel || "ROZPOČET CELKEM";
+  const totalLabel = opts.totalLabel || "ROZPOČET CELKEM BEZ DPH";
 
   let ty = doc.lastAutoTable.finalY + 10;
   if(ty + 20 > pageHeight - 32){
@@ -3922,7 +3922,7 @@ function bindAdmin(){
     const origText = paymentCalendarPdfNumberBtn.textContent;
     paymentCalendarPdfNumberBtn.textContent = "Generuji…";
     try{
-      const doc = await buildPaymentCalendarPdf(project, rows, { totalLabel: "FAKTUROVÁNO CELKEM", totalAmount });
+      const doc = await buildPaymentCalendarPdf(project, rows, { totalLabel: "FAKTUROVÁNO CELKEM BEZ DPH", totalAmount });
       doc.save(`platebni-kalendar_${project.id}_platba-${number}_${todayStr()}.pdf`);
     } finally {
       paymentCalendarPdfNumberBtn.disabled = false;
