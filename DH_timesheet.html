@@ -808,9 +808,10 @@ function paymentCalendarNumbersAvailable(p){
   const rows = paymentCalendarRows(p);
   return [...new Set(rows.flatMap(r => r.payments.map(pay => String(pay.number||"").trim()).filter(Boolean)))].sort();
 }
-function paymentCalendarRowsForNumber(p, number){
+function paymentCalendarRowsForNumbers(p, numbers){
+  const set = new Set(numbers);
   return paymentCalendarRows(p)
-    .map(r => ({ ...r, payments: r.payments.filter(pay => String(pay.number||"").trim() === number) }))
+    .map(r => ({ ...r, payments: r.payments.filter(pay => set.has(String(pay.number||"").trim())) }))
     .filter(r => r.payments.length > 0);
 }
 function phaseFinancials(p, pid){
@@ -2254,12 +2255,16 @@ function buildPaymentCalendarDetail(projectId){
       <div style="margin-top:10px;">${rowsHtml}</div>
       ${rows.length ? `<div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-btn" data-project-id="${esc(p.id)}">Exportovat PDF (zaškrtnuté fáze)</button></div>` : ``}
       ${numbersAvailable.length ? `
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select id="payment-calendar-number-select" style="width:auto;min-width:150px;">
-          <option value="">— vyberte číslo platby —</option>
-          ${numbersAvailable.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}
-        </select>
-        <button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-number-btn" data-project-id="${esc(p.id)}">Exportovat jen tuto platbu</button>
+      <div style="margin-top:14px;">
+        <p class="q-hint" style="margin:0 0 4px;">Vyberte jedno nebo více čísel plateb pro export:</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          ${numbersAvailable.map(n => `
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" class="payment-calendar-number-checkbox" value="${esc(n)}">
+            ${esc(n)}
+          </label>`).join("")}
+        </div>
+        <button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-number-btn" data-project-id="${esc(p.id)}">Exportovat vybrané platby</button>
       </div>` : ``}
     </div>`;
 }
@@ -3914,10 +3919,9 @@ function bindAdmin(){
     const projectId = paymentCalendarPdfNumberBtn.getAttribute("data-project-id");
     const project = state.config.projects.find(x => x.id === projectId);
     if(!project) return;
-    const numberSelect = document.getElementById("payment-calendar-number-select");
-    const number = numberSelect ? numberSelect.value : "";
-    if(!number) return;
-    const rows = paymentCalendarRowsForNumber(project, number);
+    const numbers = Array.from(document.querySelectorAll(".payment-calendar-number-checkbox:checked")).map(el => el.value);
+    if(!numbers.length) return;
+    const rows = paymentCalendarRowsForNumbers(project, numbers);
     if(!rows.length) return;
     const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
     paymentCalendarPdfNumberBtn.disabled = true;
@@ -3925,7 +3929,7 @@ function bindAdmin(){
     paymentCalendarPdfNumberBtn.textContent = "Generuji…";
     try{
       const doc = await buildPaymentCalendarPdf(project, rows, { totalLabel: "FAKTUROVÁNO CELKEM BEZ DPH", totalAmount });
-      doc.save(`platebni-kalendar_${project.id}_platba-${number}_${todayStr()}.pdf`);
+      doc.save(`platebni-kalendar_${project.id}_platba-${numbers.join("+")}_${todayStr()}.pdf`);
     } finally {
       paymentCalendarPdfNumberBtn.disabled = false;
       paymentCalendarPdfNumberBtn.textContent = origText;
