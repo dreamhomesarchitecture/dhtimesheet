@@ -2297,16 +2297,17 @@ function adminPaymentCalendarTemplate(){
 
 function paymentCalendarPageHtml(){
   const p = state.config.projects.find(x => x.id === state.expandedPaymentCalendarProjectId);
+  const backLabel = state.editingProjectId ? "← Zpět na detail projektu" : "← Zpět na platební kalendář";
   if(!p){
     return `
     <div class="sheet">
-      <button class="logout-link" data-action="back-to-payment-calendar">← Zpět na platební kalendář</button>
+      <button class="logout-link" data-action="back-to-payment-calendar">${backLabel}</button>
       <div class="empty-state" style="margin-top:20px;">Projekt nenalezen.</div>
     </div>`;
   }
   return `
     <div class="sheet">
-      <button class="logout-link" data-action="back-to-payment-calendar">← Zpět na platební kalendář</button>
+      <button class="logout-link" data-action="back-to-payment-calendar">${backLabel}</button>
       <div class="eyebrow" style="margin-top:18px;">Platební kalendář</div>
       <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
       <div style="margin-top:24px;">
@@ -3221,12 +3222,12 @@ function adminTemplate(){
       </div>`;
   }
 
-  if(state.editingProjectId){
-    return projectDetailPageHtml();
-  }
-
   if(state.expandedPaymentCalendarProjectId){
     return paymentCalendarPageHtml();
+  }
+
+  if(state.editingProjectId){
+    return projectDetailPageHtml();
   }
 
   const empRows = state.config.employees.map(e => {
@@ -4104,14 +4105,7 @@ function bindAdmin(){
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="open-payment-calendar-from-project"]').forEach(b => b.onclick = () => {
-    setState({
-      editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null,
-      projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date",
-      projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date",
-      laborBulkSelectedIds: {}, laborBulkPhaseId: "",
-      adminSubTab: "reports", adminOpenSection: "payment-calendar",
-      expandedPaymentCalendarProjectId: b.getAttribute("data-id")
-    });
+    setState({ expandedPaymentCalendarProjectId: b.getAttribute("data-id") });
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
