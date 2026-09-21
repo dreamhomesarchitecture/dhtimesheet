@@ -2540,17 +2540,24 @@ function adminClientExportTemplate(){
   }
   const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.clientExportProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
   const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.clientExportPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
-  const monthNavHtml = `
-    <div class="admin-project-head" style="margin-bottom:10px;gap:10px;max-width:480px;">
-      <button type="button" class="icon-btn" id="client-export-month-prev" title="Předchozí měsíc">‹</button>
-      <span class="grow" style="text-align:center;font-weight:700;">${state.clientExportFrom ? czechMonthYear(state.clientExportFrom) : ""}</span>
-      <button type="button" class="icon-btn" id="client-export-month-next" title="Následující měsíc">›</button>
+  const dateMonthNav = (fieldPrefix, dateVal) => `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <button type="button" class="icon-btn" id="client-export-${fieldPrefix}-month-prev" title="O měsíc dříve">‹</button>
+      <span style="flex:1;text-align:center;font-size:11.5px;color:var(--soft);">${dateVal ? czechMonthYear(dateVal) : ""}</span>
+      <button type="button" class="icon-btn" id="client-export-${fieldPrefix}-month-next" title="O měsíc později">›</button>
     </div>`;
   const filterHtml = `
-    ${monthNavHtml}
     <div class="form-grid" style="margin-bottom:14px;">
-      <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="client-export-from" value="${esc(state.clientExportFrom)}"></div>
-      <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="client-export-to" value="${esc(state.clientExportTo)}"></div>
+      <div class="field-row">
+        <label class="field-label">Datum od</label>
+        ${dateMonthNav("from", state.clientExportFrom)}
+        <input type="date" id="client-export-from" value="${esc(state.clientExportFrom)}">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Datum do</label>
+        ${dateMonthNav("to", state.clientExportTo)}
+        <input type="date" id="client-export-to" value="${esc(state.clientExportTo)}">
+      </div>
       <div class="field-row"><label class="field-label">Projekt</label><select id="client-export-project">${filterProjectOptions}</select></div>
       <div class="field-row"><label class="field-label">Fáze</label><select id="client-export-phase">${filterPhaseOptions}</select></div>
     </div>`;
@@ -4811,20 +4818,14 @@ function bindAdmin(){
   const recordsFilterResetBtn = document.getElementById("records-filter-reset-btn");
   if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "", recordsFilterEmployeeId: "" });
 
-  const clientExportMonthPrevBtn = document.getElementById("client-export-month-prev");
-  if(clientExportMonthPrevBtn) clientExportMonthPrevBtn.onclick = () => {
-    setState({
-      clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), -1),
-      clientExportTo: shiftDateByMonths(state.clientExportTo || todayStr(), -1)
-    });
-  };
-  const clientExportMonthNextBtn = document.getElementById("client-export-month-next");
-  if(clientExportMonthNextBtn) clientExportMonthNextBtn.onclick = () => {
-    setState({
-      clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), 1),
-      clientExportTo: shiftDateByMonths(state.clientExportTo || todayStr(), 1)
-    });
-  };
+  const clientExportFromMonthPrevBtn = document.getElementById("client-export-from-month-prev");
+  if(clientExportFromMonthPrevBtn) clientExportFromMonthPrevBtn.onclick = () => setState({ clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), -1) });
+  const clientExportFromMonthNextBtn = document.getElementById("client-export-from-month-next");
+  if(clientExportFromMonthNextBtn) clientExportFromMonthNextBtn.onclick = () => setState({ clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), 1) });
+  const clientExportToMonthPrevBtn = document.getElementById("client-export-to-month-prev");
+  if(clientExportToMonthPrevBtn) clientExportToMonthPrevBtn.onclick = () => setState({ clientExportTo: shiftDateByMonths(state.clientExportTo || todayStr(), -1) });
+  const clientExportToMonthNextBtn = document.getElementById("client-export-to-month-next");
+  if(clientExportToMonthNextBtn) clientExportToMonthNextBtn.onclick = () => setState({ clientExportTo: shiftDateByMonths(state.clientExportTo || todayStr(), 1) });
   const clientExportFrom = document.getElementById("client-export-from");
   if(clientExportFrom) clientExportFrom.addEventListener("change", () => setState({ clientExportFrom: clientExportFrom.value }));
   const clientExportTo = document.getElementById("client-export-to");
