@@ -1721,6 +1721,26 @@ async function loadProjectTotals(){
   render();
 }
 
+function projectBillingBlockHtml(project){
+  const b = project && project.billing;
+  if(!b) return "";
+  const rows = [
+    ["Název / jméno", b.name],
+    ["IČ", b.ico],
+    ["DIČ", b.dic],
+    ["Adresa", b.address],
+    ["Číslo účtu / IBAN", b.bankAccount],
+    ["E-mail", b.email],
+    ["Telefon", b.phone]
+  ].filter(([,v]) => v);
+  if(!rows.length) return "";
+  return `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Fakturační údaje klienta</div>
+      ${rows.map(([label,val]) => `<div class="phase-employee-row"><span>${esc(label)}</span><span>${esc(val)}</span></div>`).join("")}
+    </div>`;
+}
+
 function buildProjectDetail(projectId){
   const project = state.config.projects.find(p => p.id === projectId);
   const phases = state.config.phases;
@@ -1759,6 +1779,7 @@ function buildProjectDetail(projectId){
     <div class="project-detail">
       <div class="project-detail-total"><span>Projekt celkem</span><b>${fmtH(totalHours)}</b></div>
       ${phaseBlocks || `<div class="q-hint" style="margin:6px 0 0;">Tomuto projektu zatím nejsou přiřazené žádné fáze a nemá ani žádné zapsané hodiny.</div>`}
+      ${projectBillingBlockHtml(project)}
     </div>`;
 }
 
@@ -1769,6 +1790,7 @@ function myProjectTotals(){
 }
 
 function buildMyProjectDetail(projectId){
+  const project = state.config.projects.find(p => p.id === projectId);
   const phases = state.config.phases;
   const entries = state.entries.filter(e => e.projectId === projectId);
   const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
@@ -1818,6 +1840,7 @@ function buildMyProjectDetail(projectId){
     <div class="project-detail">
       <div class="project-detail-total"><span>Moje hodiny na projektu</span><b>${fmtH(totalHours)}</b></div>
       ${phaseBlocks || `<div class="q-hint" style="margin:6px 0 0;">Zatím žádné hodiny na tomto projektu.</div>`}
+      ${projectBillingBlockHtml(project)}
     </div>`;
 }
 
