@@ -1534,22 +1534,33 @@ async function buildPaymentCalendarPdf(project, rows, opts){
 
   const total = opts.totalAmount !== undefined ? opts.totalAmount : rows.reduce((s,r) => s + r.amount, 0);
   const totalLabel = opts.totalLabel || "ROZPOČET CELKEM BEZ DPH";
+  const remaining = rows.reduce((s,r) => {
+    if(r.payments && r.payments.length){
+      return s + r.payments.reduce((s2,pay) => s2 + (pay.date ? 0 : (Number(pay.amount)||0)), 0);
+    }
+    return s + r.amount;
+  }, 0);
 
   let ty = doc.lastAutoTable.finalY + 10;
-  if(ty + 20 > pageHeight - 32){
-    doc.addPage();
-    ty = 24;
-  }
   const boxLeft = pageWidth - marginX - 80;
-  doc.setFillColor(164,172,127);
-  doc.rect(boxLeft - 3, ty, 80 + 3, 8, "F");
-  ty += 5.8;
-  doc.setTextColor(255,255,255);
-  doc.setFont("Lato", "bold");
-  doc.setFontSize(9.5);
-  doc.text(totalLabel, boxLeft, ty);
-  doc.text(fmtKc(total), pageWidth - marginX - 2, ty, { align: "right" });
-  doc.setTextColor(0,0,0);
+  const drawTotalBox = (label, amount, fillColor) => {
+    if(ty + 20 > pageHeight - 32){
+      doc.addPage();
+      ty = 24;
+    }
+    doc.setFillColor(...fillColor);
+    doc.rect(boxLeft - 3, ty, 80 + 3, 8, "F");
+    ty += 5.8;
+    doc.setTextColor(255,255,255);
+    doc.setFont("Lato", "bold");
+    doc.setFontSize(9.5);
+    doc.text(label, boxLeft, ty);
+    doc.text(fmtKc(amount), pageWidth - marginX - 2, ty, { align: "right" });
+    doc.setTextColor(0,0,0);
+    ty += 10.2;
+  };
+  drawTotalBox(totalLabel, total, [164,172,127]);
+  drawTotalBox("ZBÝVÁ UHRADIT", remaining, [186,148,112]);
 
   const pageCount = doc.internal.getNumberOfPages();
   for(let i = 1; i <= pageCount; i++){
