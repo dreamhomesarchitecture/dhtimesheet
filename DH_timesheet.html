@@ -2810,6 +2810,19 @@ function projectDetailPageHtml(){
         </div>
         ${state.editProjError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.editProjError)}</div>` : ``}
 
+        <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
+          <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Fakturační údaje klienta</div>
+          <div class="form-grid">
+            <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" name="billing_name" value="${esc((p.billing && p.billing.name) || "")}"></div>
+            <div class="field-row"><label class="field-label">IČ</label><input type="text" name="billing_ico" value="${esc((p.billing && p.billing.ico) || "")}"></div>
+            <div class="field-row"><label class="field-label">DIČ</label><input type="text" name="billing_dic" value="${esc((p.billing && p.billing.dic) || "")}"></div>
+            <div class="field-row grow"><label class="field-label">Adresa</label><input type="text" name="billing_address" value="${esc((p.billing && p.billing.address) || "")}"></div>
+            <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" name="billing_bankAccount" value="${esc((p.billing && p.billing.bankAccount) || "")}"></div>
+            <div class="field-row"><label class="field-label">E-mail</label><input type="text" name="billing_email" value="${esc((p.billing && p.billing.email) || "")}"></div>
+            <div class="field-row"><label class="field-label">Telefon</label><input type="text" name="billing_phone" value="${esc((p.billing && p.billing.phone) || "")}"></div>
+          </div>
+        </div>
+
         ${(() => {
           const projectEntries = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id);
           const totalHours = projectEntries.reduce((s,en) => s + Number(en.hours||0), 0);
@@ -3281,6 +3294,22 @@ function adminSectionHeader(key, label, rightHtml){
     </div>`;
 }
 
+function billingProfileCardHtml(profile){
+  return `
+    <div class="phase-block" style="margin-bottom:14px;">
+      <div class="form-grid">
+        <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="name" value="${esc(profile.name || "")}"></div>
+        <div class="field-row"><label class="field-label">IČ</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="ico" value="${esc(profile.ico || "")}"></div>
+        <div class="field-row"><label class="field-label">DIČ</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="dic" value="${esc(profile.dic || "")}"></div>
+        <div class="field-row grow"><label class="field-label">Adresa</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="address" value="${esc(profile.address || "")}"></div>
+        <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="bankAccount" value="${esc(profile.bankAccount || "")}"></div>
+        <div class="field-row"><label class="field-label">E-mail</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="email" value="${esc(profile.email || "")}"></div>
+        <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
+      </div>
+      <div style="margin-top:10px;"><button type="button" class="icon-btn" data-action="delete-billing-profile" data-id="${esc(profile.id)}" title="Smazat profil">× Smazat profil</button></div>
+    </div>`;
+}
+
 function adminTemplate(){
   if(!state.adminUnlocked){
     return `
@@ -3509,6 +3538,15 @@ function adminTemplate(){
 
         <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se všemi náklady projektů.</p>
         <button class="btn btn-outline btn-small" id="export-costs-btn">Exportovat náklady (XLSX)</button>
+        ` : ``}
+      </div>
+
+      <div class="admin-block">
+        ${adminSectionHeader("billing-profiles", `Fakturační údaje (${(state.config.billingProfiles || []).length})`)}
+        ${state.adminOpenSection === "billing-profiles" ? `
+        <p class="q-hint" style="margin:0 0 14px;">Vaše fakturační profily (max. 3) — výběr, který se použije při vystavení faktury, doplníme později.</p>
+        ${(state.config.billingProfiles || []).length ? state.config.billingProfiles.map(billingProfileCardHtml).join("") : `<div class="empty-state">Zatím žádný fakturační profil.</div>`}
+        ${(state.config.billingProfiles || []).length < 3 ? `<button type="button" class="btn btn-outline btn-small" id="add-billing-profile-btn">+ Přidat profil</button>` : `<p class="q-hint" style="margin:0;">Maximální počet profilů (3) dosažen.</p>`}
         ` : ``}
       </div>
 
@@ -4334,6 +4372,15 @@ function bindAdmin(){
     project.name = newName;
     project.investor = (data.investor || "").trim();
     project.location = (data.location || "").trim();
+    project.billing = {
+      name: (data.billing_name || "").trim(),
+      ico: (data.billing_ico || "").trim(),
+      dic: (data.billing_dic || "").trim(),
+      address: (data.billing_address || "").trim(),
+      bankAccount: (data.billing_bankAccount || "").trim(),
+      email: (data.billing_email || "").trim(),
+      phone: (data.billing_phone || "").trim()
+    };
     projectModalForm.querySelectorAll("input.phase-detail-budget-input[data-phase-id]").forEach(input => {
       const phaseId = input.getAttribute("data-phase-id");
       if(!project.phaseBudgets) project.phaseBudgets = {};
@@ -4792,6 +4839,30 @@ function bindAdmin(){
       exportCostsBtn.textContent = origText;
     }
   };
+
+  document.querySelectorAll('.billing-profile-field').forEach(el => el.addEventListener("change", async () => {
+    const id = el.getAttribute("data-id");
+    const field = el.getAttribute("data-field");
+    const profile = (state.config.billingProfiles || []).find(p => p.id === id);
+    if(!profile) return;
+    profile[field] = el.value.trim();
+    await saveConfig();
+    showStamp();
+  }));
+  const addBillingProfileBtn = document.getElementById("add-billing-profile-btn");
+  if(addBillingProfileBtn) addBillingProfileBtn.onclick = async () => {
+    if(!state.config.billingProfiles) state.config.billingProfiles = [];
+    if(state.config.billingProfiles.length >= 3) return;
+    state.config.billingProfiles.push({ id: uid("bill"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "" });
+    await saveConfig();
+    render();
+  };
+  document.querySelectorAll('[data-action="delete-billing-profile"]').forEach(b => b.onclick = async () => {
+    if(!confirm("Smazat tento fakturační profil?")) return;
+    state.config.billingProfiles = (state.config.billingProfiles || []).filter(p => p.id !== b.getAttribute("data-id"));
+    await saveConfig();
+    render();
+  });
 
   const costFilterProject = document.getElementById("cost-filter-project");
   enhanceSearchableSelect(costFilterProject);
