@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.js"></script>
 <style>
   :root{
     --canvas: #ffffff;
@@ -806,6 +807,15 @@ function normalizedPayments(holder, fallbackAmount){
   }
   return holder.payments;
 }
+function projectBillingProfiles(p){
+  if(!Array.isArray(p.billingProfiles)){
+    const legacy = p.billing;
+    const hasLegacyData = legacy && (legacy.name || legacy.ico || legacy.dic || legacy.address || legacy.bankAccount || legacy.email || legacy.phone);
+    p.billingProfiles = hasLegacyData ? [{ id: uid("cbill"), ...legacy }] : [];
+    delete p.billing;
+  }
+  return p.billingProfiles;
+}
 function paymentCalendarRows(p){
   const rows = [];
   (p.phaseIds || []).forEach(pid => {
@@ -1533,12 +1543,12 @@ async function buildPaymentCalendarPdf(project, rows, opts){
     alternateRowStyles: { fillColor: [246,245,241] },
     columnStyles: {
       0: { cellWidth: 14 },
-      1: { cellWidth: 36 },
+      1: { cellWidth: "auto" },
       2: { cellWidth: 16 },
       3: { cellWidth: 10, halign: "right" },
       4: { cellWidth: 24, halign: "right" },
       5: { cellWidth: 20, halign: "right" },
-      6: { cellWidth: "auto" }
+      6: { cellWidth: 30 }
     },
     margin: { left: marginX, right: marginX, bottom: 24 }
   });
@@ -1584,7 +1594,62 @@ async function buildPaymentCalendarPdf(project, rows, opts){
   return doc;
 }
 
-async function buildProformaInvoicePdf(project, rows, supplier, opts){
+function czechAccountToIban(accountStr){
+  const m = String(accountStr||"").trim().match(/^(?:(\d{1,6})-)?(\d{1,10})\/(\d{4})$/);
+  if(!m) return "";
+  const prefix = (m[1]||"").padStart(6,"0");
+  const account = m[2].padStart(10,"0");
+  const bankCode = m[3];
+  const bban = bankCode + prefix + account;
+  const checkBase = bban + "123500";
+  let remainder = 0;
+  for(let i = 0; i < checkBase.length; i++){
+    remainder = (remainder * 10 + Number(checkBase[i])) % 97;
+  }
+  const checkDigits = String(98 - remainder).padStart(2, "0");
+  return `CZ${checkDigits}${bban}`;
+}
+function resolveIban(accountStr){
+  if(!accountStr) return "";
+  const compact = String(accountStr).replace(/\s+/g, "").toUpperCase();
+  if(/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(compact)) return compact;
+  return czechAccountToIban(accountStr);
+}
+function stripDiacritics(str){
+  return String(str||"").normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function buildCzechQrPaymentString({ iban, amount, vs, msg }){
+  if(!iban) return "";
+  const parts = ["SPD*1.0", `ACC:${iban}`];
+  if(amount !== undefined && amount !== null && amount !== ""){
+    parts.push(`AM:${Number(amount).toFixed(2)}`);
+  }
+  parts.push("CC:CZK");
+  const vsDigits = String(vs||"").replace(/\D/g, "").slice(0,10);
+  if(vsDigits) parts.push(`X-VS:${vsDigits}`);
+  if(msg){
+    const cleanMsg = stripDiacritics(String(msg)).replace(/\*/g, " ").slice(0,60);
+    if(cleanMsg) parts.push(`MSG:${cleanMsg}`);
+  }
+  return parts.join("*");
+}
+function drawQrCodeInPdf(doc, text, x, y, sizeMm){
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  const count = qr.getModuleCount();
+  const cell = sizeMm / count;
+  doc.setFillColor(0,0,0);
+  for(let row = 0; row < count; row++){
+    for(let col = 0; col < count; col++){
+      if(qr.isDark(row, col)){
+        doc.rect(x + col*cell, y + row*cell, cell, cell, "F");
+      }
+    }
+  }
+}
+
+async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   opts = opts || {};
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
   await ensurePdfFont(doc);
@@ -1602,7 +1667,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, opts){
   doc.text("proforma faktura", pageWidth/2, 46, { align: "center" });
 
   const issueDate = todayStr();
-  const dueDate = addDaysToDateStr(issueDate, 14);
+  const dueDate = opts.dueDate || addDaysToDateStr(issueDate, 7);
   const invoiceNumber = opts.invoiceNumber || "";
 
   let y = 62;
@@ -1647,7 +1712,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, opts){
     return py;
   };
   const dodavatelBottom = partyBlock("DODAVATEL", supplier || {}, marginX);
-  const odberatelBottom = partyBlock("ODBĚRATEL", (project && project.billing) || {}, marginX + colWidth + 10);
+  const odberatelBottom = partyBlock("ODBĚRATEL", customer || {}, marginX + colWidth + 10);
   y = Math.max(dodavatelBottom, odberatelBottom) + 6;
 
   const bodyRows = [];
@@ -1674,21 +1739,58 @@ async function buildProformaInvoicePdf(project, rows, supplier, opts){
     margin: { left: marginX, right: marginX, bottom: 24 }
   });
 
+  const vatRate = Number(supplier && supplier.vatRate) || 0;
+  const vatAmount = total * vatRate / 100;
+  const totalWithVat = total + vatAmount;
+  const amountDue = vatRate > 0 ? totalWithVat : total;
+
   let ty = doc.lastAutoTable.finalY + 10;
-  if(ty + 20 > pageHeight - 32){
+  if(ty + 32 > pageHeight - 32){
     doc.addPage();
     ty = 24;
   }
   const boxLeft = pageWidth - marginX - 80;
+  if(vatRate > 0){
+    doc.setFont("Lato", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(80,80,80);
+    doc.text("Základ daně bez DPH", boxLeft, ty);
+    doc.text(fmtKc(total), pageWidth - marginX - 2, ty, { align: "right" });
+    ty += 5.2;
+    doc.text(`DPH ${vatRate}%`, boxLeft, ty);
+    doc.text(fmtKc(vatAmount), pageWidth - marginX - 2, ty, { align: "right" });
+    ty += 6.5;
+    doc.setTextColor(0,0,0);
+  }
+  const totalBoxTop = ty;
   doc.setFillColor(164,172,127);
   doc.rect(boxLeft - 3, ty, 80 + 3, 8, "F");
   ty += 5.8;
   doc.setTextColor(255,255,255);
   doc.setFont("Lato", "bold");
   doc.setFontSize(9.5);
-  doc.text("CELKEM K ÚHRADĚ BEZ DPH", boxLeft, ty);
-  doc.text(fmtKc(total), pageWidth - marginX - 2, ty, { align: "right" });
+  doc.text(vatRate > 0 ? "CELKEM K ÚHRADĚ" : "CELKEM K ÚHRADĚ BEZ DPH", boxLeft, ty);
+  doc.text(fmtKc(amountDue), pageWidth - marginX - 2, ty, { align: "right" });
   doc.setTextColor(0,0,0);
+
+  const iban = resolveIban(supplier && supplier.bankAccount);
+  const vsSource = invoiceNumber && !invoiceNumber.includes(",") ? invoiceNumber : "";
+  const qrText = iban ? buildCzechQrPaymentString({
+    iban, amount: amountDue, vs: vsSource,
+    msg: `${invoiceNumber} - ${(supplier && supplier.name) || ""}`
+  }) : "";
+  if(qrText){
+    try{
+      const qrSize = 28;
+      const qrY = totalBoxTop - 2;
+      doc.setFont("Lato", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(120,120,120);
+      doc.text("QR PLATBA", marginX, qrY - 2);
+      doc.setTextColor(0,0,0);
+      drawQrCodeInPdf(doc, qrText, marginX, qrY, qrSize);
+    }catch(e){}
+  }
 
   const pageCount = doc.internal.getNumberOfPages();
   const footerParts = [supplier && supplier.name, supplier && supplier.ico ? `IČ: ${supplier.ico}` : "", supplier && supplier.address].filter(Boolean);
@@ -1863,22 +1965,29 @@ async function loadProjectTotals(){
 }
 
 function projectBillingBlockHtml(project){
-  const b = project && project.billing;
-  if(!b) return "";
-  const rows = [
-    ["Název / jméno", b.name],
-    ["IČ", b.ico],
-    ["DIČ", b.dic],
-    ["Adresa", b.address],
-    ["Číslo účtu / IBAN", b.bankAccount],
-    ["E-mail", b.email],
-    ["Telefon", b.phone]
-  ].filter(([,v]) => v);
-  if(!rows.length) return "";
+  if(!project) return "";
+  const profiles = projectBillingProfiles(project)
+    .map(b => ({
+      b,
+      rows: [
+        ["Název / jméno", b.name],
+        ["IČ", b.ico],
+        ["DIČ", b.dic],
+        ["Adresa", b.address],
+        ["Číslo účtu / IBAN", b.bankAccount],
+        ["E-mail", b.email],
+        ["Telefon", b.phone]
+      ].filter(([,v]) => v)
+    }))
+    .filter(x => x.rows.length);
+  if(!profiles.length) return "";
   return `
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
       <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Fakturační údaje klienta</div>
-      ${rows.map(([label,val]) => `<div class="phase-employee-row"><span>${esc(label)}</span><span>${esc(val)}</span></div>`).join("")}
+      ${profiles.map((x,i) => `
+        ${profiles.length > 1 ? `<div style="font-weight:600;font-size:12px;color:var(--soft);margin:${i>0?"10px":"0"} 0 4px;">Profil ${i+1}</div>` : ``}
+        ${x.rows.map(([label,val]) => `<div class="phase-employee-row"><span>${esc(label)}</span><span>${esc(val)}</span></div>`).join("")}
+      `).join("")}
     </div>`;
 }
 
@@ -2493,6 +2602,15 @@ function buildPaymentCalendarDetail(projectId){
           <select id="payment-calendar-proforma-supplier" style="width:auto;min-width:180px;">
             ${state.config.billingProfiles.map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
           </select>
+          ${projectBillingProfiles(p).length > 1 ? `
+          <select id="payment-calendar-proforma-customer" style="width:auto;min-width:180px;">
+            ${projectBillingProfiles(p).map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
+          </select>
+          ` : ``}
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
+            Splatnost
+            <input type="date" id="payment-calendar-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
+          </label>
           <button type="button" class="btn btn-tan btn-small" id="payment-calendar-proforma-btn" data-project-id="${esc(p.id)}">Exportovat PROFORMA fakturu</button>
           ` : `<span class="q-hint" style="margin:0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</span>`}
         </div>
@@ -2764,7 +2882,7 @@ function adminClientExportTemplate(){
     </div>`;
 
   const selectedProject = state.clientExportProjectId ? state.config.projects.find(p => p.id === state.clientExportProjectId) : null;
-  const exportButtonsHtml = `
+  const exportButtonsHtml = () => `
     <div style="margin-top:16px;">
       ${selectedProject ? `
       <div class="form-grid" style="margin-bottom:10px;max-width:480px;">
@@ -2778,11 +2896,28 @@ function adminClientExportTemplate(){
         <button class="btn btn-tan btn-small" type="button" id="client-export-xlsx-btn">Exportovat pro klienta (Excel)</button>
         <button class="btn btn-outline btn-small" type="button" id="client-export-pdf-btn">Exportovat pro klienta (PDF)</button>
       </div>
+      ${(state.config.billingProfiles || []).length ? `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
+        <select id="client-export-proforma-supplier" style="width:auto;min-width:180px;">
+          ${state.config.billingProfiles.map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
+        </select>
+        ${projectBillingProfiles(selectedProject).length > 1 ? `
+        <select id="client-export-proforma-customer" style="width:auto;min-width:180px;">
+          ${projectBillingProfiles(selectedProject).map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
+        </select>
+        ` : ``}
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
+          Splatnost
+          <input type="date" id="client-export-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
+        </label>
+        <button type="button" class="btn btn-tan btn-small" id="client-export-proforma-btn" data-project-id="${esc(selectedProject.id)}">Exportovat PROFORMA fakturu</button>
+      </div>
+      ` : `<p class="q-hint" style="margin:10px 0 0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</p>`}
       ` : `<p class="q-hint" style="margin:0;">Pro export vyberte konkrétní projekt ve filtru.</p>`}
     </div>`;
 
   if(!sorted.length){
-    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}${excludedCount ? ` (${excludedCount} odebráno z exportu — <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn">Vrátit</button>)` : ``}</div>${extraCostsHtml}${extraCosts.length ? exportButtonsHtml : ``}`;
+    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}${excludedCount ? ` (${excludedCount} odebráno z exportu — <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn">Vrátit</button>)` : ``}</div>${extraCostsHtml}${extraCosts.length ? exportButtonsHtml() : ``}`;
   }
 
   const employeeIdsPresent = [...new Set(sorted.map(e => e.employeeId))];
@@ -2842,7 +2977,7 @@ function adminClientExportTemplate(){
       DPH (${vatRate} %): <b style="color:var(--ink);">${fmtKc(vatAmount)}</b><br>
       Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b>
     </p>
-    ${exportButtonsHtml}`;
+    ${exportButtonsHtml()}`;
 }
 
 function projectClosedDate(p){
@@ -2984,19 +3119,13 @@ function projectDetailPageHtml(){
 
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Fakturační údaje klienta</div>
-          <div class="form-grid">
-            <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" name="billing_name" value="${esc((p.billing && p.billing.name) || "")}"></div>
-            <div class="field-row"><label class="field-label">IČ</label><input type="text" name="billing_ico" value="${esc((p.billing && p.billing.ico) || "")}"></div>
-            <div class="field-row"><label class="field-label">DIČ</label><input type="text" name="billing_dic" value="${esc((p.billing && p.billing.dic) || "")}"></div>
-          </div>
-          <div class="form-grid">
-            <div class="field-row"><label class="field-label">Adresa</label><input type="text" name="billing_address" value="${esc((p.billing && p.billing.address) || "")}"></div>
-          </div>
-          <div class="form-grid">
-            <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" name="billing_bankAccount" value="${esc((p.billing && p.billing.bankAccount) || "")}"></div>
-            <div class="field-row"><label class="field-label">E-mail</label><input type="text" name="billing_email" value="${esc((p.billing && p.billing.email) || "")}"></div>
-            <div class="field-row"><label class="field-label">Telefon</label><input type="text" name="billing_phone" value="${esc((p.billing && p.billing.phone) || "")}"></div>
-          </div>
+          <p class="q-hint" style="margin:0 0 10px;">Klidně přidejte víc profilů (např. jinou fakturační osobu/firmu) — při exportu proforma faktury pak vyberete, který se použije jako odběratel.</p>
+          ${projectBillingProfiles(p).length ? projectBillingProfiles(p).map(bp => billingProfileCardHtml(bp, {
+            fieldClass: "client-billing-profile-field",
+            deleteAction: "delete-client-billing-profile",
+            extraAttrs: `data-project-id="${esc(p.id)}"`
+          })).join("") : `<div class="empty-state">Zatím žádný fakturační profil klienta.</div>`}
+          ${projectBillingProfiles(p).length < 3 ? `<button type="button" class="btn btn-outline btn-small" data-action="add-client-billing-profile" data-project-id="${esc(p.id)}">+ Přidat fakturační profil</button>` : `<p class="q-hint" style="margin:0;">Maximální počet profilů (3) dosažen.</p>`}
         </div>
 
         ${(() => {
@@ -3078,7 +3207,7 @@ function projectDetailPageHtml(){
                 ${budgetItems.length ? `
                   <span style="font-weight:700;font-size:14px;">${fmtKc(budgetNum)} <span class="meta" style="font-weight:400;">(${budgetItems.length} ${budgetItems.length === 1 ? "položka" : budgetItems.length < 5 ? "položky" : "položek"})</span></span>
                 ` : `
-                  <input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" class="phase-detail-budget-input" data-phase-id="${esc(pid)}" value="${esc(budget)}">
+                  <input type="number" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" class="phase-detail-budget-input" data-phase-id="${esc(pid)}" value="${esc(budget)}">
                 `}
               </div>
               <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
@@ -3086,7 +3215,7 @@ function projectDetailPageHtml(){
                 ${budgetItems.map(it => `
                   <div class="admin-project-head" data-budget-item-row="${esc(it.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" style="margin-bottom:6px;">
                     <input type="text" class="budget-item-label grow" placeholder="Položka (např. Dodatek č. 1)" style="padding:6px 8px;font-size:13px;" value="${esc(it.label || "")}">
-                    <input type="number" min="0" step="1" class="budget-item-amount" placeholder="Kč" style="width:120px;padding:6px 8px;font-size:13px;" value="${esc(it.amount)}">
+                    <input type="number" step="1" class="budget-item-amount" placeholder="Kč" style="width:120px;padding:6px 8px;font-size:13px;" value="${esc(it.amount)}">
                     <button type="button" class="icon-btn" data-action="delete-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" data-item-id="${esc(it.id)}" title="Smazat položku">×</button>
                   </div>`).join("")}
                 <button type="button" class="btn btn-outline btn-small" data-action="add-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">+ Přidat položku</button>
@@ -3470,23 +3599,28 @@ function adminSectionHeader(key, label, rightHtml){
     </div>`;
 }
 
-function billingProfileCardHtml(profile){
+function billingProfileCardHtml(profile, opts){
+  opts = opts || {};
+  const fieldClass = opts.fieldClass || "billing-profile-field";
+  const deleteAction = opts.deleteAction || "delete-billing-profile";
+  const extraAttrs = opts.extraAttrs || "";
   return `
     <div class="phase-block" style="margin-bottom:14px;">
       <div class="form-grid">
-        <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="name" value="${esc(profile.name || "")}"></div>
-        <div class="field-row"><label class="field-label">IČ</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="ico" value="${esc(profile.ico || "")}"></div>
-        <div class="field-row"><label class="field-label">DIČ</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="dic" value="${esc(profile.dic || "")}"></div>
+        <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="name" value="${esc(profile.name || "")}"></div>
+        <div class="field-row"><label class="field-label">IČ</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="ico" value="${esc(profile.ico || "")}"></div>
+        <div class="field-row"><label class="field-label">DIČ</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="dic" value="${esc(profile.dic || "")}"></div>
       </div>
       <div class="form-grid">
-        <div class="field-row"><label class="field-label">Adresa</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="address" value="${esc(profile.address || "")}"></div>
+        <div class="field-row"><label class="field-label">Adresa</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="address" value="${esc(profile.address || "")}"></div>
       </div>
       <div class="form-grid">
-        <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="bankAccount" value="${esc(profile.bankAccount || "")}"></div>
-        <div class="field-row"><label class="field-label">E-mail</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="email" value="${esc(profile.email || "")}"></div>
-        <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
+        <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="bankAccount" value="${esc(profile.bankAccount || "")}"></div>
+        <div class="field-row"><label class="field-label">E-mail</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="email" value="${esc(profile.email || "")}"></div>
+        <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
+        ${opts.showVatRate ? `<div class="field-row"><label class="field-label">DPH (%)</label><input type="number" min="0" max="100" step="0.1" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="vatRate" value="${esc(profile.vatRate || 0)}"></div>` : ``}
       </div>
-      <div style="margin-top:10px;"><button type="button" class="icon-btn" data-action="delete-billing-profile" data-id="${esc(profile.id)}" title="Smazat profil">× Smazat profil</button></div>
+      <div style="margin-top:10px;"><button type="button" class="icon-btn" data-action="${deleteAction}" ${extraAttrs} data-id="${esc(profile.id)}" title="Smazat profil">× Smazat profil</button></div>
     </div>`;
 }
 
@@ -3725,7 +3859,7 @@ function adminTemplate(){
         ${adminSectionHeader("billing-profiles", `Fakturační údaje (${(state.config.billingProfiles || []).length})`)}
         ${state.adminOpenSection === "billing-profiles" ? `
         <p class="q-hint" style="margin:0 0 14px;">Vaše fakturační profily (max. 3) — výběr, který se použije při vystavení faktury, doplníme později.</p>
-        ${(state.config.billingProfiles || []).length ? state.config.billingProfiles.map(billingProfileCardHtml).join("") : `<div class="empty-state">Zatím žádný fakturační profil.</div>`}
+        ${(state.config.billingProfiles || []).length ? state.config.billingProfiles.map(bp => billingProfileCardHtml(bp, { showVatRate: true })).join("") : `<div class="empty-state">Zatím žádný fakturační profil.</div>`}
         ${(state.config.billingProfiles || []).length < 3 ? `<button type="button" class="btn btn-outline btn-small" id="add-billing-profile-btn">+ Přidat profil</button>` : `<p class="q-hint" style="margin:0;">Maximální počet profilů (3) dosažen.</p>`}
         ` : ``}
       </div>
@@ -4267,13 +4401,19 @@ function bindAdmin(){
     const supplierSelect = document.getElementById("payment-calendar-proforma-supplier");
     const supplier = (state.config.billingProfiles || []).find(bp => bp.id === (supplierSelect && supplierSelect.value));
     if(!supplier) return;
+    const customerSelect = document.getElementById("payment-calendar-proforma-customer");
+    const customerProfiles = projectBillingProfiles(project);
+    const customer = (customerSelect && customerProfiles.find(bp => bp.id === customerSelect.value)) || customerProfiles[0] || {};
+    const dueDateInput = document.getElementById("payment-calendar-proforma-due-date");
+    const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(todayStr(), 7);
+    const invoiceNumber = `${project.id}${numbers[0] || ""}`;
     const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
     paymentCalendarProformaBtn.disabled = true;
     const origText = paymentCalendarProformaBtn.textContent;
     paymentCalendarProformaBtn.textContent = "Generuji…";
     try{
-      const doc = await buildProformaInvoicePdf(project, rows, supplier, { invoiceNumber: numbers.join(", "), totalAmount });
-      doc.save(`proforma-faktura_${project.id}_${numbers.join("+")}_${todayStr()}.pdf`);
+      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount, dueDate });
+      doc.save(`proforma-faktura_${invoiceNumber}_${todayStr()}.pdf`);
     } finally {
       paymentCalendarProformaBtn.disabled = false;
       paymentCalendarProformaBtn.textContent = origText;
@@ -4322,6 +4462,33 @@ function bindAdmin(){
     showStamp();
     render();
   };
+  document.querySelectorAll('.client-billing-profile-field').forEach(el => el.addEventListener("change", async () => {
+    const projectId = el.getAttribute("data-project-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const profile = projectBillingProfiles(project).find(bp => bp.id === el.getAttribute("data-id"));
+    if(!profile) return;
+    profile[el.getAttribute("data-field")] = el.value.trim();
+    await saveConfig();
+    showStamp();
+  }));
+  document.querySelectorAll('[data-action="add-client-billing-profile"]').forEach(b => b.onclick = async () => {
+    const project = state.config.projects.find(x => x.id === b.getAttribute("data-project-id"));
+    if(!project) return;
+    const profiles = projectBillingProfiles(project);
+    if(profiles.length >= 3) return;
+    profiles.push({ id: uid("cbill"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "" });
+    await saveConfig();
+    render();
+  });
+  document.querySelectorAll('[data-action="delete-client-billing-profile"]').forEach(b => b.onclick = async () => {
+    const project = state.config.projects.find(x => x.id === b.getAttribute("data-project-id"));
+    if(!project) return;
+    if(!confirm("Smazat tento fakturační profil?")) return;
+    project.billingProfiles = projectBillingProfiles(project).filter(bp => bp.id !== b.getAttribute("data-id"));
+    await saveConfig();
+    render();
+  });
   const projectCostsFilterPhase = document.getElementById("project-costs-filter-phase");
   if(projectCostsFilterPhase) projectCostsFilterPhase.addEventListener("change", () => setState({ projectCostsFilterPhase: projectCostsFilterPhase.value }));
   const projectCostsFilterPayment = document.getElementById("project-costs-filter-payment");
@@ -4577,15 +4744,6 @@ function bindAdmin(){
     project.name = newName;
     project.investor = (data.investor || "").trim();
     project.location = (data.location || "").trim();
-    project.billing = {
-      name: (data.billing_name || "").trim(),
-      ico: (data.billing_ico || "").trim(),
-      dic: (data.billing_dic || "").trim(),
-      address: (data.billing_address || "").trim(),
-      bankAccount: (data.billing_bankAccount || "").trim(),
-      email: (data.billing_email || "").trim(),
-      phone: (data.billing_phone || "").trim()
-    };
     projectModalForm.querySelectorAll("input.phase-detail-budget-input[data-phase-id]").forEach(input => {
       const phaseId = input.getAttribute("data-phase-id");
       if(!project.phaseBudgets) project.phaseBudgets = {};
@@ -5058,7 +5216,7 @@ function bindAdmin(){
   if(addBillingProfileBtn) addBillingProfileBtn.onclick = async () => {
     if(!state.config.billingProfiles) state.config.billingProfiles = [];
     if(state.config.billingProfiles.length >= 3) return;
-    state.config.billingProfiles.push({ id: uid("bill"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "" });
+    state.config.billingProfiles.push({ id: uid("bill"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "", vatRate: 0 });
     await saveConfig();
     render();
   };
@@ -5233,6 +5391,47 @@ function bindAdmin(){
     } finally {
       clientExportPdfBtn.disabled = false;
       clientExportPdfBtn.textContent = origText;
+    }
+  };
+  const clientExportProformaBtn = document.getElementById("client-export-proforma-btn");
+  if(clientExportProformaBtn) clientExportProformaBtn.onclick = async () => {
+    const project = state.config.projects.find(x => x.id === clientExportProformaBtn.getAttribute("data-project-id"));
+    if(!project) return;
+    const supplierSelect = document.getElementById("client-export-proforma-supplier");
+    const supplier = (state.config.billingProfiles || []).find(bp => bp.id === (supplierSelect && supplierSelect.value));
+    if(!supplier) return;
+    const customerSelect = document.getElementById("client-export-proforma-customer");
+    const customerProfiles = projectBillingProfiles(project);
+    const customer = (customerSelect && customerProfiles.find(bp => bp.id === customerSelect.value)) || customerProfiles[0] || {};
+    const dueDateInput = document.getElementById("client-export-proforma-due-date");
+    const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(todayStr(), 7);
+
+    const entries = state.adminEntriesFlat || [];
+    const filtered = entries.filter(e =>
+      (!state.clientExportFrom || e.date >= state.clientExportFrom) &&
+      (!state.clientExportTo || e.date <= state.clientExportTo) &&
+      (!state.clientExportProjectId || e.projectId === state.clientExportProjectId) &&
+      (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId) &&
+      !state.clientExportExcludedIds[e.id]
+    );
+    const totalBillable = filtered.reduce((s,e) => s + clientExportHoursFor(e) * clientExportRateFor(project, e.employeeId), 0);
+    const totalEntryCosts = filtered.reduce((s,e) => s + clientExportCostFor(e), 0);
+    const totalExtra = (state.clientExportExtraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
+    const subtotal = totalBillable + totalEntryCosts + totalExtra;
+    if(!subtotal) return;
+
+    const invoiceNumber = project.id;
+    const rows = [{ phaseId: "", label: "Autorský dozor na stavbě", amount: subtotal, payments: [{ amount: subtotal, number: "", date: "", note: "" }] }];
+
+    clientExportProformaBtn.disabled = true;
+    const origText = clientExportProformaBtn.textContent;
+    clientExportProformaBtn.textContent = "Generuji…";
+    try{
+      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate });
+      doc.save(`proforma-faktura_${invoiceNumber}_${todayStr()}.pdf`);
+    } finally {
+      clientExportProformaBtn.disabled = false;
+      clientExportProformaBtn.textContent = origText;
     }
   };
 
