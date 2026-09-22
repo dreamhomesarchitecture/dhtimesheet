@@ -1366,7 +1366,7 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   await ensurePdfFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 18;
+  const marginX = 9;
 
   try{
     const logoH = 15, logoW = logoH * (500/278);
@@ -1495,7 +1495,7 @@ async function buildPaymentCalendarPdf(project, rows, opts){
   await ensurePdfFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 18;
+  const marginX = 9;
 
   try{
     const logoH = 15, logoW = logoH * (500/278);
@@ -1655,7 +1655,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   await ensurePdfFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 18;
+  const marginX = 9;
 
   try{
     const logoH = 15, logoW = logoH * (500/278);
