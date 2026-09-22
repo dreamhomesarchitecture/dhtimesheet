@@ -836,6 +836,12 @@ function paymentCalendarNumbersAvailable(p){
   const rows = paymentCalendarRows(p);
   return [...new Set(rows.flatMap(r => r.payments.map(pay => String(pay.number||"").trim()).filter(Boolean)))].sort();
 }
+function paymentCalendarNumberTotal(p, number){
+  return paymentCalendarRows(p)
+    .flatMap(r => r.payments)
+    .filter(pay => String(pay.number||"").trim() === number)
+    .reduce((s,pay) => s + (Number(pay.amount)||0), 0);
+}
 function paymentCalendarRowsForNumbers(p, numbers){
   const set = new Set(numbers);
   return paymentCalendarRows(p)
@@ -961,6 +967,11 @@ function czechMonthYear(dateStr){
   if(!dateStr) return "";
   const [y, m] = dateStr.split("-").map(Number);
   return `${MONTH_NAMES_CS[m-1] || ""} ${y}`;
+}
+function addDaysToDateStr(dateStr, days){
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`;
 }
 function monthRangeFromDate(y, m0){
   const from = `${y}-${pad2(m0+1)}-01`;
@@ -1560,7 +1571,7 @@ async function buildPaymentCalendarPdf(project, rows, opts){
     ty += 10.2;
   };
   drawTotalBox(totalLabel, total, [164,172,127]);
-  drawTotalBox("ZBÝVÁ UHRADIT", remaining, [186,148,112]);
+  drawTotalBox("ZBÝVÁ UHRADIT BEZ DPH", remaining, [186,148,112]);
 
   const pageCount = doc.internal.getNumberOfPages();
   for(let i = 1; i <= pageCount; i++){
@@ -1568,6 +1579,125 @@ async function buildPaymentCalendarPdf(project, rows, opts){
     doc.setFontSize(8);
     doc.setTextColor(120,120,120);
     doc.text("DREAM HOMES ARCHITECTURE s.r.o.  |  IČ: 091 118 41  |  588 45, dolní cerekev  |  www.dreamhomes.cz", pageWidth/2, pageHeight - 12, { align: "center" });
+  }
+
+  return doc;
+}
+
+async function buildProformaInvoicePdf(project, rows, supplier, opts){
+  opts = opts || {};
+  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
+  await ensurePdfFont(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 18;
+
+  try{
+    const logoH = 15, logoW = logoH * (500/278);
+    doc.addImage(BRAND_LOGO, "PNG", pageWidth/2 - logoW/2, 12, logoW, logoH);
+  }catch(e){}
+
+  doc.setFont("Lato", "bold");
+  doc.setFontSize(19);
+  doc.text("proforma faktura", pageWidth/2, 46, { align: "center" });
+
+  const issueDate = todayStr();
+  const dueDate = addDaysToDateStr(issueDate, 14);
+  const invoiceNumber = opts.invoiceNumber || "";
+
+  let y = 62;
+  const infoRows = [
+    ["číslo faktury / var. symbol", invoiceNumber],
+    ["datum vystavení", fmtDateDotsPadded(issueDate)],
+    ["datum splatnosti", fmtDateDotsPadded(dueDate)],
+    ["stavba", `${project.id}${jobNumberSuffix(project.name)} - ${project.name || ""}`]
+  ];
+  doc.setFontSize(10);
+  infoRows.forEach(([label, value]) => {
+    doc.setFont("Lato", "bold");
+    doc.text(label, marginX, y);
+    doc.setFont("Lato", "normal");
+    doc.text(String(value), pageWidth - marginX, y, { align: "right" });
+    y += 5.5;
+  });
+
+  y += 6;
+  const colWidth = (pageWidth - marginX * 2 - 10) / 2;
+  const partyBlock = (title, party, x) => {
+    let py = y;
+    doc.setFont("Lato", "bold");
+    doc.setFontSize(10.5);
+    doc.text(title, x, py);
+    py += 6;
+    doc.setFontSize(9.5);
+    const lines = [
+      party.name || "",
+      party.address || "",
+      party.ico ? `IČ: ${party.ico}` : "",
+      party.dic ? `DIČ: ${party.dic}` : "",
+      party.bankAccount ? `Č. účtu: ${party.bankAccount}` : "",
+      party.email || "",
+      party.phone || ""
+    ].filter(Boolean);
+    lines.forEach(line => {
+      doc.setFont("Lato", line === (party.name||"") ? "bold" : "normal");
+      const wrapped = doc.splitTextToSize(line, colWidth);
+      wrapped.forEach(w => { doc.text(w, x, py); py += 4.8; });
+    });
+    return py;
+  };
+  const dodavatelBottom = partyBlock("DODAVATEL", supplier || {}, marginX);
+  const odberatelBottom = partyBlock("ODBĚRATEL", (project && project.billing) || {}, marginX + colWidth + 10);
+  y = Math.max(dodavatelBottom, odberatelBottom) + 6;
+
+  const bodyRows = [];
+  rows.forEach(r => {
+    (r.payments || []).forEach(pay => {
+      bodyRows.push([r.phaseId, r.label, pay.number || "", fmtKc(Number(pay.amount)||0)]);
+    });
+  });
+  const total = opts.totalAmount !== undefined ? opts.totalAmount : rows.reduce((s,r) => s + (r.payments||[]).reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
+
+  doc.autoTable({
+    startY: y,
+    head: [["FÁZE", "POLOŽKA ROZPOČTU", "Č. PLATBY", "ČÁSTKA BEZ DPH"]],
+    body: bodyRows,
+    styles: { font: "Lato", fontSize: 9, cellPadding: 2.2, valign: "middle" },
+    headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 8 },
+    alternateRowStyles: { fillColor: [246,245,241] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: "auto" },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 34, halign: "right" }
+    },
+    margin: { left: marginX, right: marginX, bottom: 24 }
+  });
+
+  let ty = doc.lastAutoTable.finalY + 10;
+  if(ty + 20 > pageHeight - 32){
+    doc.addPage();
+    ty = 24;
+  }
+  const boxLeft = pageWidth - marginX - 80;
+  doc.setFillColor(164,172,127);
+  doc.rect(boxLeft - 3, ty, 80 + 3, 8, "F");
+  ty += 5.8;
+  doc.setTextColor(255,255,255);
+  doc.setFont("Lato", "bold");
+  doc.setFontSize(9.5);
+  doc.text("CELKEM K ÚHRADĚ BEZ DPH", boxLeft, ty);
+  doc.text(fmtKc(total), pageWidth - marginX - 2, ty, { align: "right" });
+  doc.setTextColor(0,0,0);
+
+  const pageCount = doc.internal.getNumberOfPages();
+  const footerParts = [supplier && supplier.name, supplier && supplier.ico ? `IČ: ${supplier.ico}` : "", supplier && supplier.address].filter(Boolean);
+  const footerText = footerParts.join("  |  ");
+  for(let i = 1; i <= pageCount; i++){
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(120,120,120);
+    doc.text(footerText, pageWidth/2, pageHeight - 12, { align: "center" });
   }
 
   return doc;
@@ -2354,10 +2484,18 @@ function buildPaymentCalendarDetail(projectId){
           ${numbersAvailable.map(n => `
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
             <input type="checkbox" class="payment-calendar-number-checkbox" value="${esc(n)}">
-            ${esc(n)}
+            ${esc(n)} (${fmtKc(paymentCalendarNumberTotal(p, n))})
           </label>`).join("")}
         </div>
-        <button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-number-btn" data-project-id="${esc(p.id)}">Exportovat vybrané platby</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button type="button" class="btn btn-outline btn-small" id="payment-calendar-pdf-number-btn" data-project-id="${esc(p.id)}">Exportovat vybrané platby</button>
+          ${(state.config.billingProfiles || []).length ? `
+          <select id="payment-calendar-proforma-supplier" style="width:auto;min-width:180px;">
+            ${state.config.billingProfiles.map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
+          </select>
+          <button type="button" class="btn btn-tan btn-small" id="payment-calendar-proforma-btn" data-project-id="${esc(p.id)}">Exportovat PROFORMA fakturu</button>
+          ` : `<span class="q-hint" style="margin:0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</span>`}
+        </div>
       </div>` : ``}
     </div>`;
 }
@@ -4114,6 +4252,31 @@ function bindAdmin(){
     } finally {
       paymentCalendarPdfNumberBtn.disabled = false;
       paymentCalendarPdfNumberBtn.textContent = origText;
+    }
+  };
+
+  const paymentCalendarProformaBtn = document.getElementById("payment-calendar-proforma-btn");
+  if(paymentCalendarProformaBtn) paymentCalendarProformaBtn.onclick = async () => {
+    const projectId = paymentCalendarProformaBtn.getAttribute("data-project-id");
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return;
+    const numbers = Array.from(document.querySelectorAll(".payment-calendar-number-checkbox:checked")).map(el => el.value);
+    if(!numbers.length) return;
+    const rows = paymentCalendarRowsForNumbers(project, numbers);
+    if(!rows.length) return;
+    const supplierSelect = document.getElementById("payment-calendar-proforma-supplier");
+    const supplier = (state.config.billingProfiles || []).find(bp => bp.id === (supplierSelect && supplierSelect.value));
+    if(!supplier) return;
+    const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
+    paymentCalendarProformaBtn.disabled = true;
+    const origText = paymentCalendarProformaBtn.textContent;
+    paymentCalendarProformaBtn.textContent = "Generuji…";
+    try{
+      const doc = await buildProformaInvoicePdf(project, rows, supplier, { invoiceNumber: numbers.join(", "), totalAmount });
+      doc.save(`proforma-faktura_${project.id}_${numbers.join("+")}_${todayStr()}.pdf`);
+    } finally {
+      paymentCalendarProformaBtn.disabled = false;
+      paymentCalendarProformaBtn.textContent = origText;
     }
   };
 
