@@ -219,7 +219,6 @@
   .field-row{ margin-bottom:13px; }
   .field-label{ font-size:10.5px; font-weight:700; color:var(--soft); text-transform:uppercase; letter-spacing:.08em; display:block; margin-bottom:6px; }
   .form-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(130px,1fr)); gap:12px; align-items:end; }
-  .form-grid .field-row.span-full{ grid-column: 1 / -1; }
   .project-form-grid{ grid-template-columns: 0.5fr 2fr 1fr 1fr; }
   .entry-form-row{ display:flex; flex-wrap:wrap; gap:9px; align-items:end; }
   .entry-form-row .field-row{ margin-bottom:0; flex:0 0 auto; }
@@ -2817,7 +2816,11 @@ function projectDetailPageHtml(){
             <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" name="billing_name" value="${esc((p.billing && p.billing.name) || "")}"></div>
             <div class="field-row"><label class="field-label">IČ</label><input type="text" name="billing_ico" value="${esc((p.billing && p.billing.ico) || "")}"></div>
             <div class="field-row"><label class="field-label">DIČ</label><input type="text" name="billing_dic" value="${esc((p.billing && p.billing.dic) || "")}"></div>
-            <div class="field-row span-full"><label class="field-label">Adresa</label><input type="text" name="billing_address" value="${esc((p.billing && p.billing.address) || "")}"></div>
+          </div>
+          <div class="form-grid">
+            <div class="field-row"><label class="field-label">Adresa</label><input type="text" name="billing_address" value="${esc((p.billing && p.billing.address) || "")}"></div>
+          </div>
+          <div class="form-grid">
             <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" name="billing_bankAccount" value="${esc((p.billing && p.billing.bankAccount) || "")}"></div>
             <div class="field-row"><label class="field-label">E-mail</label><input type="text" name="billing_email" value="${esc((p.billing && p.billing.email) || "")}"></div>
             <div class="field-row"><label class="field-label">Telefon</label><input type="text" name="billing_phone" value="${esc((p.billing && p.billing.phone) || "")}"></div>
@@ -3302,7 +3305,11 @@ function billingProfileCardHtml(profile){
         <div class="field-row"><label class="field-label">Název / jméno</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="name" value="${esc(profile.name || "")}"></div>
         <div class="field-row"><label class="field-label">IČ</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="ico" value="${esc(profile.ico || "")}"></div>
         <div class="field-row"><label class="field-label">DIČ</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="dic" value="${esc(profile.dic || "")}"></div>
-        <div class="field-row span-full"><label class="field-label">Adresa</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="address" value="${esc(profile.address || "")}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field-row"><label class="field-label">Adresa</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="address" value="${esc(profile.address || "")}"></div>
+      </div>
+      <div class="form-grid">
         <div class="field-row"><label class="field-label">Číslo účtu / IBAN</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="bankAccount" value="${esc(profile.bankAccount || "")}"></div>
         <div class="field-row"><label class="field-label">E-mail</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="email" value="${esc(profile.email || "")}"></div>
         <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="billing-profile-field" data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
