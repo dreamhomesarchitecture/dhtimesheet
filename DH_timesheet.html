@@ -1512,7 +1512,7 @@ async function buildPaymentCalendarPdf(project, rows, opts){
 
   doc.setFont("Lato", "bold");
   doc.setFontSize(19);
-  doc.text("platební kalendář", pageWidth/2, 46, { align: "center" });
+  doc.text("Přehled závazků a plateb", pageWidth/2, 46, { align: "center" });
 
   let y = 62;
   const infoRows = [
