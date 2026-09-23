@@ -1666,11 +1666,17 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   doc.setFontSize(19);
   doc.text("proforma faktura", pageWidth/2, 46, { align: "center" });
 
+  doc.setFont("Lato", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(179,56,44);
+  doc.text("TOTO NENÍ DAŇOVÝ DOKLAD", pageWidth/2, 55, { align: "center" });
+  doc.setTextColor(0,0,0);
+
   const issueDate = todayStr();
   const dueDate = opts.dueDate || addDaysToDateStr(issueDate, 7);
   const invoiceNumber = opts.invoiceNumber || "";
 
-  let y = 62;
+  let y = 70;
   const infoRows = [
     ["číslo faktury / var. symbol", invoiceNumber],
     ["datum vystavení", fmtDateDotsPadded(issueDate)],
@@ -2611,6 +2617,7 @@ function buildPaymentCalendarDetail(projectId){
             Splatnost
             <input type="date" id="payment-calendar-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
           </label>
+          <input type="text" id="payment-calendar-proforma-item-label" placeholder="Položka faktury" style="width:220px;padding:6px 8px;font-size:13px;" value="Projektová činnost ve výstavbě">
           <button type="button" class="btn btn-tan btn-small" id="payment-calendar-proforma-btn" data-project-id="${esc(p.id)}">Exportovat PROFORMA fakturu</button>
           ` : `<span class="q-hint" style="margin:0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</span>`}
         </div>
@@ -2910,6 +2917,7 @@ function adminClientExportTemplate(){
           Splatnost
           <input type="date" id="client-export-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
         </label>
+        <input type="text" id="client-export-proforma-item-label" placeholder="Položka faktury" style="width:220px;padding:6px 8px;font-size:13px;" value="Autorský dozor na stavbě">
         <button type="button" class="btn btn-tan btn-small" id="client-export-proforma-btn" data-project-id="${esc(selectedProject.id)}">Exportovat PROFORMA fakturu</button>
       </div>
       ` : `<p class="q-hint" style="margin:10px 0 0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</p>`}
@@ -4406,13 +4414,16 @@ function bindAdmin(){
     const customer = (customerSelect && customerProfiles.find(bp => bp.id === customerSelect.value)) || customerProfiles[0] || {};
     const dueDateInput = document.getElementById("payment-calendar-proforma-due-date");
     const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(todayStr(), 7);
+    const itemLabelInput = document.getElementById("payment-calendar-proforma-item-label");
+    const itemLabel = (itemLabelInput && itemLabelInput.value.trim()) || "Projektová činnost ve výstavbě";
     const invoiceNumber = `${project.id}${numbers[0] || ""}`;
     const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
+    const invoiceRows = [{ phaseId: "", label: itemLabel, amount: totalAmount, payments: [{ amount: totalAmount, number: numbers[0] || "", date: "", note: "" }] }];
     paymentCalendarProformaBtn.disabled = true;
     const origText = paymentCalendarProformaBtn.textContent;
     paymentCalendarProformaBtn.textContent = "Generuji…";
     try{
-      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount, dueDate });
+      const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate });
       doc.save(`proforma-faktura_${invoiceNumber}_${todayStr()}.pdf`);
     } finally {
       paymentCalendarProformaBtn.disabled = false;
@@ -5421,7 +5432,9 @@ function bindAdmin(){
     if(!subtotal) return;
 
     const invoiceNumber = project.id;
-    const rows = [{ phaseId: "", label: "Autorský dozor na stavbě", amount: subtotal, payments: [{ amount: subtotal, number: "", date: "", note: "" }] }];
+    const itemLabelInput = document.getElementById("client-export-proforma-item-label");
+    const itemLabel = (itemLabelInput && itemLabelInput.value.trim()) || "Autorský dozor na stavbě";
+    const rows = [{ phaseId: "", label: itemLabel, amount: subtotal, payments: [{ amount: subtotal, number: "", date: "", note: "" }] }];
 
     clientExportProformaBtn.disabled = true;
     const origText = clientExportProformaBtn.textContent;
