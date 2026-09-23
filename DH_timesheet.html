@@ -1004,6 +1004,14 @@ function shiftDateByMonths(dateStr, deltaMonths){
   const lastDayOfTarget = new Date(targetY, targetMonth0 + 1, 0).getDate();
   return `${targetY}-${pad2(targetMonth0+1)}-${pad2(Math.min(d, lastDayOfTarget))}`;
 }
+function dateMonthNavHtml(idPrefix, fieldPrefix, dateVal){
+  return `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <button type="button" class="icon-btn" id="${idPrefix}-${fieldPrefix}-month-prev" title="O měsíc dříve">‹</button>
+      <span style="flex:1;text-align:center;font-size:11.5px;color:var(--soft);">${dateVal ? czechMonthYear(dateVal) : ""}</span>
+      <button type="button" class="icon-btn" id="${idPrefix}-${fieldPrefix}-month-next" title="O měsíc později">›</button>
+    </div>`;
+}
 function fmtDateDots(dateStr){
   if(!dateStr) return "";
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -2784,8 +2792,16 @@ function adminRecordsTemplate(){
 
   const filterHtml = `
     <div class="form-grid" style="margin-bottom:14px;">
-      <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="records-filter-from" value="${esc(state.recordsFilterFrom)}"></div>
-      <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="records-filter-to" value="${esc(state.recordsFilterTo)}"></div>
+      <div class="field-row">
+        <label class="field-label">Datum od</label>
+        ${dateMonthNavHtml("records-filter", "from", state.recordsFilterFrom)}
+        <input type="date" id="records-filter-from" value="${esc(state.recordsFilterFrom)}">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Datum do</label>
+        ${dateMonthNavHtml("records-filter", "to", state.recordsFilterTo)}
+        <input type="date" id="records-filter-to" value="${esc(state.recordsFilterTo)}">
+      </div>
       <div class="field-row"><label class="field-label">Zaměstnanec</label><select id="records-filter-employee">${filterEmployeeOptions}</select></div>
       <div class="field-row"><label class="field-label">Projekt</label><select id="records-filter-project">${filterProjectOptions}</select></div>
       <div class="field-row"><label class="field-label">Fáze</label><select id="records-filter-phase">${filterPhaseOptions}</select></div>
@@ -2837,22 +2853,16 @@ function adminClientExportTemplate(){
   }
   const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.clientExportProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
   const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.clientExportPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
-  const dateMonthNav = (fieldPrefix, dateVal) => `
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
-      <button type="button" class="icon-btn" id="client-export-${fieldPrefix}-month-prev" title="O měsíc dříve">‹</button>
-      <span style="flex:1;text-align:center;font-size:11.5px;color:var(--soft);">${dateVal ? czechMonthYear(dateVal) : ""}</span>
-      <button type="button" class="icon-btn" id="client-export-${fieldPrefix}-month-next" title="O měsíc později">›</button>
-    </div>`;
   const filterHtml = `
     <div class="form-grid" style="margin-bottom:14px;">
       <div class="field-row">
         <label class="field-label">Datum od</label>
-        ${dateMonthNav("from", state.clientExportFrom)}
+        ${dateMonthNavHtml("client-export", "from", state.clientExportFrom)}
         <input type="date" id="client-export-from" value="${esc(state.clientExportFrom)}">
       </div>
       <div class="field-row">
         <label class="field-label">Datum do</label>
-        ${dateMonthNav("to", state.clientExportTo)}
+        ${dateMonthNavHtml("client-export", "to", state.clientExportTo)}
         <input type="date" id="client-export-to" value="${esc(state.clientExportTo)}">
       </div>
       <div class="field-row"><label class="field-label">Projekt</label><select id="client-export-project">${filterProjectOptions}</select></div>
@@ -5248,6 +5258,14 @@ function bindAdmin(){
   const costFilterResetBtn = document.getElementById("cost-filter-reset-btn");
   if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "" });
 
+  const recordsFilterFromMonthPrevBtn = document.getElementById("records-filter-from-month-prev");
+  if(recordsFilterFromMonthPrevBtn) recordsFilterFromMonthPrevBtn.onclick = () => setState({ recordsFilterFrom: shiftDateByMonths(state.recordsFilterFrom || todayStr(), -1) });
+  const recordsFilterFromMonthNextBtn = document.getElementById("records-filter-from-month-next");
+  if(recordsFilterFromMonthNextBtn) recordsFilterFromMonthNextBtn.onclick = () => setState({ recordsFilterFrom: shiftDateByMonths(state.recordsFilterFrom || todayStr(), 1) });
+  const recordsFilterToMonthPrevBtn = document.getElementById("records-filter-to-month-prev");
+  if(recordsFilterToMonthPrevBtn) recordsFilterToMonthPrevBtn.onclick = () => setState({ recordsFilterTo: shiftDateByMonths(state.recordsFilterTo || todayStr(), -1) });
+  const recordsFilterToMonthNextBtn = document.getElementById("records-filter-to-month-next");
+  if(recordsFilterToMonthNextBtn) recordsFilterToMonthNextBtn.onclick = () => setState({ recordsFilterTo: shiftDateByMonths(state.recordsFilterTo || todayStr(), 1) });
   const recordsFilterFrom = document.getElementById("records-filter-from");
   if(recordsFilterFrom) recordsFilterFrom.addEventListener("change", () => setState({ recordsFilterFrom: recordsFilterFrom.value }));
   const recordsFilterTo = document.getElementById("records-filter-to");
