@@ -601,7 +601,7 @@ const DEFAULT_EMPLOYEES = [
   { name: "Hanele Mirčeva", password: "hanele" },
   { name: "Nikola Plavcová", password: "nikola" }
 ];
-const DEFAULT_CONFIG = { employees: [], projects: [], phases: [], adminPassword: "admin123" };
+const DEFAULT_CONFIG = { employees: [], projects: [], phases: [] };
 
 let state = {
   loading: true,
@@ -1073,8 +1073,14 @@ function shiftMonth(monthStr, delta){
   return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
 }
 
+let adminAuthPassword = null;
+function adminHeaders(extra){
+  const h = extra || {};
+  if(adminAuthPassword) h["X-Admin-Password"] = adminAuthPassword;
+  return h;
+}
 async function storageGet(key){
-  const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`);
+  const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { headers: adminHeaders() });
   if(r.status === 404) return null;
   if(!r.ok) throw new Error(`storageGet ${key} failed: ${r.status}`);
   return r.json();
@@ -1082,13 +1088,13 @@ async function storageGet(key){
 async function storageSet(key, value){
   const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: adminHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ value })
   });
   if(!r.ok) throw new Error(`storageSet ${key} failed: ${r.status}`);
 }
 async function storageDelete(key){
-  await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+  await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { method: "DELETE", headers: adminHeaders() });
 }
 
 async function loadConfig(){
@@ -1097,6 +1103,17 @@ async function loadConfig(){
     if(!res) return { ...DEFAULT_CONFIG };
     return JSON.parse(res.value);
   }catch(e){ return { ...DEFAULT_CONFIG }; }
+}
+async function attemptAdminLogin(password){
+  try{
+    const r = await fetch(`/api/timesheet?key=config`, { headers: { "X-Admin-Password": password } });
+    if(!r.ok) return false;
+    const data = await r.json();
+    if(!data.found || !data.admin) return false;
+    adminAuthPassword = password;
+    state.config = JSON.parse(data.value);
+    return true;
+  }catch(e){ return false; }
 }
 async function saveConfig(){
   try{ await storageSet("config", JSON.stringify(state.config)); }
@@ -3885,12 +3902,7 @@ function adminTemplate(){
       <div class="admin-block">
         ${adminSectionHeader("security", "Zabezpečení")}
         ${state.adminOpenSection === "security" ? `
-        <form id="change-pw-form">
-          <div class="form-grid">
-            <div class="field-row"><label class="field-label">Nové admin heslo</label><input type="text" name="password" required></div>
-            <div class="field-row"><button class="btn btn-outline btn-small" type="submit">Uložit</button></div>
-          </div>
-        </form>
+        <p class="q-hint" style="margin:0 0 8px;">Admin heslo se ze bezpečnostních důvodů nastavuje mimo appku — v nastavení projektu na Vercelu (Environment Variables → <b style="color:var(--ink);">ADMIN_PASSWORD</b>) a po uložení stačí projekt znovu nasadit.</p>
 
         <p class="q-hint" style="margin:20px 0 8px;">Smaže všechny nákladové položky u všech projektů najednou. Odpracované hodiny zůstanou zachované. Nevratné.</p>
         <button class="btn btn-danger btn-small" id="wipe-all-costs-btn">Smazat všechny náklady všech projektů</button>
@@ -4232,8 +4244,11 @@ function bindAdmin(){
   if(!state.adminUnlocked){
     const input = document.getElementById("admin-pass-input");
     const submit = document.getElementById("admin-pass-submit");
-    const tryUnlock = () => {
-      if(input.value === state.config.adminPassword) setState({ adminUnlocked: true, adminPassError: false });
+    const tryUnlock = async () => {
+      submit.disabled = true;
+      const ok = await attemptAdminLogin(input.value);
+      submit.disabled = false;
+      if(ok) setState({ adminUnlocked: true, adminPassError: false });
       else setState({ adminPassError: true });
     };
     submit.onclick = tryUnlock;
@@ -4928,17 +4943,6 @@ function bindAdmin(){
     render();
   });
 
-  const pwForm = document.getElementById("change-pw-form");
-  if(pwForm) pwForm.addEventListener("submit", async e => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(pwForm).entries());
-    const pw = data.password.trim();
-    if(!pw) return;
-    state.config.adminPassword = pw;
-    await saveConfig();
-    render();
-  });
-
   const importParseBtn = document.getElementById("import-parse-btn");
   if(importParseBtn) importParseBtn.onclick = async () => {
     const fileInput = document.getElementById("import-file-input");
@@ -5537,6 +5541,7 @@ function bindAdmin(){
     await saveConfig();
     state.currentEmployee = null; state.entries = []; state.tab = "app"; state.adminUnlocked = false;
     state.adminEntriesFlat = null; state.adminHoursLoading = false;
+    adminAuthPassword = null;
     render();
   };
 }
