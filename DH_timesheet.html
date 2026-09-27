@@ -895,8 +895,8 @@ function toggleTheme(){ setTheme(currentTheme() === "dark" ? "light" : "dark"); 
 
 const REMEMBER_LOGIN_KEY = "dh_remembered_login";
 const REMEMBER_LOGIN_MAX_AGE_MS = 96 * 3600000;
-function saveRememberedLogin(employeeId){
-  try{ localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({ employeeId, loggedInAt: Date.now() })); }catch(e){}
+function saveRememberedLogin(employeeId, token){
+  try{ localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({ employeeId, token, loggedInAt: Date.now() })); }catch(e){}
 }
 function clearRememberedLogin(){
   try{ localStorage.removeItem(REMEMBER_LOGIN_KEY); }catch(e){}
@@ -906,7 +906,7 @@ function readRememberedLogin(){
     const raw = localStorage.getItem(REMEMBER_LOGIN_KEY);
     if(!raw) return null;
     const data = JSON.parse(raw);
-    if(!data || !data.employeeId || !data.loggedInAt) return null;
+    if(!data || !data.employeeId || !data.token || !data.loggedInAt) return null;
     if(Date.now() - data.loggedInAt > REMEMBER_LOGIN_MAX_AGE_MS){ clearRememberedLogin(); return null; }
     return data;
   }catch(e){ return null; }
@@ -1074,13 +1074,15 @@ function shiftMonth(monthStr, delta){
 }
 
 let adminAuthPassword = null;
-function adminHeaders(extra){
+let employeeAuthToken = null;
+function authHeaders(extra){
   const h = extra || {};
   if(adminAuthPassword) h["X-Admin-Password"] = adminAuthPassword;
+  if(employeeAuthToken) h["X-Employee-Token"] = employeeAuthToken;
   return h;
 }
 async function storageGet(key){
-  const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { headers: adminHeaders() });
+  const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { headers: authHeaders() });
   if(r.status === 404) return null;
   if(!r.ok) throw new Error(`storageGet ${key} failed: ${r.status}`);
   return r.json();
@@ -1088,13 +1090,40 @@ async function storageGet(key){
 async function storageSet(key, value){
   const r = await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, {
     method: "PUT",
-    headers: adminHeaders({ "Content-Type": "application/json" }),
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ value })
   });
   if(!r.ok) throw new Error(`storageSet ${key} failed: ${r.status}`);
 }
 async function storageDelete(key){
-  await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { method: "DELETE", headers: adminHeaders() });
+  await fetch(`/api/timesheet?key=${encodeURIComponent(key)}`, { method: "DELETE", headers: authHeaders() });
+}
+async function employeeLogin(employeeId, password){
+  try{
+    const r = await fetch(`/api/employee-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", employeeId, password })
+    });
+    if(!r.ok) return false;
+    const data = await r.json();
+    if(!data.ok) return false;
+    employeeAuthToken = data.token;
+    return true;
+  }catch(e){ return false; }
+}
+async function employeeChangePassword(newPassword){
+  if(!state.currentEmployee || !employeeAuthToken) return false;
+  try{
+    const r = await fetch(`/api/employee-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "change-password", employeeId: state.currentEmployee.id, token: employeeAuthToken, newPassword })
+    });
+    if(!r.ok) return false;
+    const data = await r.json();
+    return !!data.ok;
+  }catch(e){ return false; }
 }
 
 async function loadConfig(){
@@ -1914,6 +1943,7 @@ async function init(){
   if(remembered){
     const emp = state.config.employees.find(e => e.id === remembered.employeeId);
     if(emp){
+      employeeAuthToken = remembered.token;
       state.currentEmployee = emp;
       state.entries = await loadEntries(emp.id);
     } else {
@@ -1957,7 +1987,7 @@ function render(){
   homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false });
   homeBtn.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); homeBtn.onclick(); } });
   const logoutBtn = document.getElementById("logout-btn");
-  if(logoutBtn) logoutBtn.onclick = () => { clearRememberedLogin(); setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null }); };
+  if(logoutBtn) logoutBtn.onclick = () => { clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null }); };
 
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
@@ -3965,13 +3995,13 @@ function bindApp(){
     const data = Object.fromEntries(new FormData(changeMyPwForm).entries());
     const newPw = (data.password || "").trim();
     if(!newPw) return;
-    const emp = state.config.employees.find(x => x.id === state.currentEmployee.id);
-    if(!emp) return;
-    emp.password = newPw;
-    state.currentEmployee = emp;
-    state.myPasswordError = "";
-    await saveConfig();
-    showStamp();
+    const ok = await employeeChangePassword(newPw);
+    if(ok){
+      state.myPasswordError = "";
+      showStamp();
+    } else {
+      state.myPasswordError = "Změna hesla se nezdařila, zkuste to prosím znovu.";
+    }
     render();
   });
 
@@ -4058,14 +4088,15 @@ function bindApp(){
   if(loginBtn){
     const tryLogin = async () => {
       const emp = state.config.employees.find(x => x.id === state.selectedEmployeeId);
-      if(emp && loginInput.value === emp.password){
+      const ok = emp && await employeeLogin(emp.id, loginInput.value);
+      if(ok){
         state.currentEmployee = emp;
         state.entries = await loadEntries(emp.id);
         state.selectedEmployeeId = null;
         state.loginError = false;
         state.month = new Date().toISOString().slice(0,7);
         const rememberInput = document.getElementById("login-remember-input");
-        if(rememberInput && rememberInput.checked) saveRememberedLogin(emp.id);
+        if(rememberInput && rememberInput.checked) saveRememberedLogin(emp.id, employeeAuthToken);
         render();
       } else {
         setState({ loginError: true });
@@ -5542,6 +5573,8 @@ function bindAdmin(){
     state.currentEmployee = null; state.entries = []; state.tab = "app"; state.adminUnlocked = false;
     state.adminEntriesFlat = null; state.adminHoursLoading = false;
     adminAuthPassword = null;
+    employeeAuthToken = null;
+    clearRememberedLogin();
     render();
   };
 }
