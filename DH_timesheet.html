@@ -625,6 +625,8 @@ let state = {
   projectTotalsLoading: false,
   allEntriesFlat: null,
   expandedProjectId: null,
+  openProjectView: null,
+  projectViewReturnScroll: 0,
   adminOpenSection: null,
   adminSubTab: "settings",
   expandedAdminProjectOverviewId: null,
@@ -1128,6 +1130,19 @@ async function employeeLogin(employeeId, password){
     employeeAuthToken = data.token;
     return true;
   }catch(e){ return false; }
+}
+async function employeeLoadAllHours(){
+  if(!state.currentEmployee || !employeeAuthToken) return null;
+  try{
+    const r = await fetch(`/api/employee-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "all-hours", employeeId: state.currentEmployee.id, token: employeeAuthToken })
+    });
+    if(!r.ok) return null;
+    const data = await r.json();
+    return data.ok ? data.entries : null;
+  }catch(e){ return null; }
 }
 async function employeeChangePassword(newPassword){
   if(!state.currentEmployee || !employeeAuthToken) return false;
@@ -2233,10 +2248,10 @@ function render(){
   });
   document.getElementById("theme-toggle-btn").onclick = () => { toggleTheme(); render(); };
   const homeBtn = document.getElementById("home-btn");
-  homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false });
+  homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false, openProjectView: null });
   homeBtn.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); homeBtn.onclick(); } });
   const logoutBtn = document.getElementById("logout-btn");
-  if(logoutBtn) logoutBtn.onclick = () => { clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null }); };
+  if(logoutBtn) logoutBtn.onclick = () => { clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null, projectTotals:null, allEntriesFlat:null, projectTotalsLoading:false, expandedProjectId:null, showAllProjects:false, openProjectView:null }); };
 
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
@@ -2263,7 +2278,13 @@ function bindProjectLinks(){
 /* ---------------- projects tab (read-only reference list) ---------------- */
 
 async function loadProjectTotals(){
-  const flat = await loadAllEntries();
+  let flat;
+  if(adminAuthPassword){
+    flat = await loadAllEntries();
+  } else {
+    const shared = (state.currentEmployee && state.currentEmployee.canSeeAllHours) ? await employeeLoadAllHours() : null;
+    flat = shared || state.entries.map(e => ({ projectId: e.projectId, phaseId: e.phaseId, hours: e.hours }));
+  }
   const totals = {};
   flat.forEach(e => {
     totals[e.projectId] = (totals[e.projectId] || 0) + Number(e.hours || 0);
@@ -2414,16 +2435,14 @@ function allProjectsSection(){
     const hoursHtml = loading
       ? `<span class="project-hours zero">…</span>`
       : `<span class="project-hours ${hours ? "" : "zero"}">${fmtH(hours)}</span>`;
-    const rowOpen = state.expandedProjectId === p.id;
     return `
-    <div class="project-item ${rowOpen ? "open" : ""}" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
-      <div class="project-row" data-action="toggle-all-project" data-id="${esc(p.id)}">
+    <div class="project-item" data-search="${esc((p.id + " " + p.name).toLowerCase())}">
+      <div class="project-row" data-action="open-project-view" data-kind="all" data-id="${esc(p.id)}">
         <span class="chevron">▸</span>
         <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         ${hoursHtml}
       </div>
-      ${rowOpen ? buildProjectDetail(p.id) : ""}
     </div>`;
   }).join("");
 
@@ -2450,16 +2469,14 @@ function myProjectsSection(){
   const isOpen = state.showMyProjects;
 
   const rows = projects.map(p => {
-    const rowOpen = state.expandedMyProjectId === p.id;
     return `
-    <div class="project-item ${rowOpen ? "open" : ""}">
-      <div class="project-row" data-action="toggle-my-project" data-id="${esc(p.id)}">
+    <div class="project-item">
+      <div class="project-row" data-action="open-project-view" data-kind="my" data-id="${esc(p.id)}">
         <span class="chevron">▸</span>
         <span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span>
         <span class="name">${esc(p.name)}</span>
         <span class="project-hours">${fmtH(totals[p.id])}</span>
       </div>
-      ${rowOpen ? buildMyProjectDetail(p.id) : ""}
     </div>`;
   }).join("");
 
@@ -2546,7 +2563,28 @@ function accountSettingsSection(){
     </div>`;
 }
 
+function projectViewPageHtml(){
+  const view = state.openProjectView;
+  const project = state.config.projects.find(p => p.id === view.id);
+  if(!project){
+    return `
+    <div class="sheet">
+      <button class="logout-link" data-action="close-project-view">← Zpět na přehled</button>
+      <div class="empty-state" style="margin-top:20px;">Projekt nenalezen.</div>
+    </div>`;
+  }
+  const isMine = view.kind === "my";
+  return `
+    <div class="sheet">
+      <button class="logout-link" data-action="close-project-view">← Zpět na přehled</button>
+      <div class="eyebrow" style="margin-top:18px;">${isMine ? "Moje hodiny na projektu" : "Projekt"} #${esc(project.id)}</div>
+      <div class="q-title">${esc(project.id)} - ${esc(project.name)}</div>
+      <div style="margin-top:14px;">${isMine ? buildMyProjectDetail(project.id) : buildProjectDetail(project.id)}</div>
+    </div>`;
+}
+
 function timesheetTemplate(){
+  if(state.openProjectView) return projectViewPageHtml();
   const emp = state.currentEmployee;
   const projects = sortedProjects();
   const phases = state.config.phases;
@@ -4018,6 +4056,10 @@ function adminTemplate(){
       <div class="admin-project-head">
         <button class="icon-btn" data-action="toggle-employee-rates" data-id="${esc(e.id)}" title="Hodinové sazby">${ratesOpen ? "▾" : "▸"}</button>
         <div class="grow">${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span></div>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--soft);cursor:pointer;margin-right:6px;" title="Ve Všech projektech uvidí hodiny všech zaměstnanců (bez nákladů a cen)">
+          <input type="checkbox" class="employee-see-all-hours" data-id="${esc(e.id)}" ${e.canSeeAllHours ? "checked" : ""}>
+          vidí hodiny všech
+        </label>
         <button class="icon-btn" data-action="wipe-employee-data" data-id="${esc(e.id)}" title="Smazat všechna data zaměstnance">↺</button>
         <button class="icon-btn" data-action="delete-employee" data-id="${esc(e.id)}" title="Smazat zaměstnance">×</button>
       </div>
@@ -4241,9 +4283,19 @@ function bindApp(){
       loadProjectTotals();
     }
   };
-  document.querySelectorAll('[data-action="toggle-all-project"]').forEach(row => row.onclick = () => {
-    const id = row.getAttribute("data-id");
-    setState({ expandedProjectId: state.expandedProjectId === id ? null : id });
+  document.querySelectorAll('[data-action="open-project-view"]').forEach(row => row.onclick = () => {
+    const returnScroll = window.scrollY;
+    setState({
+      openProjectView: { kind: row.getAttribute("data-kind"), id: row.getAttribute("data-id") },
+      projectViewReturnScroll: returnScroll,
+      expandedMyPhaseKey: null
+    });
+    window.scrollTo(0, 0);
+  });
+  document.querySelectorAll('[data-action="close-project-view"]').forEach(b => b.onclick = () => {
+    const returnScroll = state.projectViewReturnScroll;
+    setState({ openProjectView: null, expandedMyPhaseKey: null });
+    window.scrollTo(0, returnScroll);
   });
   const allProjectSearchInput = document.getElementById("all-project-search-input");
   if(allProjectSearchInput) allProjectSearchInput.addEventListener("input", () => {
@@ -4255,10 +4307,6 @@ function bindApp(){
 
   const toggleMyProjects = document.querySelector('[data-action="toggle-my-projects-section"]');
   if(toggleMyProjects) toggleMyProjects.onclick = () => setState({ showMyProjects: !state.showMyProjects });
-  document.querySelectorAll('[data-action="toggle-my-project"]').forEach(row => row.onclick = () => {
-    const id = row.getAttribute("data-id");
-    setState({ expandedMyProjectId: state.expandedMyProjectId === id ? null : id, expandedMyPhaseKey: null });
-  });
   document.querySelectorAll('[data-action="toggle-my-phase-entries"]').forEach(row => row.onclick = () => {
     const key = row.getAttribute("data-key");
     setState({ expandedMyPhaseKey: state.expandedMyPhaseKey === key ? null : key });
@@ -4373,6 +4421,10 @@ function bindApp(){
       if(ok){
         state.currentEmployee = emp;
         state.entries = await loadEntries(emp.id);
+        state.projectTotals = null;
+        state.allEntriesFlat = null;
+        state.projectTotalsLoading = false;
+        state.showAllProjects = false;
         state.selectedEmployeeId = null;
         state.loginError = false;
         state.month = new Date().toISOString().slice(0,7);
@@ -4415,7 +4467,7 @@ function bindApp(){
   });
 
   document.querySelectorAll('[data-action="edit-entry"]').forEach(b => b.onclick = () => {
-    setState({ editingEntryId: b.getAttribute("data-id"), entryError: "" });
+    setState({ editingEntryId: b.getAttribute("data-id"), entryError: "", openProjectView: null, showTimesheet: true });
     const rowEl = document.querySelector(`[data-my-entry-edit-row="${b.getAttribute("data-id")}"]`);
     if(rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
   });
@@ -4912,6 +4964,13 @@ function bindAdmin(){
     await deleteEntries(id);
     render();
   });
+  document.querySelectorAll(".employee-see-all-hours").forEach(cb => cb.addEventListener("change", async () => {
+    const emp = state.config.employees.find(x => x.id === cb.getAttribute("data-id"));
+    if(!emp) return;
+    emp.canSeeAllHours = cb.checked;
+    await saveConfig();
+    showStamp();
+  }));
   document.querySelectorAll('[data-action="toggle-employee-rates"]').forEach(b => b.onclick = () => {
     const id = b.getAttribute("data-id");
     setState({ expandedEmployeeRatesId: state.expandedEmployeeRatesId === id ? null : id, rateError: "" });

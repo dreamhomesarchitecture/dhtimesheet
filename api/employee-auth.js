@@ -39,6 +39,32 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    if (action === "all-hours") {
+      const employeeId = body.employeeId;
+      if (!verifyEmployeeToken(body.token, employeeId)) return res.status(403).json({ error: "forbidden" });
+      const emp = employees.find((e) => e.id === employeeId);
+      if (!emp || !emp.canSeeAllHours) return res.status(403).json({ error: "forbidden" });
+      const perEmployee = await Promise.all(
+        employees.map(async (e) => {
+          const r = await getRaw(`entries:${e.id}`);
+          if (!r.found) return [];
+          try {
+            const list = JSON.parse(r.value);
+            return Array.isArray(list) ? list : [];
+          } catch (err) {
+            return [];
+          }
+        })
+      );
+      // Only project, phase and hours are returned - never costs, notes or dates.
+      const entries = perEmployee.flat().map((en) => ({
+        projectId: en.projectId,
+        phaseId: en.phaseId,
+        hours: Number(en.hours) || 0
+      }));
+      return res.status(200).json({ ok: true, entries });
+    }
+
     return res.status(400).json({ error: "unknown action" });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
