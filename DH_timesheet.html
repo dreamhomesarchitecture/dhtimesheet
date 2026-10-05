@@ -662,6 +662,7 @@ let state = {
   clientExportExtraCosts: [],
   clientExportSignedBy: "Kamil Plavec",
   clientExportExcludedIds: {},
+  clientExportExcludedCostIds: {},
   clientExportVatRate: 0,
   closedProjectsYear: "",
   closedProjectsMode: "project",
@@ -1061,6 +1062,21 @@ function clientExportCostFor(entry){
   const v = state.clientExportCostOverrides[entry.id];
   return v !== undefined ? Number(v) : Number(entry.cost || 0);
 }
+function clientExportProjectCosts(){
+  if(!state.clientExportProjectId) return [];
+  return (state.costs || []).filter(c =>
+    c.projectId === state.clientExportProjectId &&
+    (!state.clientExportFrom || c.date >= state.clientExportFrom) &&
+    (!state.clientExportTo || c.date <= state.clientExportTo) &&
+    (!state.clientExportPhaseId || c.phaseId === state.clientExportPhaseId)
+  ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
+}
+function clientExportAllExtraCosts(){
+  const projectItems = clientExportProjectCosts()
+    .filter(c => !state.clientExportExcludedCostIds[c.id])
+    .map(c => ({ id: c.id, date: c.date, phaseId: c.phaseId, description: c.note || "Náklad projektu", amount: Number(c.amount) || 0 }));
+  return projectItems.concat(state.clientExportExtraCosts || []);
+}
 function clientExportRateFor(project, employeeId){
   if(state.clientExportRates[employeeId] !== undefined) return Number(state.clientExportRates[employeeId]) || 0;
   const saved = project && project.clientBillableRates ? project.clientBillableRates[employeeId] : undefined;
@@ -1377,7 +1393,8 @@ function buildClientExportWorkbook(entries, extraCosts, project, fromDate, toDat
   (extraCosts || []).forEach(item => {
     const amount = Number(item.amount || 0);
     totalExtra += amount;
-    addDataRow(["", "", item.description || "", "", "", "", amount, ""]);
+    const itemPhase = item.phaseId ? state.config.phases.find(p => p.id === item.phaseId) : null;
+    addDataRow([item.date ? fmtDateDots(item.date) : "", itemPhase ? `${itemPhase.name} [${itemPhase.id}]` : "", item.description || "", "", "", "", amount, ""]);
   });
 
   const subtotal = totalBillable + totalEntryCosts + totalExtra;
@@ -1503,7 +1520,8 @@ async function buildClientExportPdf(entries, extraCosts, project, fromDate, toDa
   });
   (extraCosts || []).forEach(item => {
     const amount = Number(item.amount || 0);
-    bodyRows.push(["", "", item.description || "", "", "", "", `CZK ${amount.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, ""]);
+    const itemPhase = item.phaseId ? state.config.phases.find(p => p.id === item.phaseId) : null;
+    bodyRows.push([item.date ? fmtDateDots(item.date) : "", itemPhase ? `${itemPhase.name} [${itemPhase.id}]` : "", item.description || "", "", "", "", `CZK ${amount.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, ""]);
   });
 
   doc.autoTable({
@@ -3247,8 +3265,27 @@ function adminClientExportTemplate(){
   const excludedCount = Object.keys(state.clientExportExcludedIds).filter(id => state.clientExportExcludedIds[id]).length;
 
   const extraCosts = state.clientExportExtraCosts || [];
-  const totalExtra = extraCosts.reduce((s,i) => s + Number(i.amount||0), 0);
-  const extraCostsHtml = `
+  const allExtraCosts = clientExportAllExtraCosts();
+  const totalExtra = allExtraCosts.reduce((s,i) => s + Number(i.amount||0), 0);
+  const projectCosts = clientExportProjectCosts();
+  const projectCostsHtml = state.clientExportProjectId ? `
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Náklady projektu</div>
+      <p class="q-hint" style="margin:0 0 10px;">Náklady zapsané u projektu ve zvoleném období a fázi. Zaškrtnuté se přidají do exportu jako ostatní náklady (popis = poznámka k nákladu).</p>
+      ${projectCosts.length ? projectCosts.map(c => {
+        const ph = state.config.phases.find(p => p.id === c.phaseId);
+        const included = !state.clientExportExcludedCostIds[c.id];
+        return `
+        <div class="admin-project-head" style="margin-bottom:6px;${included ? "" : "opacity:.5;"}">
+          <input type="checkbox" class="client-export-cost-include" data-id="${esc(c.id)}" ${included ? "checked" : ""} title="Zahrnout do exportu">
+          <span class="entry-date">${esc(c.date)}</span>
+          ${ph ? `<span class="entry-phase">${esc(ph.id)}</span>` : ``}
+          <span class="grow">${esc(c.note || "Náklad projektu")}</span>
+          <span style="font-weight:700;">${fmtKc(c.amount)}</span>
+        </div>`;
+      }).join("") : `<div class="q-hint" style="margin:0;">${state.costs === null ? "Načítání nákladů…" : "Ve zvoleném období nejsou u projektu žádné náklady."}</div>`}
+    </div>` : ``;
+  const extraCostsHtml = projectCostsHtml + `
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
       <div style="font-weight:700;font-size:15px;margin-bottom:8px;">Ostatní náklady (tisk, doprava, apod.)</div>
       ${extraCosts.length ? extraCosts.map(item => `
@@ -3301,7 +3338,7 @@ function adminClientExportTemplate(){
     </div>`;
 
   if(!sorted.length){
-    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}${excludedCount ? ` (${excludedCount} odebráno z exportu — <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn">Vrátit</button>)` : ``}</div>${extraCostsHtml}${extraCosts.length ? exportButtonsHtml() : ``}`;
+    return `${filterHtml}<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Nastavte filtr, ať se zobrazí hodiny k exportu."}${excludedCount ? ` (${excludedCount} odebráno z exportu — <button type="button" class="btn btn-small" id="client-export-restore-excluded-btn">Vrátit</button>)` : ``}</div>${extraCostsHtml}${allExtraCosts.length ? exportButtonsHtml() : ``}`;
   }
 
   const employeeIdsPresent = [...new Set(sorted.map(e => e.employeeId))];
@@ -5782,6 +5819,12 @@ function bindAdmin(){
     state.clientExportExtraCosts = (state.clientExportExtraCosts || []).filter(i => i.id !== id);
     render();
   });
+  document.querySelectorAll(".client-export-cost-include").forEach(cb => cb.addEventListener("change", () => {
+    const id = cb.getAttribute("data-id");
+    if(cb.checked) delete state.clientExportExcludedCostIds[id];
+    else state.clientExportExcludedCostIds[id] = true;
+    render();
+  }));
   document.querySelectorAll('[data-action="exclude-client-export-entry"]').forEach(b => b.onclick = () => {
     const id = b.getAttribute("data-id");
     state.clientExportExcludedIds[id] = true;
@@ -5806,7 +5849,7 @@ function bindAdmin(){
       (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId) &&
       !state.clientExportExcludedIds[e.id]
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
-    const extraCosts = state.clientExportExtraCosts || [];
+    const extraCosts = clientExportAllExtraCosts();
     if(!filtered.length && !extraCosts.length) return;
     clientExportXlsxBtn.disabled = true;
     const origText = clientExportXlsxBtn.textContent;
@@ -5835,7 +5878,7 @@ function bindAdmin(){
       (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId) &&
       !state.clientExportExcludedIds[e.id]
     ).slice().sort((a,b) => (a.date||"").localeCompare(b.date||""));
-    const extraCosts = state.clientExportExtraCosts || [];
+    const extraCosts = clientExportAllExtraCosts();
     if(!filtered.length && !extraCosts.length) return;
     clientExportPdfBtn.disabled = true;
     const origText = clientExportPdfBtn.textContent;
@@ -5871,7 +5914,7 @@ function bindAdmin(){
     );
     const totalBillable = filtered.reduce((s,e) => s + clientExportHoursFor(e) * clientExportRateFor(project, e.employeeId), 0);
     const totalEntryCosts = filtered.reduce((s,e) => s + clientExportCostFor(e), 0);
-    const totalExtra = (state.clientExportExtraCosts || []).reduce((s,i) => s + Number(i.amount||0), 0);
+    const totalExtra = clientExportAllExtraCosts().reduce((s,i) => s + Number(i.amount||0), 0);
     const subtotal = totalBillable + totalEntryCosts + totalExtra;
     if(!subtotal) return;
 
