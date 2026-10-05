@@ -209,6 +209,30 @@
   .year-nav{ display:flex; align-items:center; gap:14px; margin-bottom:14px; }
   .year-label{ font-weight:800; font-size:18px; letter-spacing:-0.01em; }
   .year-total{ font-weight:600; font-size:13px; color:var(--soft); }
+  .mchart-tools{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin:0 0 10px; font-size:13px; color:var(--soft); }
+  .mchart-seg{ display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+  .mchart-seg button{ border:0; background:transparent; color:var(--soft); font:inherit; font-size:12px; font-weight:700; padding:5px 12px; cursor:pointer; }
+  .mchart-seg button.active{ background:var(--sage-tint); color:var(--ink); }
+  .mchart-tools label{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .mchart-summary{ font-size:13px; color:var(--soft); margin:0 0 6px; }
+  .mchart-summary b{ color:var(--ink); }
+  .mchart{ position:relative; height:190px; padding-left:36px; margin-top:16px; }
+  .mchart-grid{ position:absolute; left:36px; right:0; top:0; bottom:22px; }
+  .mchart-grid i{ position:absolute; left:0; right:0; border-top:1px solid var(--line); }
+  .mchart-y{ position:absolute; left:0; top:0; bottom:22px; width:32px; }
+  .mchart-y span{ position:absolute; right:4px; font-size:10px; color:var(--soft); transform:translateY(50%); font-variant-numeric:tabular-nums; }
+  .mchart-avg{ position:absolute; left:36px; right:0; top:0; bottom:22px; pointer-events:none; }
+  .mchart-avg i{ position:absolute; left:0; right:0; border-top:1.5px dashed var(--tan); }
+  .mchart-avg span{ position:absolute; right:2px; transform:translateY(-100%); font-size:10px; font-weight:700; color:var(--tan); background:var(--paper); padding:0 4px; border-radius:4px; }
+  .mchart-bars{ position:absolute; left:36px; right:0; top:0; bottom:0; display:flex; gap:6px; }
+  .mchart-col{ flex:1; min-width:0; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; cursor:pointer; border-radius:6px; outline:none; }
+  .mchart-col.nojump{ cursor:default; }
+  .mchart-val{ height:14px; line-height:14px; font-size:10px; font-weight:700; color:var(--ink); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .mchart-bar{ width:100%; max-width:26px; background:var(--sage); border-radius:4px 4px 0 0; transition:filter .15s; }
+  .mchart-col:hover .mchart-bar, .mchart-col:focus-visible .mchart-bar{ filter:brightness(.9); }
+  .mchart-col.selected .mchart-bar{ background:#8C9560; box-shadow:0 0 0 2px var(--ink); }
+  .mchart-m{ height:22px; line-height:22px; font-size:10px; font-weight:700; color:var(--soft); text-transform:uppercase; letter-spacing:.04em; }
+  .mchart-readout{ margin-top:10px; font-size:13px; color:var(--soft); min-height:20px; }
   .year-months{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
   .year-month{ display:flex; flex-direction:column; align-items:center; gap:5px; cursor:pointer; padding:8px 2px; border-radius:12px; transition:background .15s; }
   .year-month:hover{ background:var(--sage-tint); }
@@ -637,6 +661,9 @@ let state = {
   rateError: "",
   adminEntriesFlat: null,
   hoursOverviewYear: "",
+  hoursOverviewEmployeeId: "",
+  monthChartMetric: "hours",
+  monthChartAvg: true,
   costs: null,
   costsLoading: false,
   editingCostId: null,
@@ -2619,9 +2646,10 @@ function timesheetTemplate(){
   const currentYear = state.month.slice(0,4);
   const currentMonthNum = state.month.slice(5,7);
   const yearEntries = state.entries.filter(e => e.date && e.date.slice(0,4) === currentYear);
-  const yearTotalHours = yearEntries.reduce((s,e)=>s+Number(e.hours||0),0);
+  const chartField = state.monthChartMetric === "cost" ? "cost" : "hours";
+  const yearTotalHours = yearEntries.reduce((s,e)=>s+Number(e[chartField]||0),0);
   const hoursByMonthNum = {};
-  yearEntries.forEach(e => { const mm = e.date.slice(5,7); hoursByMonthNum[mm] = (hoursByMonthNum[mm]||0) + Number(e.hours||0); });
+  yearEntries.forEach(e => { const mm = e.date.slice(5,7); hoursByMonthNum[mm] = (hoursByMonthNum[mm]||0) + Number(e[chartField]||0); });
   const yearOverviewHtml = buildYearOverview(currentYear, hoursByMonthNum, yearTotalHours, currentMonthNum);
 
   const rows = monthEntries.length ? `
@@ -2758,26 +2786,112 @@ function timesheetTemplate(){
 
 /* ---------------- admin tab ---------------- */
 
-function buildYearOverview(year, hoursByMonthNum, yearTotal, currentMonthNum){
-  let cells = "";
-  for(let i = 1; i <= 12; i++){
-    const mm = String(i).padStart(2,"0");
-    const h = hoursByMonthNum[mm] || 0;
-    const isCurrent = mm === currentMonthNum;
-    cells += `
-      <div class="year-month ${isCurrent ? "current" : ""}" data-action="jump-month" data-month="${year}-${mm}">
-        <span class="year-month-num">${i}</span>
-        <span class="year-month-hours ${h ? "has" : "empty"}">${h ? fmtHShort(h) : ""}</span>
-      </div>`;
+const CHART_MONTHS_SHORT = ["led","úno","bře","dub","kvě","čvn","čvc","srp","zář","říj","lis","pro"];
+const CHART_MONTHS_FULL = ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"];
+
+function chartNiceTop(max){
+  if(!(max > 0)) return 4;
+  const p = Math.pow(10, Math.floor(Math.log10(max)));
+  const m = max / p;
+  const nice = m <= 2 ? 2 : (m <= 4 ? 4 : (m <= 8 ? 8 : 10));
+  return nice * p;
+}
+
+function chartShortValue(v, isCost){
+  const r1 = n => (Math.round(n * 10) / 10).toLocaleString("cs-CZ");
+  if(isCost){
+    if(v >= 1000000) return r1(v / 1000000) + " M";
+    if(v >= 1000) return r1(v / 1000) + " k";
+    return String(Math.round(v));
   }
+  return v >= 10 ? String(Math.round(v)) : r1(v);
+}
+
+// values: 12 numbers (Jan..Dec). Used by both the employee view and the admin hours overview.
+function monthChartHtml(o){
+  const isCost = o.metric === "cost";
+  const fmt = isCost ? fmtKc : fmtH;
+  const values = o.values;
+  const max = Math.max(0, ...values);
+  const top = chartNiceTop(max);
+  const nonZero = values.filter(v => v > 0);
+  const total = values.reduce((s,v) => s + v, 0);
+  const avg = nonZero.length ? total / nonZero.length : 0;
+  const maxIdx = max > 0 ? values.indexOf(max) : -1;
+
+  const ticks = [0,1,2,3,4].map(i => {
+    const v = top * i / 4;
+    return { pct: i * 25, label: (Math.round(v * 10) / 10).toLocaleString("cs-CZ") };
+  });
+  const grid = ticks.map(t => `<i style="bottom:${t.pct}%;"></i>`).join("");
+  const yAxis = ticks.map(t => `<span style="bottom:${t.pct}%;">${t.label}</span>`).join("");
+  const avgHtml = (o.showAvg && avg > 0) ? `<div class="mchart-avg"><i style="bottom:${avg / top * 100}%;"></i><span style="bottom:${avg / top * 100}%;">Ø ${esc(fmt(avg))}</span></div>` : "";
+
+  const cols = values.map((v, i) => {
+    const mm = String(i + 1).padStart(2, "0");
+    const frac = v > 0 ? Math.max(0.02, v / top) : 0;
+    const label = `${CHART_MONTHS_FULL[i]} ${o.year} · ${fmt(v)}`;
+    const selected = o.selected === mm;
+    const jump = o.jump ? `data-action="jump-month" data-month="${o.year}-${mm}"` : "";
+    return `
+      <div class="mchart-col ${selected ? "selected" : ""} ${o.jump ? "" : "nojump"}" tabindex="0" role="${o.jump ? "button" : "img"}" aria-label="${esc(label)}" data-chart-label="${esc(label)}" ${jump}>
+        <div class="mchart-val">${v > 0 ? esc(chartShortValue(v, isCost)) : ""}</div>
+        <div class="mchart-bar" style="height:calc((100% - 22px) * ${frac});"></div>
+        <div class="mchart-m">${CHART_MONTHS_SHORT[i]}</div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="mchart-wrap">
+      <div class="mchart-tools">
+        <span class="mchart-seg">
+          <button type="button" data-action="set-month-chart-metric" data-metric="hours" class="${isCost ? "" : "active"}">Hodiny</button>
+          <button type="button" data-action="set-month-chart-metric" data-metric="cost" class="${isCost ? "active" : ""}">Náklady</button>
+        </span>
+        <label><input type="checkbox" id="month-chart-avg" ${o.showAvg ? "checked" : ""}> Průměr</label>
+      </div>
+      <p class="mchart-summary">Celkem <b>${esc(fmt(total))}</b> · průměr <b>${esc(fmt(avg))}</b>/měsíc${maxIdx >= 0 ? ` · nejvíc <b>${esc(fmt(max))}</b> (${CHART_MONTHS_SHORT[maxIdx]})` : ``}</p>
+      <div class="mchart">
+        <div class="mchart-grid">${grid}</div>
+        <div class="mchart-y">${yAxis}</div>
+        ${avgHtml}
+        <div class="mchart-bars">${cols}</div>
+      </div>
+      <div class="mchart-readout">${o.jump ? "Najeď na sloupec pro detail, kliknutím otevřeš měsíc ve výkazu." : "Najeď na sloupec pro detail."}</div>
+    </div>`;
+}
+
+function bindMonthChartEvents(){
+  const showLabel = e => {
+    const col = e.target.closest && e.target.closest(".mchart-col");
+    if(!col) return;
+    const wrap = col.closest(".mchart-wrap");
+    const out = wrap && wrap.querySelector(".mchart-readout");
+    if(out) out.textContent = col.getAttribute("data-chart-label");
+  };
+  document.addEventListener("mouseover", showLabel);
+  document.addEventListener("focusin", showLabel);
+  document.addEventListener("click", e => {
+    const btn = e.target.closest && e.target.closest('[data-action="set-month-chart-metric"]');
+    if(btn) setState({ monthChartMetric: btn.getAttribute("data-metric") });
+  });
+  document.addEventListener("change", e => {
+    if(e.target && e.target.id === "month-chart-avg") setState({ monthChartAvg: e.target.checked });
+  });
+}
+
+function buildYearOverview(year, valuesByMonthNum, yearTotal, currentMonthNum){
+  const values = [];
+  for(let i = 1; i <= 12; i++) values.push(valuesByMonthNum[String(i).padStart(2,"0")] || 0);
+  const isCost = state.monthChartMetric === "cost";
   return `
     <div class="year-overview">
       <div class="year-nav">
         <button class="icon-btn" data-action="year-prev" type="button">‹</button>
-        <span class="year-label">${year} <span class="year-total">· ${fmtH(yearTotal)} celkem</span></span>
+        <span class="year-label">${year} <span class="year-total">· ${isCost ? fmtKc(yearTotal) : fmtH(yearTotal)} celkem</span></span>
         <button class="icon-btn" data-action="year-next" type="button">›</button>
       </div>
-      <div class="year-months">${cells}</div>
+      ${monthChartHtml({ year, values, metric: state.monthChartMetric, selected: currentMonthNum, jump: true, showAvg: state.monthChartAvg })}
     </div>`;
 }
 
@@ -3986,11 +4100,30 @@ function adminHoursOverviewTemplate(){
     (a, b) => b.total - a.total
   );
 
+  const employeesInYear = [...new Map(yearEntries.map(e => [e.employeeId, e.employeeName || e.employeeId])).entries()]
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1]), "cs"));
+  const selectedEmployeeId = employeesInYear.some(([id]) => id === state.hoursOverviewEmployeeId) ? state.hoursOverviewEmployeeId : "";
+  const employeeOptions = `<option value="">Všichni zaměstnanci</option>` + employeesInYear.map(([id, name]) => `<option value="${esc(id)}" ${selectedEmployeeId === id ? "selected" : ""}>${esc(name)}</option>`).join("");
+  const chartField = state.monthChartMetric === "cost" ? "cost" : "hours";
+  const chartValues = new Array(12).fill(0);
+  yearEntries.filter(e => !selectedEmployeeId || e.employeeId === selectedEmployeeId).forEach(e => {
+    const mi = Number((e.date || "").slice(5, 7)) - 1;
+    if(mi >= 0 && mi < 12) chartValues[mi] += Number(e[chartField] || 0);
+  });
+  const chartHtml = monthChartHtml({ year: selectedYear, values: chartValues, metric: state.monthChartMetric, selected: "", jump: false, showAvg: state.monthChartAvg });
+
   return `
-    <div class="field-row" style="max-width:200px;margin-bottom:16px;">
-      <label class="field-label">Rok</label>
-      <select id="hours-overview-year">${yearOptions}</select>
+    <div class="form-grid" style="max-width:520px;margin-bottom:16px;">
+      <div class="field-row">
+        <label class="field-label">Rok</label>
+        <select id="hours-overview-year">${yearOptions}</select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Zaměstnanec (graf)</label>
+        <select id="hours-overview-employee">${employeeOptions}</select>
+      </div>
     </div>
+    <div style="margin-bottom:20px;">${chartHtml}</div>
     <div class="form-grid">
       <div class="field-row">
         <label class="field-label">Odpracováno celkem — všichni zaměstnanci</label>
@@ -4672,6 +4805,8 @@ function bindAdmin(){
     }
   });
 
+  const hoursOverviewEmployee = document.getElementById("hours-overview-employee");
+  if(hoursOverviewEmployee) hoursOverviewEmployee.addEventListener("change", () => setState({ hoursOverviewEmployeeId: hoursOverviewEmployee.value }));
   const hoursOverviewYear = document.getElementById("hours-overview-year");
   if(hoursOverviewYear) hoursOverviewYear.addEventListener("change", () => setState({ hoursOverviewYear: hoursOverviewYear.value }));
 
@@ -6032,6 +6167,7 @@ document.addEventListener("keydown", e => {
   else form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 });
 
+bindMonthChartEvents();
 init();
 </script>
 </body>
