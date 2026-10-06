@@ -704,8 +704,8 @@ let state = {
   costFilterPhaseId: "",
   costFilterPayment: "",
   costFilterText: "",
-  recordsFilterFrom: "",
-  recordsFilterTo: "",
+  recordsFilterFrom: currentMonthRange().from,
+  recordsFilterTo: currentMonthRange().to,
   recordsFilterProjectId: "",
   recordsFilterPhaseId: "",
   recordsFilterEmployeeId: "",
@@ -1203,6 +1203,20 @@ function previousMonthRange(){
   let y = now.getFullYear(), m0 = now.getMonth() - 1;
   if(m0 < 0){ m0 = 11; y -= 1; }
   return monthRangeFromDate(y, m0);
+}
+function currentMonthRange(){
+  const d = new Date();
+  const y = d.getFullYear(), m = d.getMonth();
+  const p = n => String(n).padStart(2, "0");
+  return { from: `${y}-${p(m + 1)}-01`, to: `${y}-${p(m + 1)}-${p(new Date(y, m + 1, 0).getDate())}` };
+}
+function shiftDateByMonthsKeepEnd(dateStr, deltaMonths){
+  if(!dateStr) return dateStr;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const shifted = shiftDateByMonths(dateStr, deltaMonths);
+  if(d !== new Date(y, m, 0).getDate()) return shifted;
+  const [ty, tm] = shifted.split("-").map(Number);
+  return `${ty}-${pad2(tm)}-${pad2(new Date(ty, tm, 0).getDate())}`;
 }
 function shiftDateByMonths(dateStr, deltaMonths){
   if(!dateStr) return dateStr;
@@ -6182,9 +6196,9 @@ function bindAdmin(){
   const recordsFilterFromMonthNextBtn = document.getElementById("records-filter-from-month-next");
   if(recordsFilterFromMonthNextBtn) recordsFilterFromMonthNextBtn.onclick = () => setState({ recordsFilterFrom: shiftDateByMonths(state.recordsFilterFrom || todayStr(), 1) });
   const recordsFilterToMonthPrevBtn = document.getElementById("records-filter-to-month-prev");
-  if(recordsFilterToMonthPrevBtn) recordsFilterToMonthPrevBtn.onclick = () => setState({ recordsFilterTo: shiftDateByMonths(state.recordsFilterTo || todayStr(), -1) });
+  if(recordsFilterToMonthPrevBtn) recordsFilterToMonthPrevBtn.onclick = () => setState({ recordsFilterTo: shiftDateByMonthsKeepEnd(state.recordsFilterTo || todayStr(), -1) });
   const recordsFilterToMonthNextBtn = document.getElementById("records-filter-to-month-next");
-  if(recordsFilterToMonthNextBtn) recordsFilterToMonthNextBtn.onclick = () => setState({ recordsFilterTo: shiftDateByMonths(state.recordsFilterTo || todayStr(), 1) });
+  if(recordsFilterToMonthNextBtn) recordsFilterToMonthNextBtn.onclick = () => setState({ recordsFilterTo: shiftDateByMonthsKeepEnd(state.recordsFilterTo || todayStr(), 1) });
   const recordsFilterFrom = document.getElementById("records-filter-from");
   if(recordsFilterFrom) recordsFilterFrom.addEventListener("change", () => setState({ recordsFilterFrom: recordsFilterFrom.value }));
   const recordsFilterTo = document.getElementById("records-filter-to");
@@ -6524,7 +6538,28 @@ function bindSelectOnFocus(){
 bindMonthChartEvents();
 bindBulkEvents();
 bindFormTimerPersistence();
+// Date inputs fire "change" for every intermediate value while typing (year "2" is already 0002),
+// and several filters re-render on change, which resets the field mid-typing. Hold the event back
+// until the year is plausible and the user has paused briefly, then pass it on to the real handlers.
+function bindDateInputGuard(){
+  const timers = new WeakMap();
+  document.addEventListener("change", e => {
+    const el = e.target;
+    if(!el || el.tagName !== "INPUT" || el.type !== "date" || e.__fromDateGuard) return;
+    e.stopImmediatePropagation();
+    clearTimeout(timers.get(el));
+    const year = Number((el.value || "").slice(0, 4));
+    if(el.value && (year < 1000 || year > 9999)) return;
+    timers.set(el, setTimeout(() => {
+      if(!el.isConnected) return;
+      const ev = new Event("change", { bubbles: true });
+      ev.__fromDateGuard = true;
+      el.dispatchEvent(ev);
+    }, 700));
+  }, true);
+}
 bindSelectOnFocus();
+bindDateInputGuard();
 init();
 </script>
 </body>
