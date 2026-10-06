@@ -305,6 +305,14 @@
   .entry-day-header:first-child{ padding-top:0; }
   .payment-note-input{ flex:1 1 0%; min-width:0; }
   .entry-date{ font-size:13px; color:var(--soft); }
+  .rec-dot{ display:inline-block; width:9px; height:9px; border-radius:50%; background:#d32f2f; margin-right:6px; vertical-align:1px; animation:recPulse 1.2s ease-in-out infinite; }
+  .rec-live::before{ content:""; display:inline-block; width:9px; height:9px; border-radius:50%; background:#d32f2f; margin-right:6px; animation:recPulse 1.2s ease-in-out infinite; }
+  @keyframes recPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
+  .rec-time{ font-variant-numeric:tabular-nums; font-weight:700; font-size:12.5px; color:#d32f2f; margin-left:4px; }
+  .rec-chip{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:rgba(211,47,47,.09); border:1px solid rgba(211,47,47,.35); border-radius:999px; padding:7px 14px; margin:10px 0 4px; font-size:13px; width:fit-content; max-width:100%; }
+  .rec-chip .icon-btn{ width:26px; height:26px; font-size:12px; }
+  .row-timer-btn{ width:26px; height:26px; font-size:11px; margin-right:6px; vertical-align:middle; }
+  .row-running{ border-color:rgba(211,47,47,.55) !important; background:rgba(211,47,47,.05) !important; }
   .bulk-row-cb{ margin:0 6px 0 0; vertical-align:-2px; cursor:pointer; accent-color:#8C9560; }
   .bulk-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 8px; font-size:13px; }
   .bulk-all{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--soft); font-weight:600; }
@@ -719,6 +727,7 @@ let state = {
   entries: [],
   month: new Date().toISOString().slice(0,7),
   entryTimerStart: null,
+  rowTimer: null,
   entryTimerAccumulated: 0,
   editingEntryId: null,
   editingLaborEntryId: null,
@@ -1031,7 +1040,10 @@ function updateEntryTimerButtonsUI(){
   } else if(!hasTime && display){
     display.remove();
   }
-  if(display) display.textContent = fmtTimerElapsed(currentTimerElapsedMs());
+  if(display){
+    display.textContent = fmtTimerElapsed(currentTimerElapsedMs());
+    display.classList.toggle("rec-live", running);
+  }
 }
 function startEntryTimerTick(){
   if(entryTimerIntervalId){ clearInterval(entryTimerIntervalId); entryTimerIntervalId = null; }
@@ -1045,6 +1057,88 @@ function startEntryTimerTick(){
   };
   tick();
   entryTimerIntervalId = setInterval(tick, 1000);
+}
+const ROW_TIMER_KEY = "dh_row_timer";
+let recTickId = null;
+function saveRowTimerStorage(){
+  try{
+    if(state.rowTimer && state.currentEmployee) localStorage.setItem(ROW_TIMER_KEY, JSON.stringify({ employeeId: state.currentEmployee.id, entryId: state.rowTimer.entryId, start: state.rowTimer.start }));
+    else localStorage.removeItem(ROW_TIMER_KEY);
+  }catch(e){}
+}
+function restoreRowTimer(){
+  try{
+    const raw = localStorage.getItem(ROW_TIMER_KEY);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(state.currentEmployee && d.employeeId === state.currentEmployee.id && state.entries.some(e => e.id === d.entryId)) state.rowTimer = { entryId: d.entryId, start: d.start };
+    else localStorage.removeItem(ROW_TIMER_KEY);
+  }catch(e){}
+}
+function rowTimerElapsedMs(){ return state.rowTimer ? Date.now() - state.rowTimer.start : 0; }
+async function stopRowTimer(){
+  const t = state.rowTimer;
+  if(!t) return;
+  state.rowTimer = null;
+  saveRowTimerStorage();
+  const hours = Math.round(((Date.now() - t.start) / 3600000) * 100) / 100;
+  const idx = state.entries.findIndex(e => e.id === t.entryId);
+  if(idx !== -1 && hours > 0){
+    state.entries[idx] = { ...state.entries[idx], hours: Math.round((Number(state.entries[idx].hours || 0) + hours) * 100) / 100 };
+    await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
+    state.projectTotals = null;
+    state.allEntriesFlat = null;
+  }
+}
+function renderKeepingEntryForm(){
+  const form = document.getElementById("add-entry-form");
+  const snap = form ? Array.from(form.elements).filter(el => el.name).map(el => [el.name, el.value]) : null;
+  render();
+  const form2 = document.getElementById("add-entry-form");
+  if(!snap || !form2) return;
+  const byName = Object.fromEntries(snap);
+  if(form2.elements.projectId && byName.projectId){
+    form2.elements.projectId.value = byName.projectId;
+    form2.elements.projectId.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  snap.forEach(([name, value]) => {
+    if(name === "projectId") return;
+    const el = form2.elements[name];
+    if(el) el.value = value;
+  });
+}
+async function startRowTimer(entryId){
+  if(state.rowTimer && state.rowTimer.entryId === entryId) return;
+  await stopRowTimer();
+  if(state.entryTimerStart){
+    state.entryTimerAccumulated = currentTimerElapsedMs();
+    state.entryTimerStart = null;
+  }
+  state.rowTimer = { entryId, start: Date.now() };
+  saveRowTimerStorage();
+  renderKeepingEntryForm();
+}
+function updateRecTimes(){
+  document.querySelectorAll('.rec-time[data-kind="row"]').forEach(el => { el.textContent = fmtTimerElapsed(rowTimerElapsedMs()); });
+  document.querySelectorAll('.rec-time[data-kind="form"]').forEach(el => { el.textContent = fmtTimerElapsed(currentTimerElapsedMs()); });
+}
+function startRecTick(){
+  if(recTickId){ clearInterval(recTickId); recTickId = null; }
+  if(!state.rowTimer && !state.entryTimerStart) return;
+  updateRecTimes();
+  recTickId = setInterval(() => {
+    if(!state.rowTimer && !state.entryTimerStart){ clearInterval(recTickId); recTickId = null; return; }
+    updateRecTimes();
+  }, 1000);
+}
+function recChipHtml(){
+  if(state.rowTimer){
+    const e = state.entries.find(x => x.id === state.rowTimer.entryId);
+    const proj = e ? state.config.projects.find(p => p.id === e.projectId) : null;
+    const label = e ? `#${esc(e.projectId)}${proj ? " " + esc(proj.name) : ""}${e.phaseId ? " · " + esc(e.phaseId) : ""}` : "záznam";
+    return `<div class="rec-chip"><span class="rec-dot"></span>Měří se: <b>${label}</b><span class="rec-time" data-kind="row">${fmtTimerElapsed(rowTimerElapsedMs())}</span><button type="button" class="icon-btn" data-action="row-timer-stop" title="Zastavit a připsat čas k záznamu">⏹</button></div>`;
+  }
+  return "";
 }
 const MONTH_NAMES_CS = ["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];
 function fmtMonthLabel(monthStr){
@@ -2294,6 +2388,7 @@ async function init(){
       employeeAuthToken = remembered.token;
       state.currentEmployee = emp;
       state.entries = await loadEntries(emp.id);
+      restoreRowTimer();
     } else {
       clearRememberedLogin();
     }
@@ -2335,7 +2430,7 @@ function render(){
   homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false, openProjectView: null });
   homeBtn.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); homeBtn.onclick(); } });
   const logoutBtn = document.getElementById("logout-btn");
-  if(logoutBtn) logoutBtn.onclick = () => { clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null, projectTotals:null, allEntriesFlat:null, projectTotalsLoading:false, expandedProjectId:null, showAllProjects:false, openProjectView:null }); };
+  if(logoutBtn) logoutBtn.onclick = async () => { await stopRowTimer(); clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null, projectTotals:null, allEntriesFlat:null, projectTotalsLoading:false, expandedProjectId:null, showAllProjects:false, openProjectView:null }); };
 
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
@@ -2730,8 +2825,10 @@ function timesheetTemplate(){
           </div>`;
         }
         return dayHeaderHtml + `
-        <div class="entry-row-mine">
-          <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+        <div class="entry-row-mine ${state.rowTimer && state.rowTimer.entryId === e.id ? "row-running" : ""}">
+          <span>${state.rowTimer && state.rowTimer.entryId === e.id
+              ? `<button type="button" class="icon-btn row-timer-btn" data-action="row-timer-stop" title="Zastavit a připsat čas k tomuto záznamu">⏸</button><span class="rec-dot"></span><span class="rec-time" data-kind="row">${fmtTimerElapsed(rowTimerElapsedMs())}</span> `
+              : `<button type="button" class="icon-btn row-timer-btn" data-action="row-timer-start" data-id="${esc(e.id)}" title="Spustit měření času u tohoto záznamu (zastaví případné běžící)">▶</button>`}${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
           <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : e.phaseId ? `<span class="entry-phase gone">smazaná fáze</span>` : ``}</span>
           <span class="entry-num">${fmtH(e.hours)}</span>
           <span class="entry-num">${fmtKc(e.cost)}</span>
@@ -2794,7 +2891,7 @@ function timesheetTemplate(){
               <button type="button" class="icon-btn" id="entry-timer-start-btn" title="${state.entryTimerAccumulated ? "Pokračovat v měření" : "Spustit měření času"}" ${state.entryTimerStart ? "disabled" : ""} style="width:38px;height:38px;font-size:14px;">▶</button>
               <button type="button" class="icon-btn" id="entry-timer-pause-btn" title="Pozastavit měření" ${state.entryTimerStart ? "" : "disabled"} style="width:38px;height:38px;font-size:14px;">⏸</button>
               <button type="button" class="icon-btn" id="entry-timer-stop-btn" title="Zastavit a rovnou uložit záznam" ${(state.entryTimerStart || state.entryTimerAccumulated) ? "" : "disabled"} style="width:38px;height:38px;font-size:14px;">⏹</button>
-              ${(state.entryTimerStart || state.entryTimerAccumulated) ? `<span id="entry-timer-display" class="meta" style="font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;align-self:center;white-space:nowrap;">${fmtTimerElapsed(currentTimerElapsedMs())}</span>` : ``}
+              ${(state.entryTimerStart || state.entryTimerAccumulated) ? `<span id="entry-timer-display" class="meta ${state.entryTimerStart ? "rec-live" : ""}" style="font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;align-self:center;white-space:nowrap;">${fmtTimerElapsed(currentTimerElapsedMs())}</span>` : ``}
               <button class="btn btn-sage" type="submit" ${canSubmitInitially ? "" : "disabled"}>Přidat záznam</button>
             </div>
           </div>
@@ -2810,6 +2907,7 @@ function timesheetTemplate(){
     <div class="sheet">
       <div class="eyebrow">Výkaz práce</div>
       <div class="q-title">${esc(emp.name)}</div>
+      ${recChipHtml()}
 
       ${allProjectsSection()}
 
@@ -4798,6 +4896,7 @@ function bindApp(){
       if(ok){
         state.currentEmployee = emp;
         state.entries = await loadEntries(emp.id);
+        restoreRowTimer();
         state.projectTotals = null;
         state.allEntriesFlat = null;
         state.projectTotalsLoading = false;
@@ -4835,8 +4934,17 @@ function bindApp(){
     setState({ month: el.getAttribute("data-month") });
   });
 
+  document.querySelectorAll('[data-action="row-timer-start"]').forEach(b => b.onclick = () => startRowTimer(b.getAttribute("data-id")));
+  document.querySelectorAll('[data-action="row-timer-stop"]').forEach(b => b.onclick = async () => {
+    await stopRowTimer();
+    showStamp();
+    renderKeepingEntryForm();
+  });
+  startRecTick();
+
   document.querySelectorAll('[data-action="delete-entry"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tento záznam?")) return;
+    if(state.rowTimer && state.rowTimer.entryId === b.getAttribute("data-id")){ state.rowTimer = null; saveRowTimerStorage(); }
     state.entries = state.entries.filter(en => en.id !== b.getAttribute("data-id"));
     if(state.editingEntryId === b.getAttribute("data-id")) state.editingEntryId = null;
     await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
@@ -4953,10 +5061,14 @@ function bindApp(){
     });
   });
   const entryTimerStartBtn = document.getElementById("entry-timer-start-btn");
-  if(entryTimerStartBtn) entryTimerStartBtn.onclick = () => {
+  if(entryTimerStartBtn) entryTimerStartBtn.onclick = async () => {
+    const hadRowTimer = !!state.rowTimer;
+    if(hadRowTimer) await stopRowTimer();
     state.entryTimerStart = Date.now();
+    if(hadRowTimer){ renderKeepingEntryForm(); return; }
     updateEntryTimerButtonsUI();
     startEntryTimerTick();
+    startRecTick();
   };
   const entryTimerPauseBtn = document.getElementById("entry-timer-pause-btn");
   if(entryTimerPauseBtn) entryTimerPauseBtn.onclick = () => {
