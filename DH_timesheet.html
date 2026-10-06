@@ -2791,14 +2791,19 @@ function timesheetTemplate(){
   });
   const yearOverviewHtml = buildYearOverview(currentYear, hoursByMonthNum, yearTotalHours, currentMonthNum, hours000ByMonthNum);
 
-  const rows = monthEntries.length ? `
+  const pinnedEntry = state.rowTimer ? state.entries.find(x => x.id === state.rowTimer.entryId) : null;
+  const listEntries = pinnedEntry ? [pinnedEntry, ...monthEntries.filter(x => x.id !== pinnedEntry.id)] : monthEntries;
+  const rows = listEntries.length ? `
     <div class="entry-head-mine"><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span><span></span><span></span><span></span></div>
     <div class="entries">
       ${(() => {
       let lastEntryDate = null;
-      return monthEntries.map(e => {
-        const dayHeaderHtml = e.date !== lastEntryDate ? `<div class="entry-day-header">${esc(fmtDayHeader(e.date))}</div>` : "";
-        lastEntryDate = e.date;
+      return listEntries.map(e => {
+        const isPinned = !!pinnedEntry && e.id === pinnedEntry.id;
+        const dayHeaderHtml = isPinned
+          ? `<div class="entry-day-header"><span class="rec-dot"></span>Právě se měří · ${esc(fmtDayHeader(e.date))}</div>`
+          : (e.date !== lastEntryDate ? `<div class="entry-day-header">${esc(fmtDayHeader(e.date))}</div>` : "");
+        if(!isPinned) lastEntryDate = e.date;
         const proj = projects.find(p => p.id === e.projectId);
         const phase = phases.find(p => p.id === e.phaseId);
         if(state.editingEntryId === e.id){
@@ -2827,7 +2832,7 @@ function timesheetTemplate(){
         return dayHeaderHtml + `
         <div class="entry-row-mine ${state.rowTimer && state.rowTimer.entryId === e.id ? "row-running" : ""}">
           <span>${state.rowTimer && state.rowTimer.entryId === e.id
-              ? `<button type="button" class="icon-btn row-timer-btn" data-action="row-timer-stop" title="Zastavit a připsat čas k tomuto záznamu">⏸</button><span class="rec-dot"></span><span class="rec-time" data-kind="row">${fmtTimerElapsed(rowTimerElapsedMs())}</span> `
+              ? `<button type="button" class="icon-btn row-timer-btn" data-action="row-timer-stop" title="Zastavit a připsat čas k tomuto záznamu">⏹</button><span class="rec-dot"></span><span class="rec-time" data-kind="row">${fmtTimerElapsed(rowTimerElapsedMs())}</span> `
               : `<button type="button" class="icon-btn row-timer-btn" data-action="row-timer-start" data-id="${esc(e.id)}" title="Spustit měření času u tohoto záznamu (zastaví případné běžící)">▶</button>`}${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
           <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : e.phaseId ? `<span class="entry-phase gone">smazaná fáze</span>` : ``}</span>
           <span class="entry-num">${fmtH(e.hours)}</span>
