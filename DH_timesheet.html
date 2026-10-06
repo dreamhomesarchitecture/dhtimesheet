@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Časové výkazy</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%238C9560'/%3E%3Ccircle cx='32' cy='32' r='19' fill='none' stroke='white' stroke-width='5'/%3E%3Cpath d='M32 20v12l8 6' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -806,7 +808,23 @@ function excelDateToISO(dateVal){
   if(!isNaN(d)) return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
   return null;
 }
+const BUILT_IN_PHASES = [{ id: "DOV", name: "Dovolená" }, { id: "NN", name: "Nezatříděné" }];
+const FIXED_PROJECT_PHASES = { "000": ["DOV", "NN"] };
+function isPhaselessProject(project){
+  return !!(project && project.phaseless && !FIXED_PROJECT_PHASES[project.id]);
+}
+function ensureBuiltInPhases(config){
+  if(!config.phases) config.phases = [];
+  let changed = false;
+  BUILT_IN_PHASES.forEach(bp => {
+    if(!config.phases.some(ph => ph.id === bp.id)){ config.phases.push({ ...bp }); changed = true; }
+  });
+  return changed;
+}
 function phasesForProject(project){
+  if(project && FIXED_PROJECT_PHASES[project.id]){
+    return FIXED_PROJECT_PHASES[project.id].map(id => state.config.phases.find(ph => ph.id === id) || BUILT_IN_PHASES.find(ph => ph.id === id));
+  }
   if(!project || !project.phaseIds || project.phaseIds.length === 0) return [];
   return state.config.phases.filter(ph => project.phaseIds.includes(ph.id));
 }
@@ -816,7 +834,7 @@ function hourlyRateForEmployee(employee, dateStr){
   return match ? Number(match.amount) || 0 : 0;
 }
 function isPhaseClosedOnDate(project, phaseId, dateStr){
-  if(!project || !project.closedPhases) return false;
+  if(!project || !project.closedPhases || FIXED_PROJECT_PHASES[project.id]) return false;
   const closedFrom = project.closedPhases[phaseId];
   if(!closedFrom || !dateStr) return false;
   return dateStr >= closedFrom;
@@ -1216,6 +1234,7 @@ async function attemptAdminLogin(password){
     if(!data.found || !data.admin) return false;
     adminAuthPassword = password;
     state.config = JSON.parse(data.value);
+    if(ensureBuiltInPhases(state.config)) await saveConfig();
     return true;
   }catch(e){ return false; }
 }
@@ -2246,6 +2265,7 @@ async function init(){
     state.config.phases.push({ id: "VC", name: "Vícepráce" });
     needsSave = true;
   }
+  if(ensureBuiltInPhases(state.config)) needsSave = true;
   if(needsSave) await saveConfig();
 
   const remembered = readRememberedLogin();
@@ -2664,7 +2684,7 @@ function timesheetTemplate(){
         const phase = phases.find(p => p.id === e.phaseId);
         if(state.editingEntryId === e.id){
           const editProject = state.config.projects.find(p => p.id === e.projectId) || projects[0];
-          const editPhaseless = !!(editProject && editProject.phaseless);
+          const editPhaseless = isPhaselessProject(editProject);
           const editPhases = getFormPhaseOptions(editProject, e.date);
           const editProjectOptions = projects.map(p => `<option value="${esc(p.id)}" ${e.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
           const editPhaseOptions = editPhases.length
@@ -2702,7 +2722,7 @@ function timesheetTemplate(){
 
   const formProject = projects[0];
   const formDate = todayStr();
-  const formPhaseless = !!(formProject && formProject.phaseless);
+  const formPhaseless = isPhaselessProject(formProject);
   const formPhases = getFormPhaseOptions(formProject, formDate);
 
   const projectOptions = projects.map(p => `<option value="${esc(p.id)}">#${esc(p.id)} ${esc(p.name)}</option>`).join("");
@@ -3679,14 +3699,17 @@ function projectDetailPageHtml(){
           </div>`;
         })()}
 
-        ${p.phaseless ? `
+        ${FIXED_PROJECT_PHASES[p.id] ? `
+        <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
+          <p class="q-hint" style="margin:0;">Fáze tohoto projektu jsou pevně dané a nejdou měnit: ${FIXED_PROJECT_PHASES[p.id].map(id => esc((BUILT_IN_PHASES.find(ph => ph.id === id) || {}).name || id)).join(", ")}. Zaměstnanec si u hodin vybírá jednu z nich.</p>
+        </div>` : p.phaseless ? `
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0;">Tomuto projektu nejde přiřadit žádná fáze — zaměstnanci u něj mohou zapisovat hodiny rovnou, bez volby fáze.</p>
         </div>` : `
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0 0 10px;">Fáze dostupné pro tento projekt. Nic vybráno = zaměstnanci u něj neuvidí žádnou fázi.</p>
           <div class="phase-picker">
-            ${state.config.phases.map(ph => `<button type="button" class="phase-chip ${phaseIds.includes(ph.id) ? "selected" : ""}" data-action="toggle-project-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
+            ${state.config.phases.filter(ph => ph.id !== "DOV").map(ph => `<button type="button" class="phase-chip ${phaseIds.includes(ph.id) ? "selected" : ""}" data-action="toggle-project-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
           </div>
         </div>
         ${phaseIds.length ? `
@@ -4257,7 +4280,7 @@ function adminTemplate(){
     return `
     <div class="admin-project-item">
       <div class="admin-project-head" data-action="open-project-page" data-id="${esc(p.id)}" style="cursor:pointer;">
-        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
+        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${FIXED_PROJECT_PHASES[p.id] ? "· Dovolená, Nezatříděné" : p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
         <button class="icon-btn" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">×</button>
       </div>
     </div>`;
@@ -4344,7 +4367,7 @@ function adminTemplate(){
           <div class="field-row" style="margin-top:10px;">
             <label class="field-label">Fáze (nepovinné, jde doplnit i později)</label>
             <div class="phase-picker" id="new-project-phase-picker">
-              ${state.config.phases.map(ph => `<button type="button" class="phase-chip" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
+              ${state.config.phases.filter(ph => ph.id !== "DOV").map(ph => `<button type="button" class="phase-chip" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
             </div>
           </div>
           ${state.projError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.projError)}</div>` : ``}
@@ -4532,7 +4555,7 @@ function bindApp(){
   function refreshPhaseOptions(){
     if(!projectSelect || !phaseSelect) return;
     const project = state.config.projects.find(p => p.id === projectSelect.value);
-    if(project && project.phaseless){
+    if(isPhaselessProject(project)){
       if(phaseFieldRow) phaseFieldRow.style.display = "none";
       phaseSelect.removeAttribute("required");
       phaseSelect.innerHTML = `<option value="">—</option>`;
@@ -4656,7 +4679,7 @@ function bindApp(){
     e.preventDefault();
     const data = Object.fromEntries(new FormData(addEntryForm).entries());
     const project = state.config.projects.find(p => p.id === data.projectId);
-    const isPhaseless = !!(project && project.phaseless);
+    const isPhaseless = isPhaselessProject(project);
     const fields = { date: data.date, hours: Number(data.hours), projectId: data.projectId, phaseId: data.phaseId, cost: Number(data.cost)||0, note: (data.note||"").trim() };
     if(!fields.date || !fields.hours || !fields.projectId || (!isPhaseless && !fields.phaseId)) return;
     if(fields.phaseId === "AD" && !fields.note) return;
@@ -4681,7 +4704,7 @@ function bindApp(){
     const dateInput = row.querySelector(".my-entry-edit-date");
     if(!projectSelect || !phaseSelect || !dateInput) return;
     const project = state.config.projects.find(p => p.id === projectSelect.value);
-    if(project && project.phaseless){
+    if(isPhaselessProject(project)){
       phaseSelect.innerHTML = `<option value="">—</option>`;
       phaseSelect.disabled = true;
       return;
@@ -4717,7 +4740,7 @@ function bindApp(){
     const projectId = row.querySelector(".my-entry-edit-project").value;
     const project = state.config.projects.find(p => p.id === projectId);
     const phaseSelect = row.querySelector(".my-entry-edit-phase");
-    const isPhaseless = !!(project && project.phaseless);
+    const isPhaseless = isPhaselessProject(project);
     const phaseId = isPhaseless ? "" : phaseSelect.value;
     const hours = row.querySelector(".my-entry-edit-hours").value;
     const cost = row.querySelector(".my-entry-edit-cost").value;
