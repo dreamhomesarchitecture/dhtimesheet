@@ -301,6 +301,9 @@
   .entry-head-mine{ display:grid; grid-template-columns: 1fr 90px 64px 84px 1fr 28px 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
   .entry-row-mine{ display:grid; grid-template-columns: 1fr 90px 64px 84px 1fr 28px 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-mine:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
+  .entry-row-mine.entry-row-edit{ grid-template-columns: 140px minmax(0,1fr) 120px 80px 92px; row-gap:10px; }
+  .entry-row-edit .my-entry-edit-note{ grid-column: 1 / span 4; }
+  .entry-row-edit .my-entry-edit-actions{ grid-column: 5; justify-self:end; }
   .entry-day-header{ font-size:12.5px; font-weight:700; color:var(--ink); padding:14px 4px 6px; }
   .entry-day-header:first-child{ padding-top:0; }
   .payment-note-input{ flex:1 1 0%; min-width:0; }
@@ -385,6 +388,8 @@
     .entry-row{ grid-template-columns: 1fr; gap:6px; }
     .entry-head-mine{ display:none; }
     .entry-row-mine{ grid-template-columns: 1fr; gap:6px; }
+    .entry-row-mine.entry-row-edit{ grid-template-columns: 1fr; }
+    .entry-row-edit .my-entry-edit-note, .entry-row-edit .my-entry-edit-actions{ grid-column: auto; justify-self:stretch; }
     .project-form-grid{ grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); }
     .entry-head-compact{ display:none; }
     .entry-row-compact{ grid-template-columns: 1fr; gap:6px; }
@@ -2815,14 +2820,14 @@ function timesheetTemplate(){
             ? editPhases.map(p => `<option value="${esc(p.id)}" ${e.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}${isPhaseClosedOnDate(editProject, p.id, e.date) ? " (uzavřeno)" : ""}</option>`).join("")
             : `<option value="" disabled selected>— žádné fáze —</option>`;
           return dayHeaderHtml + `
-          <div class="entry-row-mine" data-my-entry-edit-row="${esc(e.id)}">
+          <div class="entry-row-mine entry-row-edit" data-my-entry-edit-row="${esc(e.id)}">
             <input type="date" class="my-entry-edit-date" value="${esc(e.date)}" style="padding:6px 8px;font-size:13px;">
             <select class="my-entry-edit-project" style="padding:6px 8px;font-size:13px;">${editProjectOptions}</select>
             <select class="my-entry-edit-phase" style="padding:6px 8px;font-size:13px;" ${editPhaseless ? "disabled" : ""}>${editPhaseOptions}</select>
             <input type="number" min="0.01" step="0.01" class="my-entry-edit-hours" value="${esc(e.hours)}" style="padding:6px 8px;font-size:13px;">
             <input type="number" min="0" step="1" class="my-entry-edit-cost" value="${e.cost ? esc(e.cost) : ""}" placeholder="0" style="padding:6px 8px;font-size:13px;">
             <input type="text" class="my-entry-edit-note" value="${esc(e.note||"")}" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;">
-            <span style="display:flex;gap:4px;">
+            <span class="my-entry-edit-actions" style="display:flex;gap:4px;">
               <button type="button" class="icon-btn" data-action="save-my-entry-edit" title="Uložit">✓</button>
               <button type="button" class="icon-btn" data-action="cancel-my-entry-edit" title="Zrušit">×</button>
             </span>
