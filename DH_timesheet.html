@@ -733,6 +733,7 @@ let state = {
   month: new Date().toISOString().slice(0,7),
   entryTimerStart: null,
   rowTimer: null,
+  pendingFormFields: null,
   entryTimerAccumulated: 0,
   editingEntryId: null,
   editingLaborEntryId: null,
@@ -1095,22 +1096,51 @@ async function stopRowTimer(){
     state.allEntriesFlat = null;
   }
 }
-function renderKeepingEntryForm(){
+function formSnapshot(){
   const form = document.getElementById("add-entry-form");
-  const snap = form ? Array.from(form.elements).filter(el => el.name).map(el => [el.name, el.value]) : null;
-  render();
-  const form2 = document.getElementById("add-entry-form");
-  if(!snap || !form2) return;
+  return form ? Array.from(form.elements).filter(el => el.name).map(el => [el.name, el.value]) : null;
+}
+function applyFormSnapshot(snap){
+  const form = document.getElementById("add-entry-form");
+  if(!snap || !form) return;
   const byName = Object.fromEntries(snap);
-  if(form2.elements.projectId && byName.projectId){
-    form2.elements.projectId.value = byName.projectId;
-    form2.elements.projectId.dispatchEvent(new Event("change", { bubbles: true }));
+  if(form.elements.projectId && byName.projectId){
+    form.elements.projectId.value = byName.projectId;
+    form.elements.projectId.dispatchEvent(new Event("change", { bubbles: true }));
   }
   snap.forEach(([name, value]) => {
     if(name === "projectId") return;
-    const el = form2.elements[name];
+    const el = form.elements[name];
     if(el) el.value = value;
   });
+}
+function renderKeepingEntryForm(){
+  const snap = formSnapshot();
+  render();
+  applyFormSnapshot(snap);
+}
+const FORM_TIMER_KEY = "dh_form_timer";
+function persistFormTimer(){
+  try{
+    if(!state.currentEmployee || !(state.entryTimerStart || state.entryTimerAccumulated)){ localStorage.removeItem(FORM_TIMER_KEY); return; }
+    const prev = JSON.parse(localStorage.getItem(FORM_TIMER_KEY) || "null");
+    const fields = formSnapshot() || (prev && prev.fields) || null;
+    localStorage.setItem(FORM_TIMER_KEY, JSON.stringify({ employeeId: state.currentEmployee.id, start: state.entryTimerStart, accumulated: state.entryTimerAccumulated || 0, fields }));
+  }catch(e){}
+}
+function restoreFormTimer(){
+  try{
+    const raw = localStorage.getItem(FORM_TIMER_KEY);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(!state.currentEmployee || d.employeeId !== state.currentEmployee.id){ localStorage.removeItem(FORM_TIMER_KEY); return; }
+    let acc = Number(d.accumulated) || 0;
+    let start = d.start || null;
+    if(start && state.rowTimer){ acc += Date.now() - start; start = null; }
+    state.entryTimerStart = start;
+    state.entryTimerAccumulated = acc;
+    state.pendingFormFields = d.fields || null;
+  }catch(e){}
 }
 async function startRowTimer(entryId){
   if(state.rowTimer && state.rowTimer.entryId === entryId) return;
@@ -1118,6 +1148,7 @@ async function startRowTimer(entryId){
   if(state.entryTimerStart){
     state.entryTimerAccumulated = currentTimerElapsedMs();
     state.entryTimerStart = null;
+    persistFormTimer();
   }
   state.rowTimer = { entryId, start: Date.now() };
   saveRowTimerStorage();
@@ -2394,6 +2425,7 @@ async function init(){
       state.currentEmployee = emp;
       state.entries = await loadEntries(emp.id);
       restoreRowTimer();
+      restoreFormTimer();
     } else {
       clearRememberedLogin();
     }
@@ -2435,7 +2467,7 @@ function render(){
   homeBtn.onclick = () => setState({ tab: "app", selectedEmployeeId: null, loginError: false, openProjectView: null });
   homeBtn.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); homeBtn.onclick(); } });
   const logoutBtn = document.getElementById("logout-btn");
-  if(logoutBtn) logoutBtn.onclick = async () => { await stopRowTimer(); clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null, projectTotals:null, allEntriesFlat:null, projectTotalsLoading:false, expandedProjectId:null, showAllProjects:false, openProjectView:null }); };
+  if(logoutBtn) logoutBtn.onclick = async () => { await stopRowTimer(); persistFormTimer(); clearRememberedLogin(); employeeAuthToken = null; setState({ currentEmployee:null, entries:[], selectedEmployeeId:null, loginError:false, editingEntryId:null, projectTotals:null, allEntriesFlat:null, projectTotalsLoading:false, expandedProjectId:null, showAllProjects:false, openProjectView:null, entryTimerStart:null, entryTimerAccumulated:0, pendingFormFields:null }); };
 
   const content = document.getElementById("tab-content");
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
@@ -4907,6 +4939,7 @@ function bindApp(){
         state.currentEmployee = emp;
         state.entries = await loadEntries(emp.id);
         restoreRowTimer();
+        restoreFormTimer();
         state.projectTotals = null;
         state.allEntriesFlat = null;
         state.projectTotalsLoading = false;
@@ -5075,6 +5108,7 @@ function bindApp(){
     const hadRowTimer = !!state.rowTimer;
     if(hadRowTimer) await stopRowTimer();
     state.entryTimerStart = Date.now();
+    persistFormTimer();
     if(hadRowTimer){ renderKeepingEntryForm(); return; }
     updateEntryTimerButtonsUI();
     startEntryTimerTick();
@@ -5085,6 +5119,7 @@ function bindApp(){
     if(!state.entryTimerStart) return;
     state.entryTimerAccumulated = currentTimerElapsedMs();
     state.entryTimerStart = null;
+    persistFormTimer();
     updateEntryTimerButtonsUI();
     startEntryTimerTick();
   };
@@ -5098,8 +5133,13 @@ function bindApp(){
     if(form && !form.reportValidity()) return;
     state.entryTimerStart = null;
     state.entryTimerAccumulated = 0;
+    persistFormTimer();
     if(form) form.requestSubmit();
   };
+  if(state.pendingFormFields && document.getElementById("add-entry-form")){
+    applyFormSnapshot(state.pendingFormFields);
+    state.pendingFormFields = null;
+  }
   startEntryTimerTick();
 }
 
@@ -6449,8 +6489,42 @@ document.addEventListener("keydown", e => {
   else form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 });
 
+function bindFormTimerPersistence(){
+  const save = () => { if(state.entryTimerStart || state.entryTimerAccumulated) persistFormTimer(); };
+  document.addEventListener("input", e => { if(e.target && e.target.form && e.target.form.id === "add-entry-form") save(); });
+  document.addEventListener("change", e => { if(e.target && e.target.form && e.target.form.id === "add-entry-form") save(); });
+  window.addEventListener("pagehide", save);
+  document.addEventListener("visibilitychange", () => { if(document.visibilityState === "hidden") save(); });
+}
+// Clicking (or tabbing) into a text/number field selects its whole content, so typing replaces
+// it. Programmatic focus (e.g. keeping the cursor while a live search re-renders) is ignored.
+function bindSelectOnFocus(){
+  const SELECTABLE = ["text", "number", "search", "tel", "email", "url", "password"];
+  let lastUserFocus = 0;
+  const mark = () => { lastUserFocus = Date.now(); };
+  document.addEventListener("pointerdown", mark, true);
+  document.addEventListener("touchstart", mark, true);
+  document.addEventListener("keydown", e => { if(e.key === "Tab") mark(); }, true);
+  document.addEventListener("focusin", e => {
+    const el = e.target;
+    if(!el || el.tagName !== "INPUT" || !SELECTABLE.includes(el.type) || el.readOnly || el.disabled) return;
+    if(Date.now() - lastUserFocus > 500) return;
+    el.dataset.justFocused = "1";
+    try{ el.select(); }catch(err){}
+  });
+  document.addEventListener("mouseup", e => {
+    const el = e.target;
+    if(el && el.dataset && el.dataset.justFocused){
+      delete el.dataset.justFocused;
+      e.preventDefault();
+    }
+  }, true);
+  document.addEventListener("focusout", e => { if(e.target && e.target.dataset) delete e.target.dataset.justFocused; });
+}
 bindMonthChartEvents();
 bindBulkEvents();
+bindFormTimerPersistence();
+bindSelectOnFocus();
 init();
 </script>
 </body>
