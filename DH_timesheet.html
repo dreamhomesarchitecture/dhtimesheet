@@ -682,11 +682,13 @@ let state = {
   costFilterProjectId: "",
   costFilterPhaseId: "",
   costFilterPayment: "",
+  costFilterText: "",
   recordsFilterFrom: "",
   recordsFilterTo: "",
   recordsFilterProjectId: "",
   recordsFilterPhaseId: "",
   recordsFilterEmployeeId: "",
+  recordsFilterText: "",
   clientExportFrom: previousMonthRange().from,
   clientExportTo: previousMonthRange().to,
   clientExportProjectId: "",
@@ -719,6 +721,7 @@ let state = {
   projectCostAddError: "",
   projectCostsFilterPhase: "",
   projectCostsFilterPayment: "",
+  projectCostsFilterText: "",
   projectCostsSort: "date",
   projectLaborFilterPhase: "",
   projectLaborFilterEmployee: "",
@@ -2340,7 +2343,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
       window.scrollTo(0, 0);
@@ -2813,6 +2816,31 @@ function timesheetTemplate(){
 }
 
 /* ---------------- admin tab ---------------- */
+
+function noteSearchFieldHtml(id, value){
+  return `
+      <div class="field-row grow" style="min-width:220px;">
+        <label class="field-label">Hledat v poznámkách</label>
+        <div style="position:relative;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--soft)" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input type="text" id="${id}" placeholder="Hledat…" autocomplete="off" value="${esc(value || "")}" style="padding-left:36px;">
+        </div>
+      </div>`;
+}
+function noteMatches(note, query){
+  const q = stripDiacritics(query || "").trim().toLowerCase();
+  return !q || stripDiacritics(note || "").toLowerCase().includes(q);
+}
+function bindNoteSearch(id, stateKey){
+  const input = document.getElementById(id);
+  if(!input) return;
+  input.addEventListener("input", () => {
+    const pos = input.selectionStart;
+    setState({ [stateKey]: input.value });
+    const el = document.getElementById(id);
+    if(el){ el.focus(); el.setSelectionRange(pos, pos); }
+  });
+}
 
 // ---- Shared bulk selection (checkboxes + "select all" + bulk rewrite + sum) ----
 function bulkSelectedIds(listId){
@@ -3346,10 +3374,11 @@ function adminCostsTemplate(){
   const filtered = costs.filter(c =>
     (!state.costFilterProjectId || c.projectId === state.costFilterProjectId) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
-    (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment)
+    (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
+    noteMatches(c.note, state.costFilterText)
   );
   const totalAmount = filtered.reduce((s,c) => s + Number(c.amount||0), 0);
-  const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment;
+  const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment || state.costFilterText;
 
   const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const rows = sorted.length ? sorted.map(c => {
@@ -3405,6 +3434,7 @@ function adminCostsTemplate(){
             <option value="ucet" ${state.costFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
           </select>
         </div>
+        ${noteSearchFieldHtml("cost-filter-text", state.costFilterText)}
         ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
       ${bulkToolbarHtml("gcosts", "cost", sorted, "")}
@@ -3456,19 +3486,21 @@ function adminRecordsTemplate(){
       <div class="field-row"><label class="field-label">Zaměstnanec</label><select id="records-filter-employee">${filterEmployeeOptions}</select></div>
       <div class="field-row"><label class="field-label">Projekt</label><select id="records-filter-project">${filterProjectOptions}</select></div>
       <div class="field-row"><label class="field-label">Fáze</label><select id="records-filter-phase">${filterPhaseOptions}</select></div>
+      ${noteSearchFieldHtml("records-filter-text", state.recordsFilterText)}
     </div>`;
 
   if(entries === null){
     return `${filterHtml}<div class="empty-state">Načítání…</div>`;
   }
 
-  const filtersActive = !!(state.recordsFilterFrom || state.recordsFilterTo || state.recordsFilterProjectId || state.recordsFilterPhaseId || state.recordsFilterEmployeeId);
+  const filtersActive = !!(state.recordsFilterFrom || state.recordsFilterTo || state.recordsFilterProjectId || state.recordsFilterPhaseId || state.recordsFilterEmployeeId || state.recordsFilterText);
   const filtered = entries.filter(e =>
     (!state.recordsFilterFrom || e.date >= state.recordsFilterFrom) &&
     (!state.recordsFilterTo || e.date <= state.recordsFilterTo) &&
     (!state.recordsFilterProjectId || e.projectId === state.recordsFilterProjectId) &&
     (!state.recordsFilterPhaseId || e.phaseId === state.recordsFilterPhaseId) &&
-    (!state.recordsFilterEmployeeId || e.employeeId === state.recordsFilterEmployeeId)
+    (!state.recordsFilterEmployeeId || e.employeeId === state.recordsFilterEmployeeId) &&
+    noteMatches(e.note, state.recordsFilterText)
   );
   const totalHours = filtered.reduce((s,e) => s + Number(e.hours||0), 0);
   const totalCost = filtered.reduce((s,e) => s + Number(e.cost||0), 0);
@@ -3937,10 +3969,12 @@ function projectDetailPageHtml(){
           const costPhaseIdsPresent = [...new Set(allProjectCosts.map(c => c.phaseId).filter(Boolean))];
           const costsFilterPhase = state.projectCostsFilterPhase || "";
           const costsFilterPayment = state.projectCostsFilterPayment || "";
-          const costsFiltersActive = !!(costsFilterPhase || costsFilterPayment);
+          const costsFilterText = state.projectCostsFilterText || "";
+          const costsFiltersActive = !!(costsFilterPhase || costsFilterPayment || costsFilterText);
           let projectCosts = allProjectCosts.filter(c =>
             (!costsFilterPhase || c.phaseId === costsFilterPhase) &&
-            (!costsFilterPayment || c.paymentMethod === costsFilterPayment)
+            (!costsFilterPayment || c.paymentMethod === costsFilterPayment) &&
+            noteMatches(c.note, costsFilterText)
           );
           const costsSort = state.projectCostsSort || "date";
           projectCosts = projectCosts.slice().sort((a,b) => {
@@ -3960,6 +3994,7 @@ function projectDetailPageHtml(){
                 <option value="hotove" ${costsFilterPayment === "hotove" ? "selected" : ""}>Hotově</option>
                 <option value="ucet" ${costsFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
               </select></div>
+              ${noteSearchFieldHtml("project-costs-filter-text", costsFilterText)}
               <div class="field-row"><label class="field-label">Seřadit podle</label><select id="project-costs-sort">
                 <option value="date" ${costsSort === "date" ? "selected" : ""}>Data (nejnovější)</option>
                 <option value="phase" ${costsSort === "phase" ? "selected" : ""}>Fáze</option>
@@ -5258,12 +5293,13 @@ function bindAdmin(){
   });
   const projectCostsFilterPhase = document.getElementById("project-costs-filter-phase");
   if(projectCostsFilterPhase) projectCostsFilterPhase.addEventListener("change", () => setState({ projectCostsFilterPhase: projectCostsFilterPhase.value }));
+  bindNoteSearch("project-costs-filter-text", "projectCostsFilterText");
   const projectCostsFilterPayment = document.getElementById("project-costs-filter-payment");
   if(projectCostsFilterPayment) projectCostsFilterPayment.addEventListener("change", () => setState({ projectCostsFilterPayment: projectCostsFilterPayment.value }));
   const projectCostsSortSelect = document.getElementById("project-costs-sort");
   if(projectCostsSortSelect) projectCostsSortSelect.addEventListener("change", () => setState({ projectCostsSort: projectCostsSortSelect.value }));
   const projectCostsFilterResetBtn = document.getElementById("project-costs-filter-reset-btn");
-  if(projectCostsFilterResetBtn) projectCostsFilterResetBtn.onclick = () => setState({ projectCostsFilterPhase: "", projectCostsFilterPayment: "" });
+  if(projectCostsFilterResetBtn) projectCostsFilterResetBtn.onclick = () => setState({ projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "" });
   const projectLaborFilterPhase = document.getElementById("project-labor-filter-phase");
   if(projectLaborFilterPhase) projectLaborFilterPhase.addEventListener("change", () => setState({ projectLaborFilterPhase: projectLaborFilterPhase.value }));
   const projectLaborFilterEmployee = document.getElementById("project-labor-filter-employee");
@@ -5352,13 +5388,13 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="open-payment-calendar-from-project"]').forEach(b => b.onclick = () => {
@@ -5945,10 +5981,11 @@ function bindAdmin(){
   if(costFilterProject) costFilterProject.addEventListener("change", () => setState({ costFilterProjectId: costFilterProject.value }));
   const costFilterPhase = document.getElementById("cost-filter-phase");
   if(costFilterPhase) costFilterPhase.addEventListener("change", () => setState({ costFilterPhaseId: costFilterPhase.value }));
+  bindNoteSearch("cost-filter-text", "costFilterText");
   const costFilterPayment = document.getElementById("cost-filter-payment");
   if(costFilterPayment) costFilterPayment.addEventListener("change", () => setState({ costFilterPayment: costFilterPayment.value }));
   const costFilterResetBtn = document.getElementById("cost-filter-reset-btn");
-  if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "" });
+  if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "", costFilterText: "" });
 
   const recordsFilterFromMonthPrevBtn = document.getElementById("records-filter-from-month-prev");
   if(recordsFilterFromMonthPrevBtn) recordsFilterFromMonthPrevBtn.onclick = () => setState({ recordsFilterFrom: shiftDateByMonths(state.recordsFilterFrom || todayStr(), -1) });
@@ -5970,8 +6007,9 @@ function bindAdmin(){
   const recordsFilterEmployee = document.getElementById("records-filter-employee");
   enhanceSearchableSelect(recordsFilterEmployee);
   if(recordsFilterEmployee) recordsFilterEmployee.addEventListener("change", () => setState({ recordsFilterEmployeeId: recordsFilterEmployee.value }));
+  bindNoteSearch("records-filter-text", "recordsFilterText");
   const recordsFilterResetBtn = document.getElementById("records-filter-reset-btn");
-  if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "", recordsFilterEmployeeId: "" });
+  if(recordsFilterResetBtn) recordsFilterResetBtn.onclick = () => setState({ recordsFilterFrom: "", recordsFilterTo: "", recordsFilterProjectId: "", recordsFilterPhaseId: "", recordsFilterEmployeeId: "", recordsFilterText: "" });
 
   const clientExportFromMonthPrevBtn = document.getElementById("client-export-from-month-prev");
   if(clientExportFromMonthPrevBtn) clientExportFromMonthPrevBtn.onclick = () => setState({ clientExportFrom: shiftDateByMonths(state.clientExportFrom || todayStr(), -1) });
