@@ -287,8 +287,8 @@
   .totals-row b{ color:var(--ink); font-size:15.5px; }
 
   .entries{ display:flex; flex-direction:column; gap:9px; }
-  .entry-head{ display:grid; grid-template-columns: 92px 1fr 90px 64px 84px 1fr 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row{ display:grid; grid-template-columns: 92px 1fr 90px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-head{ display:grid; grid-template-columns: 118px 1fr 90px 64px 84px 1fr 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row{ display:grid; grid-template-columns: 118px 1fr 90px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
   .entry-head-mine{ display:grid; grid-template-columns: 1fr 90px 64px 84px 1fr 28px 28px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
   .entry-row-mine{ display:grid; grid-template-columns: 1fr 90px 64px 84px 1fr 28px 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
@@ -297,6 +297,13 @@
   .entry-day-header:first-child{ padding-top:0; }
   .payment-note-input{ flex:1 1 0%; min-width:0; }
   .entry-date{ font-size:13px; color:var(--soft); }
+  .bulk-row-cb{ margin:0 6px 0 0; vertical-align:-2px; cursor:pointer; accent-color:#8C9560; }
+  .bulk-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 8px; font-size:13px; }
+  .bulk-all{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--soft); font-weight:600; }
+  .bulk-bar{ flex:1 1 100%; display:flex; flex-wrap:wrap; align-items:center; gap:10px; background:var(--sage-tint); border-radius:12px; padding:10px 14px; }
+  .bulk-bar select{ width:auto; min-width:160px; padding:6px 8px; font-size:13px; }
+  .bulk-bar .bulk-sum{ font-weight:600; }
+  .bulk-error{ flex:1 1 100%; color:var(--danger); font-size:13px; }
   .entry-proj{ font-size:12px; background: var(--sage-tint); color:var(--ink); border-radius:999px; padding:4px 10px; display:inline-block; font-weight:600; }
   .entry-proj.gone{ background: var(--tan-tint); color:var(--tan); }
   .entry-proj.closed{ background: var(--ink-tint); color: var(--soft); }
@@ -310,12 +317,12 @@
   .entry-row-compact{ display:grid; grid-template-columns: 92px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-compact:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
-  .entry-head-wide{ display:grid; grid-template-columns: 92px 130px 1fr 70px 64px 84px 1fr; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row-wide{ display:grid; grid-template-columns: 92px 130px 1fr 70px 64px 84px 1fr; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-head-wide{ display:grid; grid-template-columns: 118px 130px 1fr 70px 64px 84px 1fr; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row-wide{ display:grid; grid-template-columns: 118px 130px 1fr 70px 64px 84px 1fr; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-wide:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
-  .entry-head-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row-cost{ display:grid; grid-template-columns: 92px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-head-cost{ display:grid; grid-template-columns: 118px 1fr 90px 90px 1fr 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row-cost{ display:grid; grid-template-columns: 118px 1fr 90px 90px 1fr 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-cost:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
 
@@ -705,8 +712,9 @@ let state = {
   entryTimerAccumulated: 0,
   editingEntryId: null,
   editingLaborEntryId: null,
-  laborBulkSelectedIds: {},
-  laborBulkPhaseId: "",
+  bulkSel: {},
+  bulkTarget: {},
+  bulkError: {},
   editingProjectCostId: null,
   projectCostAddError: "",
   projectCostsFilterPhase: "",
@@ -2332,7 +2340,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
       window.scrollTo(0, 0);
@@ -2806,6 +2814,130 @@ function timesheetTemplate(){
 
 /* ---------------- admin tab ---------------- */
 
+// ---- Shared bulk selection (checkboxes + "select all" + bulk rewrite + sum) ----
+function bulkSelectedIds(listId){
+  const m = (state.bulkSel || {})[listId] || {};
+  return Object.keys(m).filter(id => m[id]);
+}
+function bulkRowCbHtml(listId, id){
+  const on = ((state.bulkSel || {})[listId] || {})[id];
+  return `<input type="checkbox" class="bulk-row-cb" data-list="${listId}" data-id="${esc(id)}" ${on ? "checked" : ""} title="Vybrat">`;
+}
+function bulkToolbarHtml(listId, kind, items, ctxProjectId){
+  if(!items.length) return "";
+  const selSet = new Set(bulkSelectedIds(listId));
+  const picked = items.filter(it => selSet.has(it.id));
+  const head = `<label class="bulk-all"><input type="checkbox" class="bulk-select-all" data-list="${listId}" ${picked.length === items.length ? "checked" : ""}> Vybrat vše (${items.length})</label>`;
+  if(!picked.length) return `<div class="bulk-toolbar">${head}</div>`;
+
+  let summary;
+  if(kind === "cost"){
+    summary = `součet <b>${fmtKc(picked.reduce((s, c) => s + Number(c.amount || 0), 0))}</b>`;
+  } else {
+    const hours = picked.reduce((s, e) => s + Number(e.hours || 0), 0);
+    const labor = picked.reduce((s, e) => s + Number(e.hours || 0) * hourlyRateForEmployee(state.config.employees.find(x => x.id === e.employeeId), e.date), 0);
+    const other = picked.reduce((s, e) => s + Number(e.cost || 0), 0);
+    summary = `<b>${fmtH(hours)}</b> · mzdy <b>${fmtKc(labor)}</b>${other ? ` · ostatní náklady <b>${fmtKc(other)}</b>` : ``}`;
+  }
+  const target = (state.bulkTarget || {})[listId] || {};
+  const projOptions = `<option value="">— ponechat projekt —</option>` + state.config.projects.map(pr => `<option value="${esc(pr.id)}" ${target.projectId === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
+  const phaseProject = state.config.projects.find(pr => pr.id === (target.projectId || ctxProjectId));
+  const phaseList = phaseProject ? phasesForProject(phaseProject) : state.config.phases.filter(ph => ph.id !== "DOV");
+  const phaseOptions = `<option value="">— ponechat fázi —</option>`
+    + (kind === "cost" ? `<option value="-" ${target.phaseId === "-" ? "selected" : ""}>— bez fáze —</option>` : ``)
+    + phaseList.map(ph => `<option value="${esc(ph.id)}" ${target.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
+  const canApply = !!(target.projectId || target.phaseId);
+  const err = (state.bulkError || {})[listId];
+  return `
+    <div class="bulk-toolbar">
+      ${head}
+      <div class="bulk-bar">
+        <span class="bulk-sum">Vybráno: ${picked.length} · ${summary}</span>
+        <select class="bulk-target-project" data-list="${listId}">${projOptions}</select>
+        <select class="bulk-target-phase" data-list="${listId}">${phaseOptions}</select>
+        <button type="button" class="btn btn-tan btn-small" data-bulk-apply data-list="${listId}" data-kind="${kind}" ${canApply ? "" : "disabled"}>Přepsat u vybraných</button>
+        <button type="button" class="btn btn-outline btn-small" data-bulk-clear data-list="${listId}">Zrušit výběr</button>
+        ${err ? `<div class="bulk-error">${esc(err)}</div>` : ``}
+      </div>
+    </div>`;
+}
+async function bulkApply(listId, kind){
+  const target = (state.bulkTarget || {})[listId] || {};
+  if(!(target.projectId || target.phaseId)) return;
+  const visible = new Set(Array.from(document.querySelectorAll(`.bulk-row-cb[data-list="${listId}"]`)).map(c => c.getAttribute("data-id")));
+  const ids = bulkSelectedIds(listId).filter(id => visible.has(id));
+  if(!ids.length) return;
+  const newProject = target.projectId ? state.config.projects.find(pr => pr.id === target.projectId) : null;
+  const setErr = msg => setState({ bulkError: { ...(state.bulkError || {}), [listId]: msg } });
+  if(kind === "entry" && target.phaseId === "-") return;
+  if(kind === "entry" && newProject && !isPhaselessProject(newProject) && !target.phaseId) return setErr("Při změně projektu vyber i fázi nového projektu.");
+  if(!confirm(`Opravdu přepsat ${ids.length} vybraných záznamů?`)) return;
+
+  const patch = {};
+  if(target.projectId) patch.projectId = target.projectId;
+  if(target.phaseId) patch.phaseId = target.phaseId === "-" ? "" : target.phaseId;
+  if(kind === "entry" && newProject && isPhaselessProject(newProject)) patch.phaseId = "";
+
+  if(kind === "entry"){
+    const byEmployee = {};
+    (state.adminEntriesFlat || []).forEach(en => {
+      if(ids.includes(en.id)){ (byEmployee[en.employeeId] = byEmployee[en.employeeId] || []).push(en.id); }
+    });
+    for(const employeeId of Object.keys(byEmployee)){
+      const entries = await loadEntries(employeeId);
+      byEmployee[employeeId].forEach(entryId => {
+        const idx = entries.findIndex(e => e.id === entryId);
+        if(idx !== -1) entries[idx] = { ...entries[idx], ...patch };
+      });
+      await saveEntries(employeeId, "", entries);
+    }
+    if(state.adminEntriesFlat) state.adminEntriesFlat = state.adminEntriesFlat.map(en => ids.includes(en.id) ? { ...en, ...patch } : en);
+    state.projectTotals = null;
+    state.allEntriesFlat = null;
+  } else {
+    state.costs = (state.costs || []).map(c => ids.includes(c.id) ? { ...c, ...patch } : c);
+    await saveCosts();
+  }
+  state.bulkSel = { ...state.bulkSel, [listId]: {} };
+  state.bulkTarget = { ...state.bulkTarget, [listId]: {} };
+  state.bulkError = { ...state.bulkError, [listId]: "" };
+  showStamp();
+  render();
+}
+function bindBulkEvents(){
+  document.addEventListener("change", e => {
+    const t = e.target;
+    if(!t || !t.classList) return;
+    const listId = t.getAttribute("data-list");
+    if(t.classList.contains("bulk-row-cb")){
+      const m = { ...((state.bulkSel || {})[listId] || {}) };
+      if(t.checked) m[t.getAttribute("data-id")] = true; else delete m[t.getAttribute("data-id")];
+      setState({ bulkSel: { ...state.bulkSel, [listId]: m }, bulkError: { ...state.bulkError, [listId]: "" } });
+    } else if(t.classList.contains("bulk-select-all")){
+      const m = { ...((state.bulkSel || {})[listId] || {}) };
+      document.querySelectorAll(`.bulk-row-cb[data-list="${listId}"]`).forEach(cb => {
+        if(t.checked) m[cb.getAttribute("data-id")] = true; else delete m[cb.getAttribute("data-id")];
+      });
+      setState({ bulkSel: { ...state.bulkSel, [listId]: m } });
+    } else if(t.classList.contains("bulk-target-project")){
+      setState({ bulkTarget: { ...state.bulkTarget, [listId]: { projectId: t.value, phaseId: "" } }, bulkError: { ...state.bulkError, [listId]: "" } });
+    } else if(t.classList.contains("bulk-target-phase")){
+      const cur = (state.bulkTarget || {})[listId] || {};
+      setState({ bulkTarget: { ...state.bulkTarget, [listId]: { ...cur, phaseId: t.value } }, bulkError: { ...state.bulkError, [listId]: "" } });
+    }
+  });
+  document.addEventListener("click", e => {
+    const clear = e.target.closest && e.target.closest("[data-bulk-clear]");
+    if(clear){
+      const listId = clear.getAttribute("data-list");
+      setState({ bulkSel: { ...state.bulkSel, [listId]: {} }, bulkTarget: { ...state.bulkTarget, [listId]: {} }, bulkError: { ...state.bulkError, [listId]: "" } });
+      return;
+    }
+    const apply = e.target.closest && e.target.closest("[data-bulk-apply]");
+    if(apply) bulkApply(apply.getAttribute("data-list"), apply.getAttribute("data-kind"));
+  });
+}
+
 const CHART_MONTHS_SHORT = ["led","úno","bře","dub","kvě","čvn","čvc","srp","zář","říj","lis","pro"];
 const CHART_MONTHS_FULL = ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"];
 
@@ -3225,7 +3357,7 @@ function adminCostsTemplate(){
     const phase = state.config.phases.find(p => p.id === c.phaseId);
     return `
     <div class="entry-row">
-      <span class="entry-date">${esc(c.date)}</span>
+      <span class="entry-date">${bulkRowCbHtml("gcosts", c.id)}${esc(c.date)}</span>
       <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
       <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
       <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
@@ -3275,6 +3407,7 @@ function adminCostsTemplate(){
         </div>
         ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
+      ${bulkToolbarHtml("gcosts", "cost", sorted, "")}
       <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
       <div class="entries">${rows}</div>
     </div>`;
@@ -3346,7 +3479,7 @@ function adminRecordsTemplate(){
     const phase = state.config.phases.find(p => p.id === e.phaseId);
     return `
     <div class="entry-row-wide">
-      <span class="entry-date">${esc(e.date)}</span>
+      <span class="entry-date">${bulkRowCbHtml("records", e.id)}${esc(e.date)}</span>
       <span>${esc(e.employeeName)}</span>
       <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
       <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
@@ -3360,6 +3493,7 @@ function adminRecordsTemplate(){
     ${filterHtml}
     ${filtersActive ? `<button class="btn btn-small" type="button" id="records-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
     <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalCost ? ` · ${fmtKc(totalCost)}` : ``}</p>
+    ${bulkToolbarHtml("records", "entry", sorted, "")}
     <div class="entry-head-wide"><span>Datum</span><span>Zaměstnanec</span><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span></div>
     <div class="entries">${rows}</div>`;
 }
@@ -3860,7 +3994,7 @@ function projectDetailPageHtml(){
             }
             return `
             <div class="entry-row-cost">
-              <span class="entry-date">${esc(c.date)}</span>
+              <span class="entry-date">${bulkRowCbHtml("pcosts", c.id)}${esc(c.date)}</span>
               <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
               <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
               <span class="entry-num">${fmtKc(c.amount)}</span>
@@ -3891,21 +4025,7 @@ function projectDetailPageHtml(){
             return (b.en.date||"").localeCompare(a.en.date||"");
           });
           const laborTotal = projectLabor.reduce((s,r) => s + r.amount, 0);
-          const laborBulkSelected = state.laborBulkSelectedIds || {};
-          const laborVisibleIds = projectLabor.map(r => r.en.id);
-          const laborSelectedCount = laborVisibleIds.filter(id => laborBulkSelected[id]).length;
-          const laborAllVisibleSelected = laborVisibleIds.length > 0 && laborSelectedCount === laborVisibleIds.length;
-          const laborBulkPhaseOptions = phasesForProject(p).map(ph => `<option value="${esc(ph.id)}" ${state.laborBulkPhaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
-          const laborBulkBarHtml = laborSelectedCount ? `
-            <div class="phase-block" style="margin-bottom:12px;background:var(--sage-tint);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <span style="font-weight:700;font-size:13px;">Vybráno: ${laborSelectedCount}</span>
-              <select id="project-labor-bulk-phase" style="padding:6px 8px;font-size:13px;">
-                <option value="">— vybrat fázi —</option>
-                ${laborBulkPhaseOptions}
-              </select>
-              <button type="button" class="btn btn-tan btn-small" id="project-labor-bulk-apply-btn" ${state.laborBulkPhaseId ? "" : "disabled"}>Přepsat fázi u vybraných</button>
-              <button type="button" class="btn btn-outline btn-small" id="project-labor-bulk-clear-btn">Zrušit výběr</button>
-            </div>` : ``;
+          const laborToolbarHtml = bulkToolbarHtml("labor", "entry", projectLabor.map(r => r.en), p.id);
           const laborFilterHtml = `
             <div class="form-grid" style="margin-bottom:12px;">
               <div class="field-row"><label class="field-label">Fáze</label><select id="project-labor-filter-phase">
@@ -3945,7 +4065,7 @@ function projectDetailPageHtml(){
             }
             return `
             <div class="entry-row-labor">
-              <span><input type="checkbox" class="labor-bulk-checkbox" data-id="${esc(en.id)}" data-employee-id="${esc(en.employeeId)}" ${laborBulkSelected[en.id] ? "checked" : ""}></span>
+              <span>${bulkRowCbHtml("labor", en.id)}</span>
               <span class="entry-date">${esc(en.date)}</span>
               <span>${esc(en.employeeName)}</span>
               <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
@@ -3984,6 +4104,7 @@ function projectDetailPageHtml(){
             </div>
             ${allProjectCosts.length ? costsFilterHtml : ``}
             <p class="q-hint" style="margin:0 0 12px;">${costsFiltersActive ? "Náklady dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
+            ${bulkToolbarHtml("pcosts", "cost", projectCosts, p.id)}
             <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span><span></span></div>
             <div class="entries">${costsRowsHtml}</div>
           </div>
@@ -3992,8 +4113,8 @@ function projectDetailPageHtml(){
             <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Mzdové náklady</div>
             ${allProjectLabor.length ? laborFilterHtml : ``}
             <p class="q-hint" style="margin:0 0 12px;">${laborFiltersActive ? "Hodiny dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
-            ${laborBulkBarHtml}
-            <div class="entry-head-labor"><span><input type="checkbox" id="project-labor-select-all" title="Vybrat vše" ${laborAllVisibleSelected ? "checked" : ""}></span><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
+            ${laborToolbarHtml}
+            <div class="entry-head-labor"><span></span><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
             <div class="entries">${laborRowsHtml}</div>
           </div>`;
         })()}
@@ -5231,13 +5352,13 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="open-payment-calendar-from-project"]').forEach(b => b.onclick = () => {
@@ -5301,56 +5422,6 @@ function bindAdmin(){
     showStamp();
     render();
   });
-  document.querySelectorAll('.labor-bulk-checkbox').forEach(cb => cb.addEventListener("change", () => {
-    const id = cb.getAttribute("data-id");
-    const selected = { ...(state.laborBulkSelectedIds || {}) };
-    if(cb.checked) selected[id] = true;
-    else delete selected[id];
-    setState({ laborBulkSelectedIds: selected });
-  }));
-  const laborSelectAll = document.getElementById("project-labor-select-all");
-  if(laborSelectAll) laborSelectAll.addEventListener("change", () => {
-    const selected = { ...(state.laborBulkSelectedIds || {}) };
-    document.querySelectorAll('.labor-bulk-checkbox').forEach(cb => {
-      const id = cb.getAttribute("data-id");
-      if(laborSelectAll.checked) selected[id] = true;
-      else delete selected[id];
-    });
-    setState({ laborBulkSelectedIds: selected });
-  });
-  const laborBulkPhaseSelect = document.getElementById("project-labor-bulk-phase");
-  if(laborBulkPhaseSelect) laborBulkPhaseSelect.addEventListener("change", () => setState({ laborBulkPhaseId: laborBulkPhaseSelect.value }));
-  const laborBulkClearBtn = document.getElementById("project-labor-bulk-clear-btn");
-  if(laborBulkClearBtn) laborBulkClearBtn.onclick = () => setState({ laborBulkSelectedIds: {}, laborBulkPhaseId: "" });
-  const laborBulkApplyBtn = document.getElementById("project-labor-bulk-apply-btn");
-  if(laborBulkApplyBtn) laborBulkApplyBtn.onclick = async () => {
-    const phaseId = state.laborBulkPhaseId;
-    if(!phaseId) return;
-    const selectedIds = Object.keys(state.laborBulkSelectedIds || {}).filter(id => state.laborBulkSelectedIds[id]);
-    if(!selectedIds.length) return;
-    const byEmployee = {};
-    (state.adminEntriesFlat || []).forEach(en => {
-      if(selectedIds.includes(en.id)){
-        if(!byEmployee[en.employeeId]) byEmployee[en.employeeId] = [];
-        byEmployee[en.employeeId].push(en.id);
-      }
-    });
-    for(const employeeId of Object.keys(byEmployee)){
-      const entries = await loadEntries(employeeId);
-      byEmployee[employeeId].forEach(entryId => {
-        const idx = entries.findIndex(e => e.id === entryId);
-        if(idx !== -1) entries[idx] = { ...entries[idx], phaseId };
-      });
-      await saveEntries(employeeId, "", entries);
-    }
-    if(state.adminEntriesFlat){
-      state.adminEntriesFlat = state.adminEntriesFlat.map(en => selectedIds.includes(en.id) ? { ...en, phaseId } : en);
-    }
-    state.laborBulkSelectedIds = {};
-    state.laborBulkPhaseId = "";
-    showStamp();
-    render();
-  };
   document.querySelectorAll('[data-cost-edit-row] input, [data-cost-edit-row] select').forEach(el => {
     el.addEventListener("keydown", e => {
       if(e.key !== "Enter") return;
@@ -6191,6 +6262,7 @@ document.addEventListener("keydown", e => {
 });
 
 bindMonthChartEvents();
+bindBulkEvents();
 init();
 </script>
 </body>
