@@ -718,6 +718,7 @@ let state = {
   clientExportRates: {},
   clientExportHoursOverrides: {},
   clientExportCostOverrides: {},
+  clientExportAmountOverrides: {},
   clientExportExtraCosts: [],
   clientExportSignedBy: "Kamil Plavec",
   clientExportExcludedIds: {},
@@ -1282,8 +1283,19 @@ function clientExportProjectCosts(){
 function clientExportAllExtraCosts(){
   const projectItems = clientExportProjectCosts()
     .filter(c => !state.clientExportExcludedCostIds[c.id])
-    .map(c => ({ id: c.id, date: c.date, phaseId: c.phaseId, description: c.note || "Náklad projektu", amount: Number(c.amount) || 0 }));
-  return projectItems.concat(state.clientExportExtraCosts || []);
+    .map(c => ({ id: c.id, date: c.date, phaseId: c.phaseId, description: c.note || "Náklad projektu", amount: clientExportAmountFor(c.id, c.amount) }));
+  const manualItems = (state.clientExportExtraCosts || []).map(i => ({ ...i, amount: clientExportAmountFor(i.id, i.amount) }));
+  return projectItems.concat(manualItems);
+}
+function clientExportAmountFor(id, original){
+  const v = (state.clientExportAmountOverrides || {})[id];
+  return v !== undefined ? Number(v) || 0 : Number(original) || 0;
+}
+function clientExportAmountInputHtml(id, original){
+  const overridden = (state.clientExportAmountOverrides || {})[id] !== undefined;
+  return `
+          <input type="number" min="0" step="1" class="client-export-amount" data-id="${esc(id)}" data-original="${esc(Number(original) || 0)}" value="${esc(clientExportAmountFor(id, original))}" title="Částka jen pro tento export" style="width:110px;padding:6px 8px;font-size:13px;font-weight:700;text-align:right;">
+          ${overridden ? `<span class="meta" style="font-size:12px;white-space:nowrap;">původně ${fmtKc(original)}</span><button type="button" class="icon-btn" data-action="reset-client-export-amount" data-id="${esc(id)}" title="Vrátit původní částku">↺</button>` : ``}`;
 }
 function clientExportRateFor(project, employeeId){
   if(state.clientExportRates[employeeId] !== undefined) return Number(state.clientExportRates[employeeId]) || 0;
@@ -3749,7 +3761,7 @@ function adminClientExportTemplate(){
   const projectCostsHtml = state.clientExportProjectId ? `
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
       <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Náklady projektu</div>
-      <p class="q-hint" style="margin:0 0 10px;">Náklady zapsané u projektu ve zvoleném období a fázi. Zaškrtnuté se přidají do exportu jako ostatní náklady (popis = poznámka k nákladu).</p>
+      <p class="q-hint" style="margin:0 0 10px;">Náklady zapsané u projektu ve zvoleném období a fázi. Zaškrtnuté se přidají do exportu jako ostatní náklady (popis = poznámka k nákladu). Částku jde přepsat jen pro tento export, v nákladech projektu zůstane původní.</p>
       ${projectCosts.length ? projectCosts.map(c => {
         const ph = state.config.phases.find(p => p.id === c.phaseId);
         const included = !state.clientExportExcludedCostIds[c.id];
@@ -3758,8 +3770,7 @@ function adminClientExportTemplate(){
           <input type="checkbox" class="client-export-cost-include" data-id="${esc(c.id)}" ${included ? "checked" : ""} title="Zahrnout do exportu">
           <span class="entry-date">${esc(c.date)}</span>
           ${ph ? `<span class="entry-phase">${esc(ph.id)}</span>` : ``}
-          <span class="grow">${esc(c.note || "Náklad projektu")}</span>
-          <span style="font-weight:700;">${fmtKc(c.amount)}</span>
+          <span class="grow">${esc(c.note || "Náklad projektu")}</span>${clientExportAmountInputHtml(c.id, c.amount)}
         </div>`;
       }).join("") : `<div class="q-hint" style="margin:0;">${state.costs === null ? "Načítání nákladů…" : "Ve zvoleném období nejsou u projektu žádné náklady."}</div>`}
     </div>` : ``;
@@ -3768,8 +3779,7 @@ function adminClientExportTemplate(){
       <div style="font-weight:700;font-size:15px;margin-bottom:8px;">Ostatní náklady (tisk, doprava, apod.)</div>
       ${extraCosts.length ? extraCosts.map(item => `
         <div class="admin-project-head" style="margin-bottom:8px;">
-          <span class="grow">${esc(item.description)}</span>
-          <span style="font-weight:700;">${fmtKc(item.amount)}</span>
+          <span class="grow">${esc(item.description)}</span>${clientExportAmountInputHtml(item.id, item.amount)}
           <button type="button" class="icon-btn" data-action="delete-client-export-extra" data-id="${esc(item.id)}" title="Smazat">×</button>
         </div>`).join("") : `<div class="q-hint" style="margin:0 0 10px;">Zatím žádné ostatní náklady.</div>`}
       <div class="form-grid" style="margin-top:10px;">
@@ -6265,6 +6275,19 @@ function bindAdmin(){
       state.clientExportCostOverrides[el.getAttribute("data-entry-id")] = el.value === "" ? 0 : Number(el.value);
       render();
     });
+  });
+  document.querySelectorAll(".client-export-amount").forEach(el => {
+    el.addEventListener("change", () => {
+      const id = el.getAttribute("data-id");
+      const original = Number(el.getAttribute("data-original")) || 0;
+      if(el.value === "" || Number(el.value) === original) delete state.clientExportAmountOverrides[id];
+      else state.clientExportAmountOverrides[id] = Number(el.value);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="reset-client-export-amount"]').forEach(b => b.onclick = () => {
+    delete state.clientExportAmountOverrides[b.getAttribute("data-id")];
+    render();
   });
   document.querySelectorAll("#client-export-extra-desc, #client-export-extra-amount").forEach(el => {
     el.addEventListener("keydown", e => {
