@@ -316,6 +316,12 @@
   .rec-chip .icon-btn{ width:26px; height:26px; font-size:12px; }
   .row-timer-btn{ width:26px; height:26px; font-size:11px; margin-right:6px; vertical-align:middle; }
   .row-running{ border-color:rgba(211,47,47,.55) !important; background:rgba(211,47,47,.05) !important; }
+  .pw-wrap{ position:relative; display:block; width:100%; }
+  .pw-wrap input{ width:100%; }
+  .gate .pw-wrap{ max-width:220px; margin:0 auto 16px; }
+  .gate .pw-wrap input{ max-width:none; margin:0; }
+  .pw-eye{ position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:0; padding:7px; cursor:pointer; color:var(--soft); display:flex; align-items:center; border-radius:8px; }
+  .pw-eye:hover{ color:var(--ink); background:var(--sage-tint); }
   .bulk-row-cb{ margin:0 6px 0 0; vertical-align:-2px; cursor:pointer; accent-color:#8C9560; }
   .bulk-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 8px; font-size:13px; }
   .bulk-all{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--soft); font-weight:600; }
@@ -845,8 +851,10 @@ function excelDateToISO(dateVal){
 }
 const BUILT_IN_PHASES = [{ id: "DOV", name: "Dovolená" }, { id: "NN", name: "Nezatříděné" }];
 const FIXED_PROJECT_PHASES = { "000": ["DOV", "NN"] };
+// Project 002 (OF - Nezatridene) is the only project where hours are logged without choosing a phase.
+const PHASELESS_PROJECT_IDS = ["002"];
 function isPhaselessProject(project){
-  return !!(project && project.phaseless && !FIXED_PROJECT_PHASES[project.id]);
+  return !!(project && (project.phaseless || PHASELESS_PROJECT_IDS.includes(project.id)) && !FIXED_PROJECT_PHASES[project.id]);
 }
 function ensureBuiltInPhases(config){
   if(!config.phases) config.phases = [];
@@ -2499,6 +2507,38 @@ function render(){
   if(state.tab === "admin"){ content.innerHTML = adminTemplate(); bindAdmin(); }
   else { content.innerHTML = appTemplate(); bindApp(); }
   bindProjectLinks();
+  enhancePasswordFields();
+}
+
+const PW_EYE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const PW_EYE_OFF_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.1 9.1 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>`;
+function enhancePasswordFields(){
+  document.querySelectorAll('input[type="password"]').forEach(inp => {
+    if(inp.dataset.eye) return;
+    inp.dataset.eye = "1";
+    const wrap = document.createElement("span");
+    wrap.className = "pw-wrap";
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    inp.style.paddingRight = "46px";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pw-eye";
+    btn.title = "Zobrazit heslo";
+    btn.setAttribute("aria-label", "Zobrazit heslo");
+    btn.innerHTML = PW_EYE_SVG;
+    btn.addEventListener("click", () => {
+      const show = inp.type === "password";
+      inp.type = show ? "text" : "password";
+      btn.innerHTML = show ? PW_EYE_OFF_SVG : PW_EYE_SVG;
+      btn.title = show ? "Skrýt heslo" : "Zobrazit heslo";
+      btn.setAttribute("aria-label", btn.title);
+      inp.focus();
+      const n = inp.value.length;
+      try{ inp.setSelectionRange(n, n); }catch(e){}
+    });
+    wrap.appendChild(btn);
+  });
 }
 
 function bindProjectLinks(){
@@ -2796,7 +2836,7 @@ function accountSettingsSection(){
       ${isOpen ? `
       <form id="change-my-password-form">
         <div class="form-grid">
-          <div class="field-row"><label class="field-label">Nové heslo</label><input type="text" name="password" required></div>
+          <div class="field-row"><label class="field-label">Nové heslo</label><input type="password" name="password" autocomplete="new-password" required></div>
           <div class="field-row"><button class="btn btn-outline btn-small" type="submit">Uložit</button></div>
         </div>
         ${state.myPasswordError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.myPasswordError)}</div>` : ``}
@@ -4056,7 +4096,7 @@ function projectDetailPageHtml(){
         ${FIXED_PROJECT_PHASES[p.id] ? `
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0;">Fáze tohoto projektu jsou pevně dané a nejdou měnit: ${FIXED_PROJECT_PHASES[p.id].map(id => esc((BUILT_IN_PHASES.find(ph => ph.id === id) || {}).name || id)).join(", ")}. Zaměstnanec si u hodin vybírá jednu z nich.</p>
-        </div>` : p.phaseless ? `
+        </div>` : isPhaselessProject(p) ? `
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0;">Tomuto projektu nejde přiřadit žádná fáze — zaměstnanci u něj mohou zapisovat hodiny rovnou, bez volby fáze.</p>
         </div>` : `
@@ -4628,7 +4668,7 @@ function adminTemplate(){
     return `
     <div class="admin-project-item">
       <div class="admin-project-head" data-action="open-project-page" data-id="${esc(p.id)}" style="cursor:pointer;">
-        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${FIXED_PROJECT_PHASES[p.id] ? "· Dovolená, Nezatříděné" : p.phaseless ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
+        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${FIXED_PROJECT_PHASES[p.id] ? "· Dovolená, Nezatříděné" : isPhaselessProject(p) ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
         <button class="icon-btn" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">×</button>
       </div>
     </div>`;
@@ -4692,7 +4732,7 @@ function adminTemplate(){
         <form id="add-employee-form" style="margin-top:14px;">
           <div class="form-grid">
             <div class="field-row"><label class="field-label">Jméno</label><input type="text" name="name" required></div>
-            <div class="field-row"><label class="field-label">Heslo</label><input type="text" name="password" required></div>
+            <div class="field-row"><label class="field-label">Heslo</label><input type="password" name="password" autocomplete="new-password" required></div>
             <div class="field-row"><button class="btn btn-sage btn-small" type="submit">+ Přidat</button></div>
           </div>
           ${state.empError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.empError)}</div>` : ``}
@@ -5737,7 +5777,7 @@ function bindAdmin(){
     const projectId = b.getAttribute("data-project-id");
     const phaseId = b.getAttribute("data-phase-id");
     const project = state.config.projects.find(x => x.id === projectId);
-    if(!project || project.phaseless) return;
+    if(!project || project.phaseless || isPhaselessProject(project)) return;
     if(!project.phaseIds) project.phaseIds = [];
     const idx = project.phaseIds.indexOf(phaseId);
     if(idx === -1) project.phaseIds.push(phaseId); else project.phaseIds.splice(idx, 1);
