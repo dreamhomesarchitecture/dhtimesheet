@@ -194,6 +194,12 @@
   .emp-greet-small{ font-size:clamp(20px,3vw,28px); font-weight:600; letter-spacing:-0.01em; color:var(--soft); margin-bottom:6px; }
   .emp-greet-name{ font-size:clamp(52px,11vw,120px); color:var(--sage); overflow-wrap:normal; word-break:keep-all; }
   .emp-greet-name.long{ font-size:clamp(36px,7.5vw,84px); }
+  .emp-greet-name.proj{ font-size:clamp(34px,6.5vw,76px); line-height:1; letter-spacing:-0.03em; }
+  .emp-page .gate-card{ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-md); padding:30px 26px; max-width:420px; text-align:left; }
+  .emp-page .gate-card input{ margin:0 0 16px; max-width:none; text-align:left; }
+  .emp-page .gate-card p{ margin:6px 0 18px; }
+  .emp-page > .logout-link{ align-self:flex-start; }
+  .emp-page > .admin-block.is-open > .project-detail{ padding:0; border-top:none; margin:0; }
   .emp-fullname{ margin-top:12px; font-size:13px; font-weight:600; letter-spacing:.04em; color:var(--soft); }
   .emp-stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px; }
   .emp-stat{ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); padding:18px 20px 16px; position:relative; overflow:hidden; }
@@ -2939,9 +2945,11 @@ function pickerTemplate(){
   const emps = state.config.employees;
   if(emps.length === 0){
     return `
-      <div class="sheet">
-        <div class="eyebrow">Časové výkazy</div>
-        <div class="q-title">Zatím tu nikdo není</div>
+      <div class="sheet emp-page">
+        <div class="emp-hero">
+          <div class="eyebrow">Časové výkazy</div>
+          <h1 class="emp-greet"><span class="emp-greet-small">Zatím tu nikdo není</span><span class="emp-greet-name long">Začněme</span></h1>
+        </div>
         <div class="q-hint">Otevřete administraci a přidejte prvního člověka.</div>
         <div class="empty-state">
           Seznam zaměstnanců je prázdný.
@@ -3003,6 +3011,14 @@ function accountSettingsSection(){
     </div>`;
 }
 
+function pageHeroHtml(eyebrow, small, big){
+  return `
+      <div class="emp-hero page-hero">
+        <div class="eyebrow">${esc(eyebrow)}</div>
+        <h1 class="emp-greet"><span class="emp-greet-small">${esc(small)}</span><span class="emp-greet-name proj">${esc(big)}</span></h1>
+      </div>`;
+}
+
 function projectViewPageHtml(){
   const view = state.openProjectView;
   const project = state.config.projects.find(p => p.id === view.id);
@@ -3015,11 +3031,10 @@ function projectViewPageHtml(){
   }
   const isMine = view.kind === "my";
   return `
-    <div class="sheet">
-      <button class="logout-link" data-action="close-project-view">← Zpět na přehled</button>
-      <div class="eyebrow" style="margin-top:18px;">${isMine ? "Moje hodiny na projektu" : "Projekt"} #${esc(project.id)}</div>
-      <div class="q-title">${esc(project.id)} - ${esc(project.name)}</div>
-      <div style="margin-top:14px;">${isMine ? buildMyProjectDetail(project.id) : buildProjectDetail(project.id)}</div>
+    <div class="sheet emp-page">
+      <button class="logout-link" data-action="close-project-view" style="margin-bottom:22px;">← Zpět na přehled</button>
+      ${pageHeroHtml(isMine ? "Moje hodiny na projektu" : "Projekt", "#" + project.id, project.name)}
+      <div class="admin-block is-open">${isMine ? buildMyProjectDetail(project.id) : buildProjectDetail(project.id)}</div>
     </div>`;
 }
 
@@ -3752,11 +3767,10 @@ function paymentCalendarPageHtml(){
     </div>`;
   }
   return `
-    <div class="sheet">
-      <button class="logout-link" data-action="back-to-payment-calendar">${backLabel}</button>
-      <div class="eyebrow" style="margin-top:18px;">Platební kalendář</div>
-      <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
-      <div style="margin-top:24px;">
+    <div class="sheet emp-page">
+      <button class="logout-link" data-action="back-to-payment-calendar" style="margin-bottom:22px;">${backLabel}</button>
+      ${pageHeroHtml("Platební kalendář", "#" + p.id, p.name)}
+      <div class="admin-block is-open">
         ${buildPaymentCalendarDetail(p.id)}
       </div>
     </div>`;
@@ -4225,13 +4239,13 @@ function projectDetailPageHtml(){
   }
   const phaseIds = p.phaseIds || [];
   return `
-    <div class="sheet">
-      <button class="logout-link" data-action="back-to-projects">← Zpět na projekty</button>
-      <div class="eyebrow" style="margin-top:18px;">Projekt #${esc(p.id)}</div>
-      <div class="q-title">${esc(p.id)} - ${esc(p.name)}</div>
-      <div style="margin-top:12px;"><button type="button" class="btn btn-outline btn-small" data-action="open-payment-calendar-from-project" data-id="${esc(p.id)}">Správa plateb</button></div>
+    <div class="sheet emp-page">
+      <button class="logout-link" data-action="back-to-projects" style="margin-bottom:22px;">← Zpět na projekty</button>
+      ${pageHeroHtml("Projekt", "#" + p.id, p.name)}
+      <div style="margin:-8px 0 24px;"><button type="button" class="btn btn-outline btn-small" data-action="open-payment-calendar-from-project" data-id="${esc(p.id)}">Správa plateb</button></div>
 
-      <form id="project-modal-form" data-id="${esc(p.id)}" style="margin-top:24px;">
+      <div class="admin-block is-open">
+      <form id="project-modal-form" data-id="${esc(p.id)}">
         <div class="form-grid project-form-grid">
           <div class="field-row"><label class="field-label">Číslo projektu</label><input type="text" name="id" value="${esc(p.id)}" required></div>
           <div class="field-row"><label class="field-label">Název</label><input type="text" name="name" value="${esc(p.name)}" required></div>
@@ -4561,6 +4575,7 @@ function projectDetailPageHtml(){
           <button class="btn btn-outline" type="button" data-action="back-to-projects">Zpět</button>
         </div>
       </form>
+      </div>
     </div>`;
 }
 
@@ -4766,8 +4781,12 @@ function billingProfileCardHtml(profile, opts){
 function adminTemplate(){
   if(!state.adminUnlocked){
     return `
-      <div class="sheet">
-        <div class="gate">
+      <div class="sheet emp-page">
+        <div class="emp-hero">
+          <div class="eyebrow">Administrativa</div>
+          <h1 class="emp-greet"><span class="emp-greet-small">Správa a data</span><span class="emp-greet-name">Přihlášení</span></h1>
+        </div>
+        <div class="gate gate-card">
           <h3 style="font-size:20px;font-weight:800;">Administrace</h3>
           <p>Zadejte přístupové heslo pro správu zaměstnanců a projektů.</p>
           <input type="password" id="admin-pass-input" placeholder="Heslo">
