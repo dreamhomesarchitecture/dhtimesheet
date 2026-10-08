@@ -1078,7 +1078,7 @@ const ROW_TIMER_KEY = "dh_row_timer";
 let recTickId = null;
 function saveRowTimerStorage(){
   try{
-    if(state.rowTimer && state.currentEmployee) localStorage.setItem(ROW_TIMER_KEY, JSON.stringify({ employeeId: state.currentEmployee.id, entryId: state.rowTimer.entryId, start: state.rowTimer.start }));
+    if(state.rowTimer && state.currentEmployee) localStorage.setItem(ROW_TIMER_KEY, JSON.stringify({ employeeId: state.currentEmployee.id, entryId: state.rowTimer.entryId, start: state.rowTimer.start, autoCreated: !!state.rowTimer.autoCreated }));
     else localStorage.removeItem(ROW_TIMER_KEY);
   }catch(e){}
 }
@@ -1087,7 +1087,7 @@ function restoreRowTimer(){
     const raw = localStorage.getItem(ROW_TIMER_KEY);
     if(!raw) return;
     const d = JSON.parse(raw);
-    if(state.currentEmployee && d.employeeId === state.currentEmployee.id && state.entries.some(e => e.id === d.entryId)) state.rowTimer = { entryId: d.entryId, start: d.start };
+    if(state.currentEmployee && d.employeeId === state.currentEmployee.id && state.entries.some(e => e.id === d.entryId)) state.rowTimer = { entryId: d.entryId, start: d.start, autoCreated: !!d.autoCreated };
     else localStorage.removeItem(ROW_TIMER_KEY);
   }catch(e){}
 }
@@ -1104,6 +1104,9 @@ async function stopRowTimer(){
     await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
     state.projectTotals = null;
     state.allEntriesFlat = null;
+  } else if(idx !== -1 && t.autoCreated && !Number(state.entries[idx].hours)){
+    state.entries.splice(idx, 1);
+    await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
   }
 }
 function formSnapshot(){
@@ -1160,7 +1163,19 @@ async function startRowTimer(entryId){
     state.entryTimerStart = null;
     persistFormTimer();
   }
-  state.rowTimer = { entryId, start: Date.now() };
+  // Clicking play on a row from an earlier day starts a new entry for today (same project, phase and
+  // note) instead of adding the time to the old day; on today's rows the same entry keeps counting.
+  let targetId = entryId;
+  let autoCreated = false;
+  const source = state.entries.find(e => e.id === entryId);
+  if(source && source.date !== todayStr()){
+    const fresh = { id: uid("e"), date: todayStr(), projectId: source.projectId, phaseId: source.phaseId, hours: 0, cost: 0, note: source.note || "" };
+    state.entries.push(fresh);
+    await saveEntries(state.currentEmployee.id, state.currentEmployee.name, state.entries);
+    targetId = fresh.id;
+    autoCreated = true;
+  }
+  state.rowTimer = { entryId: targetId, start: Date.now(), autoCreated };
   saveRowTimerStorage();
   renderKeepingEntryForm();
 }
