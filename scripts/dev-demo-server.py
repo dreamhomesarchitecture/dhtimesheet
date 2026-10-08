@@ -18,7 +18,7 @@ def entry(i, month, hours, cost, project="234", phase="DSP"):
 STORE = {
     "config": json.dumps({
         "employees": [
-            {"id": "emp_anna", "name": "Anna Demo", "password": "anna", "canSeeAllHours": True, "rates": [{"id": "r1", "from": "2020-01-01", "amount": 500}]},
+            {"id": "emp_anna", "name": "Anna Demo", "password": "anna", "canSeeAllHours": True, "vacationDays": 25, "rates": [{"id": "r1", "from": "2020-01-01", "amount": 500}]},
             {"id": "emp_bara", "name": "Bara Demo", "password": "bara", "rates": [{"id": "r2", "from": "2020-01-01", "amount": 450}]},
         ],
         "projects": [
@@ -30,7 +30,7 @@ STORE = {
         "phases": [{"id": "DSP", "name": "Dokumentace pro stavební povolení"}, {"id": "I", "name": "Inženýring"}],
         "billingProfiles": [{"id": "s1", "name": "DREAM HOMES ARCHITECTURE s.r.o.", "vatRate": 21}],
     }),
-    "entries:emp_anna": json.dumps([entry(1, 1, 150, 0), entry(2, 2, 140, 200), entry(3, 3, 170, 0), entry(4, 4, 160, 1500), entry(5, 5, 168, 0), entry(6, 6, 120, 0), entry(7, 10, 12, 3000, "235")]),
+    "entries:emp_anna": json.dumps([entry(1, 1, 150, 0), entry(2, 2, 140, 200), entry(3, 3, 170, 0), entry(4, 4, 160, 1500), entry(5, 5, 168, 0), entry(6, 6, 120, 0), entry(7, 10, 12, 3000, "235"), entry(8, 8, 24, 0, "000", "DOV"), entry(9, 10, 8, 0, "000", "DOV")]),
     "entries:emp_bara": json.dumps([entry(11, 1, 100, 500), entry(12, 3, 80, 0), entry(13, 4, 120, 0), entry(14, 10, 40, 250, "235")]),
     "costs": json.dumps([
         {"id": "k1", "date": "2026-10-02", "projectId": "234", "phaseId": "DSP", "amount": 1200, "paymentMethod": "hotově", "note": "Tisk dokumentace"},
