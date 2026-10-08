@@ -321,6 +321,21 @@
   .landing-hero-wrap{ grid-column:1; grid-row:1; align-self:center; min-width:0; container-type:inline-size; }
   .landing-hero{ margin:0; font-weight:900; font-size:clamp(40px, 10vw, 150px); font-size:min(17.2cqw, 19vh, 220px); line-height:.9; letter-spacing:-0.045em; color:var(--ink); overflow-wrap:normal; word-break:keep-all; hyphens:none; }
   .landing-hero em{ font-style:normal; color:var(--sage); }
+  .landing-clock{ grid-column:2; grid-row:1; align-self:start; justify-self:end; width:min(100%, 140px); color:var(--sage); }
+  .landing-clock svg{ width:100%; height:auto; display:block; overflow:visible; }
+  .clock-ring, .clock-hand{ fill:none; stroke:currentColor; stroke-width:6.5; stroke-linecap:round; }
+  .clock-dot{ fill:currentColor; }
+  .clock-anim .clock-ring{ stroke-dasharray:1; stroke-dashoffset:1; animation:clockDraw 1.9s cubic-bezier(.6,0,.3,1) calc(.25s - var(--clock-t, 0s)) both; }
+  .clock-anim .clock-hand-min{ stroke-dasharray:1; stroke-dashoffset:1; animation:clockDraw .55s ease-out calc(2s - var(--clock-t, 0s)) both; }
+  .clock-anim .clock-hand-hr{ stroke-dasharray:1; stroke-dashoffset:1; animation:clockDraw .55s ease-out calc(2.4s - var(--clock-t, 0s)) both; }
+  .clock-anim .clock-dot{ transform-box:fill-box; transform-origin:center; animation:clockPop .4s ease-out calc(.05s - var(--clock-t, 0s)) both; }
+  @keyframes clockDraw{ 0%{ stroke-dashoffset:1; opacity:0; } 1%{ opacity:1; } 100%{ stroke-dashoffset:0; opacity:1; } }
+  @keyframes clockPop{ 0%{ transform:scale(0); } 100%{ transform:scale(1); } }
+  .clock-spin{ transform-origin:100px 100px; }
+  .clock-spin-min{ animation:clockSpin 10s linear infinite; animation-delay:calc(2.55s - var(--clock-t, 0s)); }
+  .clock-spin-hr{ animation:clockSpin 120s linear infinite; animation-delay:calc(2.95s - var(--clock-t, 0s)); }
+  @keyframes clockSpin{ to{ transform:rotate(360deg); } }
+  @media (prefers-reduced-motion:reduce){ .clock-anim .clock-ring, .clock-anim .clock-hand, .clock-anim .clock-dot, .clock-spin{ animation:none; stroke-dashoffset:0; } }
   .landing-login{ grid-column:2; grid-row:1; align-self:end; width:100%; max-width:340px; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-md); padding:20px 22px 22px; box-shadow:var(--shadow-md); }
   .landing-login .login-title{ font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-bottom:4px; }
   .landing-login .login-hint{ color:var(--soft); font-size:13px; margin-bottom:12px; }
@@ -337,6 +352,21 @@
     .landing{ grid-template-columns:1fr; min-height:0; }
     .landing-hero{ font-size:clamp(40px, 12vw, 150px); font-size:17.2cqw; }
     .landing-login{ grid-column:1; grid-row:auto; }
+    .landing-clock{ grid-column:1; grid-row:auto; justify-self:start; width:42px; margin-bottom:-6px; }
+  }
+  .follow-us{ display:flex; align-items:center; justify-content:center; gap:22px; margin-top:56px; padding-top:22px; border-top:1px solid var(--line); color:var(--ink); }
+  .follow-us-label{ font-weight:800; font-size:15px; letter-spacing:-0.01em; }
+  .follow-us-line{ width:60px; height:1px; background:var(--ink); }
+  .follow-us-icons{ display:flex; align-items:center; gap:22px; }
+  .follow-us a{ color:var(--ink); display:flex; opacity:.9; transition:opacity .15s, transform .15s; }
+  .follow-us a:hover{ opacity:1; transform:scale(1.12); color:var(--sage); }
+  .follow-us svg{ width:24px; height:24px; display:block; }
+  @media (min-width:1500px){
+    .follow-us{ position:fixed; right:22px; top:50%; transform:translateY(-50%); flex-direction:column; gap:0; margin:0; padding:0; border:0; z-index:40; }
+    .follow-us-label{ writing-mode:vertical-rl; transform:rotate(180deg); font-size:22px; margin-bottom:12px; }
+    .follow-us-line{ width:1px; height:110px; margin-bottom:26px; }
+    .follow-us-icons{ flex-direction:column; gap:26px; }
+    .follow-us svg{ width:26px; height:26px; }
   }
   .pw-wrap{ position:relative; display:block; width:100%; }
   .pw-wrap input{ width:100%; }
@@ -2533,6 +2563,7 @@ function render(){
       </div>
     </div>
     <div id="tab-content"></div>
+    ${followUsHtml()}
   `;
   document.querySelectorAll(".nav-links button").forEach(b => b.onclick = () => {
     setState({ tab: b.getAttribute("data-tab") });
@@ -2551,6 +2582,43 @@ function render(){
   enhancePasswordFields();
 }
 
+const FOLLOW_US_LINKS = [
+  { label: "Facebook", href: "https://www.facebook.com/DH.DreamHomes/?ref=bookmarks",
+    svg: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 8.5V6.9c0-.8.2-1.2 1.3-1.2H17V2.2C16.7 2.1 15.7 2 14.5 2 12 2 10.3 3.5 10.3 6.3v2.2H7.5V12h2.8v10h3.7V12h2.8l.5-3.5H14z"/></svg>` },
+  { label: "Instagram", href: "https://www.instagram.com/dreamhomes_cz/",
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.6" cy="6.4" r=".6" fill="currentColor"/></svg>` },
+  { label: "Pinterest", href: "https://cz.pinterest.com/dreamhomescz/our-work/",
+    svg: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.5C6.2 1.5 3 5.4 3 9.6c0 2 1.1 4.4 2.8 5.2.3.1.4 0 .5-.3l.4-1.7c.1-.2 0-.3-.1-.5-.6-.7-1-1.7-1-2.8 0-2.8 2.1-5.3 5.5-5.3 3 0 4.7 1.8 4.7 4.3 0 3.2-1.4 5.9-3.5 5.9-1.1 0-2-.9-1.7-2.1.3-1.4 1-2.8 1-3.8 0-.9-.5-1.600-1.500-1.600-1.200 0-2.100 1.200-2.100 2.900 0 1 .4 1.800.4 1.800l-1.400 5.900c-.4 1.700-.1 3.800 0 4 0 .1.200.2.300.100.100-.1 1.900-2.400 2.500-4.600l1-3.800c.5 1 2 1.700 3.500 1.700 4.600 0 7.700-4.200 7.700-9.800C21.500 5.100 17.800 1.500 12 1.500z"/></svg>` },
+  { label: "E-mail", href: "mailto:kamil.plavec@dreamhomes.cz",
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="1"/><path d="M2.5 5.5l9.5 7.500 9.500-7.500M2.5 18.500l7-6.500M21.500 18.500l-7-6.500"/></svg>` },
+  { label: "Mapa", href: "https://www.google.com/maps/place/Erbenova+39,+586+01+Jihlava/@49.400272,15.5746893,17z/data=!3m1!4b1!4m5!3m4!1s0x470d1a46a31f1059:0xf837485d8baeb31!8m2!3d49.400272!4d15.5746893",
+    svg: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 1.5a7.500 7.500 0 0 0-7.500 7.500c0 5.200 7.500 13.500 7.500 13.500S19.500 14.200 19.500 9A7.500 7.500 0 0 0 12 1.500zm0 10.500a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>` }
+];
+let landingClockStart = null;
+function landingClockHtml(){
+  if(landingClockStart === null) landingClockStart = Date.now();
+  const elapsed = (Date.now() - landingClockStart) / 1000;
+  const animate = elapsed < 3.6;
+  return `
+    <div class="landing-clock ${animate ? "clock-anim" : ""}" style="--clock-t:${elapsed.toFixed(2)}s" aria-hidden="true">
+      <svg viewBox="0 0 200 200">
+        <path class="clock-ring" pathLength="1" d="M175.8 125.7 A80 80 0 1 1 179.95 97.2"/>
+        <g class="clock-spin clock-spin-min"><path class="clock-hand clock-hand-min" pathLength="1" d="M100 100 V43"/></g>
+        <g class="clock-spin clock-spin-hr"><path class="clock-hand clock-hand-hr" pathLength="1" d="M100 100 L136 133"/></g>
+        <circle class="clock-dot" cx="175.8" cy="125.7" r="8"/>
+      </svg>
+    </div>`;
+}
+function followUsHtml(){
+  return `
+    <div class="follow-us" aria-label="Sledujte nás">
+      <span class="follow-us-label">follow us</span>
+      <span class="follow-us-line"></span>
+      <div class="follow-us-icons">
+        ${FOLLOW_US_LINKS.map(l => `<a href="${esc(l.href)}" target="_blank" rel="noopener noreferrer" title="${esc(l.label)}" aria-label="${esc(l.label)}">${l.svg}</a>`).join("")}
+      </div>
+    </div>`;
+}
 const PW_EYE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const PW_EYE_OFF_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.1 9.1 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>`;
 function enhancePasswordFields(){
@@ -2855,6 +2923,7 @@ function pickerTemplate(){
 
   return `
     <div class="sheet landing">
+      ${landingClockHtml()}
       <div class="landing-hero-wrap"><h1 class="landing-hero">Dobré výsledky začínají <em>přehledem.</em></h1></div>
       <div class="landing-bottom">
         <div class="landing-login">
