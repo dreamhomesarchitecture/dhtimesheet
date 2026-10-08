@@ -97,8 +97,9 @@
   .nav-links button[data-tab="admin"].active{ border-color: var(--tan); }
   .theme-toggle-btn{
     background:none; border:none; cursor:pointer; color:var(--soft);
-    font-size:17px; line-height:1; padding:4px; transition:color .18s;
+    font-size:17px; line-height:1; padding:4px; transition:color .18s, transform .18s; display:inline-flex; align-items:center;
   }
+  .theme-toggle-btn:hover{ transform:scale(1.1); }
   .theme-toggle-btn:hover{ color:var(--ink); }
   .admin-subnav{ display:flex; gap:26px; margin-bottom:32px; border-bottom:1px solid var(--line); }
   .admin-subnav button{
@@ -186,6 +187,43 @@
   .admin-block-title{ font-weight:700; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
   .admin-block-title span:first-child{ color: var(--ink); }
 
+  /* ---- Employee page (po přihlášení) ---- */
+  .emp-hero{ margin-bottom:30px; }
+  .emp-hero .eyebrow{ margin-bottom:14px; }
+  .emp-greet{ margin:0; font-weight:900; letter-spacing:-0.035em; line-height:.98; display:flex; flex-direction:column; }
+  .emp-greet-small{ font-size:clamp(20px,3vw,28px); font-weight:600; letter-spacing:-0.01em; color:var(--soft); margin-bottom:6px; }
+  .emp-greet-name{ font-size:clamp(52px,11vw,120px); color:var(--sage); overflow-wrap:normal; word-break:keep-all; }
+  .emp-fullname{ margin-top:12px; font-size:13px; font-weight:600; letter-spacing:.04em; color:var(--soft); }
+  .emp-stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px; }
+  .emp-stat{ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); padding:18px 20px 16px; position:relative; overflow:hidden; }
+  .emp-stat::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--line); }
+  .emp-stat.has::before{ background:var(--sage); }
+  .emp-stat-label{ font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin-bottom:8px; }
+  .emp-stat-value{ font-size:clamp(24px,3.4vw,34px); font-weight:800; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; }
+  :is(.emp-page,.adm-page) .admin-block{ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); padding:22px 26px; margin-bottom:16px; transition:box-shadow .2s, transform .2s, border-color .2s; }
+  :is(.emp-page,.adm-page) .admin-block:not(.is-open){ padding-top:20px; padding-bottom:20px; }
+  :is(.emp-page,.adm-page) .admin-block:not(.is-open):hover{ box-shadow:var(--shadow-md); transform:translateY(-2px); border-color:var(--sage); }
+  :is(.emp-page,.adm-page) .admin-block:not(.is-open) .admin-block-title{ margin-bottom:0; padding-bottom:0; border-bottom:none; }
+  :is(.emp-page,.adm-page) .admin-block-title{ font-size:13px; letter-spacing:.16em; margin-bottom:20px; padding-bottom:16px; }
+  :is(.emp-page,.adm-page) .admin-block-title > span:first-child{ flex:1; padding:2px 0; }
+  :is(.emp-page,.adm-page) .admin-block-title > span:first-child > span:first-child{ width:22px !important; height:22px; border-radius:50%; background:var(--sage-tint); color:var(--ink); display:inline-flex !important; align-items:center; justify-content:center; font-size:11px; }
+  .emp-page .emp-main{ border-color:var(--sage); box-shadow:var(--shadow-md); }
+  :is(.emp-projects-grid,.adm-grid){ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-bottom:0; }
+  :is(.emp-projects-grid,.adm-grid) .admin-block{ margin-bottom:0; min-width:0; }
+  :is(.emp-projects-grid,.adm-grid) .admin-block.is-open{ grid-column:1 / -1; }
+  .emp-page > .admin-block:last-child{ margin-top:16px; }
+  @media (max-width:640px){
+    .emp-stats{ grid-template-columns:1fr; gap:10px; }
+    .emp-stat{ display:flex; align-items:baseline; justify-content:space-between; padding:14px 16px; }
+    .emp-stat-label{ margin-bottom:0; }
+    :is(.emp-projects-grid,.adm-grid){ grid-template-columns:minmax(0,1fr); }
+    :is(.emp-page,.adm-page) .admin-block{ padding:18px 16px; border-radius:var(--radius-md); overflow-x:auto; }
+  }
+  .adm-page .admin-subnav{ align-self:flex-start; display:inline-flex; gap:4px; padding:4px; margin-bottom:26px; border:1px solid var(--line); border-radius:999px; background:var(--sage-tint); }
+  .adm-page .admin-subnav button{ padding:9px 22px; margin:0; border:none; border-radius:999px; font-size:12px; }
+  .adm-page .admin-subnav button.active{ background:var(--paper); color:var(--ink); box-shadow:var(--shadow-sm); }
+  .adm-page .emp-stats{ margin-bottom:22px; }
+
   .resp-item{ border:1px solid var(--line); border-radius: var(--radius-md); padding:16px 20px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--paper); transition:box-shadow .2s; }
   .resp-item:hover{ box-shadow: var(--shadow-sm); }
   .resp-item .meta{ font-size:12.5px; color:var(--soft); }
@@ -269,6 +307,9 @@
   .entry-form-row .w-btn .btn{ padding:10px 22px; white-space:nowrap; }
   .icon-btn{ background:none; border:1px solid var(--line); border-radius:9px; width:29px; height:29px; cursor:pointer; font-size:13px; color:var(--soft); line-height:1; flex:none; transition: all .15s; }
   .icon-btn:hover{ border-color:var(--ink); color:var(--ink); background:var(--sage-tint); }
+  .icon-btn svg{ display:block; margin:auto; }
+  .icon-btn-del:hover{ border-color:var(--danger); color:var(--danger); background:rgba(179,56,44,.09); }
+  .btn-with-icon{ display:inline-flex; align-items:center; gap:7px; }
   .icon-btn:disabled{ opacity:.35; cursor:not-allowed; background:none; }
 
   .btn{ font-family:'DM Sans', sans-serif; font-weight:700; font-size:14px; border-radius:999px; padding:13px 26px; cursor:pointer; border:1.5px solid var(--ink); transition: transform .15s, box-shadow .15s, opacity .15s; }
@@ -754,7 +795,6 @@ let state = {
   hoursOverviewYear: "",
   hoursOverviewEmployeeId: "",
   monthChartMetric: "hours",
-  monthChartAvg: true,
   costs: null,
   costsLoading: false,
   editingCostId: null,
@@ -1064,6 +1104,7 @@ function readRememberedLogin(){
   }catch(e){ return null; }
 }
 function initials(name){ return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
+const ICON_TRASH = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6l1 14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-14M10 11v6M14 11v6"/></svg>`;
 function fmtH(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:2}) + " h"; }
 function fmtHShort(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:1}); }
 function fmtKc(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:0}) + " Kč"; }
@@ -2555,7 +2596,7 @@ function render(){
       <div class="brand" id="home-btn" role="button" tabindex="0" aria-label="Domů"><img src="${BRAND_LOGO}" alt="${esc(BRAND_MARK)}"></div>
       <div class="topbar-right">
         ${state.currentEmployee && state.tab==="app" ? `<button class="logout-link" id="logout-btn">Odhlásit</button>` : ``}
-        <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Přepnout noční režim" aria-label="Přepnout noční režim">${currentTheme()==="dark" ? "☀" : "🌙"}</button>
+        <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Přepnout noční režim" aria-label="Přepnout noční režim"><svg viewBox="0 0 24 24" width="20" height="20" stroke="var(--sage)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" fill="${currentTheme()==="dark" ? "var(--sage)" : "none"}" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
         <div class="nav-links">
           <button data-tab="app" class="${state.tab==="app"?"active":""}">Výkazy</button>
           <button data-tab="admin" class="${state.tab==="admin"?"active":""}">Administrativa</button>
@@ -2792,7 +2833,7 @@ function buildMyProjectDetail(projectId){
           <span class="entry-num">${fmtKc(e.cost)}</span>
           <span class="entry-note">${esc(e.note||"")}</span>
           <button class="icon-btn" data-action="edit-entry" data-id="${esc(e.id)}" title="Upravit">✎</button>
-          <button class="icon-btn" data-action="delete-entry" data-id="${esc(e.id)}" title="Smazat">×</button>
+          <button class="icon-btn icon-btn-del" data-action="delete-entry" data-id="${esc(e.id)}" title="Smazat">${ICON_TRASH}</button>
         </div>`).join("");
     return `
       <div class="phase-block">
@@ -2838,7 +2879,7 @@ function allProjectsSection(){
   }).join("");
 
   return `
-    <div class="admin-block">
+    <div class="admin-block${isOpen ? " is-open" : ""}">
       <div class="admin-block-title">
         <span data-action="toggle-all-projects-section" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
           <span style="display:inline-block;width:10px;">${isOpen ? "▾" : "▸"}</span>Všechny projekty${projects.length ? ` (${projects.length})` : ""}
@@ -2872,7 +2913,7 @@ function myProjectsSection(){
   }).join("");
 
   return `
-    <div class="admin-block">
+    <div class="admin-block${isOpen ? " is-open" : ""}">
       <div class="admin-block-title">
         <span data-action="toggle-my-projects-section" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
           <span style="display:inline-block;width:10px;">${isOpen ? "▾" : "▸"}</span>Moje projekty${projects.length ? ` (${projects.length})` : ""}
@@ -2941,7 +2982,7 @@ function pickerTemplate(){
 function accountSettingsSection(){
   const isOpen = state.showAccountSettings;
   return `
-    <div class="admin-block">
+    <div class="admin-block${isOpen ? " is-open" : ""}">
       <div class="admin-block-title">
         <span data-action="toggle-account-settings" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
           <span style="display:inline-block;width:10px;">${isOpen ? "▾" : "▸"}</span>Nastavení
@@ -3057,7 +3098,7 @@ function timesheetTemplate(){
           <span class="entry-note">${esc(e.note||"")}</span>
           <button class="icon-btn" data-action="edit-entry" data-id="${esc(e.id)}" title="Upravit">✎</button>
           <button class="icon-btn" data-action="copy-entry" data-id="${esc(e.id)}" title="Zkopírovat s dnešním datem">⎘</button>
-          <button class="icon-btn" data-action="delete-entry" data-id="${esc(e.id)}" title="Smazat">×</button>
+          <button class="icon-btn icon-btn-del" data-action="delete-entry" data-id="${esc(e.id)}" title="Smazat">${ICON_TRASH}</button>
         </div>`;
       }).join("");
       })()}
@@ -3125,23 +3166,43 @@ function timesheetTemplate(){
       ${rows}
   `;
 
+  const today = todayStr();
+  const todayH = state.entries.filter(e => e.date === today).reduce((a,e)=>a+Number(e.hours||0),0);
+  const yearH = yearEntries.reduce((a,e)=>a+Number(e.hours||0),0);
+  const firstName = String(emp.name || "").trim().split(/\s+/)[0] || "";
+  const statTile = (label, value, cls) => `
+        <div class="emp-stat ${cls || ""}">
+          <div class="emp-stat-label">${label}</div>
+          <div class="emp-stat-value">${value}</div>
+        </div>`;
+
   return `
-    <div class="sheet">
-      <div class="eyebrow">Výkaz práce</div>
-      <div class="q-title">${esc(emp.name)}</div>
-      ${recChipHtml()}
+    <div class="sheet emp-page">
+      <div class="emp-hero">
+        <div class="eyebrow">Výkaz práce</div>
+        <h1 class="emp-greet"><span class="emp-greet-small">Dobrý den,</span><span class="emp-greet-name">${esc(firstName)}</span></h1>
+        <div class="emp-fullname">${esc(emp.name)}</div>
+        ${recChipHtml()}
+      </div>
 
-      ${allProjectsSection()}
+      <div class="emp-stats">
+        ${statTile("Dnes", fmtH(todayH), todayH ? "has" : "")}
+        ${statTile("Měsíc · " + esc(fmtMonthLabel(state.month)), fmtH(totalH), totalH ? "has" : "")}
+        ${statTile("Rok " + esc(currentYear), fmtH(yearH), yearH ? "has" : "")}
+      </div>
 
-      ${myProjectsSection()}
-
-      <div class="admin-block">
+      <div class="admin-block emp-main${timesheetOpen ? " is-open" : ""}">
         <div class="admin-block-title">
           <span data-action="toggle-timesheet-section" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
             <span style="display:inline-block;width:10px;">${timesheetOpen ? "▾" : "▸"}</span>Výkaz
           </span>
         </div>
         ${timesheetOpen ? timesheetBody : ``}
+      </div>
+
+      <div class="emp-projects-grid">
+        ${allProjectsSection()}
+        ${myProjectsSection()}
       </div>
 
       ${accountSettingsSection()}
@@ -3366,7 +3427,6 @@ function monthChartHtml(o){
           <button type="button" data-action="set-month-chart-metric" data-metric="hours" class="${isCost ? "" : "active"}">Hodiny</button>
           <button type="button" data-action="set-month-chart-metric" data-metric="cost" class="${isCost ? "active" : ""}">Náklady</button>
         </span>
-        <label><input type="checkbox" id="month-chart-avg" ${o.showAvg ? "checked" : ""}> Průměr</label>
       </div>
       <div class="mchart-legend"><span><i style="background:var(--sage);"></i>Projektové (bez 000)</span><span><i style="background:var(--tan);"></i>000 (DH)</span></div>
       <p class="mchart-summary">Celkem <b>${esc(fmt(total))}</b> (projektové <b>${esc(fmt(totalProj))}</b> · 000 <b>${esc(fmt(total0))}</b>) · průměr <b>${esc(fmt(avg))}</b>/měsíc${maxIdx >= 0 ? ` · nejvíc <b>${esc(fmt(max))}</b> (${CHART_MONTHS_SHORT[maxIdx]})` : ``}</p>
@@ -3394,9 +3454,6 @@ function bindMonthChartEvents(){
     const btn = e.target.closest && e.target.closest('[data-action="set-month-chart-metric"]');
     if(btn) setState({ monthChartMetric: btn.getAttribute("data-metric") });
   });
-  document.addEventListener("change", e => {
-    if(e.target && e.target.id === "month-chart-avg") setState({ monthChartAvg: e.target.checked });
-  });
 }
 
 function buildYearOverview(year, valuesByMonthNum, yearTotal, currentMonthNum, values000ByMonthNum){
@@ -3415,7 +3472,7 @@ function buildYearOverview(year, valuesByMonthNum, yearTotal, currentMonthNum, v
         <span class="year-label">${year} <span class="year-total">· ${isCost ? fmtKc(yearTotal) : fmtH(yearTotal)} celkem</span></span>
         <button class="icon-btn" data-action="year-next" type="button">›</button>
       </div>
-      ${monthChartHtml({ year, values, values000, metric: state.monthChartMetric, selected: currentMonthNum, jump: true, showAvg: state.monthChartAvg })}
+      ${monthChartHtml({ year, values, values000, metric: state.monthChartMetric, selected: currentMonthNum, jump: true, showAvg: true })}
     </div>`;
 }
 
@@ -3568,7 +3625,7 @@ function buildPaymentCalendarDetail(projectId){
         <input type="number" min="0" step="1" class="payment-amount-input" placeholder="Kč" style="flex:0 0 auto;width:120px;padding:6px 8px;font-size:13px;" value="${esc(pay.amount)}">
         <input type="date" class="payment-date-input" style="flex:0 0 auto;width:160px;padding:6px 8px;font-size:13px;" value="${esc(pay.date||"")}">
         <input type="text" class="payment-note-input" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;" value="${esc(pay.note||"")}">
-        <button type="button" class="icon-btn" data-action="delete-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" data-payment-id="${esc(pay.id)}" title="Smazat platbu">×</button>
+        <button type="button" class="icon-btn icon-btn-del" data-action="delete-payment" data-project-id="${esc(p.id)}" data-phase-id="${esc(r.phaseId)}" data-item-id="${itemKey}" data-payment-id="${esc(pay.id)}" title="Smazat platbu">${ICON_TRASH}</button>
       </div>`;
     }).join("");
     return `
@@ -3737,7 +3794,7 @@ function adminCostsTemplate(){
       <span class="entry-num">${fmtKc(c.amount)}</span>
       <span class="entry-note">${esc(c.note||"")}</span>
       <button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
-      <button class="icon-btn" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">×</button>
+      <button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>
     </div>`;
   }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
@@ -3934,7 +3991,7 @@ function adminClientExportTemplate(){
       ${extraCosts.length ? extraCosts.map(item => `
         <div class="admin-project-head" style="margin-bottom:8px;">
           <span class="grow">${esc(item.description)}</span>${clientExportAmountInputHtml(item.id, item.amount)}
-          <button type="button" class="icon-btn" data-action="delete-client-export-extra" data-id="${esc(item.id)}" title="Smazat">×</button>
+          <button type="button" class="icon-btn icon-btn-del" data-action="delete-client-export-extra" data-id="${esc(item.id)}" title="Smazat">${ICON_TRASH}</button>
         </div>`).join("") : `<div class="q-hint" style="margin:0 0 10px;">Zatím žádné ostatní náklady.</div>`}
       <div class="form-grid" style="margin-top:10px;">
         <div class="field-row grow"><label class="field-label">Popis</label><input type="text" id="client-export-extra-desc" placeholder="např. Tisk dokumentace"></div>
@@ -4282,7 +4339,7 @@ function projectDetailPageHtml(){
                   <div class="admin-project-head" data-budget-item-row="${esc(it.id)}" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" style="margin-bottom:6px;">
                     <input type="text" class="budget-item-label grow" placeholder="Položka (např. Dodatek č. 1)" style="padding:6px 8px;font-size:13px;" value="${esc(it.label || "")}">
                     <input type="number" step="1" class="budget-item-amount" placeholder="Kč" style="width:120px;padding:6px 8px;font-size:13px;" value="${esc(it.amount)}">
-                    <button type="button" class="icon-btn" data-action="delete-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" data-item-id="${esc(it.id)}" title="Smazat položku">×</button>
+                    <button type="button" class="icon-btn icon-btn-del" data-action="delete-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" data-item-id="${esc(it.id)}" title="Smazat položku">${ICON_TRASH}</button>
                   </div>`).join("")}
                 <button type="button" class="btn btn-outline btn-small" data-action="add-budget-item" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">+ Přidat položku</button>
               </div>
@@ -4635,7 +4692,7 @@ function adminHoursOverviewTemplate(){
       if(e.projectId === "000") chartValues000[mi] += Number(e[chartField] || 0);
     }
   });
-  const chartHtml = monthChartHtml({ year: selectedYear, values: chartValues, values000: chartValues000, metric: state.monthChartMetric, selected: "", jump: false, showAvg: state.monthChartAvg });
+  const chartHtml = monthChartHtml({ year: selectedYear, values: chartValues, values000: chartValues000, metric: state.monthChartMetric, selected: "", jump: false, showAvg: true });
 
   return `
     <div class="form-grid" style="max-width:520px;margin-bottom:16px;">
@@ -4699,7 +4756,7 @@ function billingProfileCardHtml(profile, opts){
         <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
         ${opts.showVatRate ? `<div class="field-row"><label class="field-label">DPH (%)</label><input type="number" min="0" max="100" step="0.1" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="vatRate" value="${esc(profile.vatRate || 0)}"></div>` : ``}
       </div>
-      <div style="margin-top:10px;"><button type="button" class="icon-btn" data-action="${deleteAction}" ${extraAttrs} data-id="${esc(profile.id)}" title="Smazat profil">× Smazat profil</button></div>
+      <div style="margin-top:10px;"><button type="button" class="btn btn-danger btn-small btn-with-icon" data-action="${deleteAction}" ${extraAttrs} data-id="${esc(profile.id)}" title="Smazat profil">${ICON_TRASH}Smazat profil</button></div>
     </div>`;
 }
 
@@ -4743,7 +4800,7 @@ function adminTemplate(){
       return `
       <div class="phase-employee-row">
         <span>${esc(r.from)} – ${r.to ? esc(r.to) : "dosud"}</span>
-        <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit" style="margin-left:6px;">✎</button> <button class="icon-btn" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">×</button></span>
+        <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit" style="margin-left:6px;">✎</button> <button class="icon-btn icon-btn-del" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">${ICON_TRASH}</button></span>
       </div>`;
     }).join("") : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
     return `
@@ -4756,7 +4813,7 @@ function adminTemplate(){
           vidí hodiny všech
         </label>
         <button class="icon-btn" data-action="wipe-employee-data" data-id="${esc(e.id)}" title="Smazat všechna data zaměstnance">↺</button>
-        <button class="icon-btn" data-action="delete-employee" data-id="${esc(e.id)}" title="Smazat zaměstnance">×</button>
+        <button class="icon-btn icon-btn-del" data-action="delete-employee" data-id="${esc(e.id)}" title="Smazat zaměstnance">${ICON_TRASH}</button>
       </div>
       ${ratesOpen ? `
       <div class="phase-picker-wrap">
@@ -4783,7 +4840,7 @@ function adminTemplate(){
     <div class="admin-project-item">
       <div class="admin-project-head" data-action="open-project-page" data-id="${esc(p.id)}" style="cursor:pointer;">
         <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${FIXED_PROJECT_PHASES[p.id] ? "· Nezatříděné, Dovolená" : isPhaselessProject(p) ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
-        <button class="icon-btn" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">×</button>
+        <button class="icon-btn icon-btn-del" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">${ICON_TRASH}</button>
       </div>
     </div>`;
   }).join("") || `<div class="empty-state">Zatím žádné projekty.</div>`;
@@ -4791,55 +4848,68 @@ function adminTemplate(){
   const phaseRows = state.config.phases.map(p => `
     <div class="resp-item">
       <div><span class="entry-phase">${esc(p.id)}</span> ${esc(p.name)}</div>
-      <button class="icon-btn" data-action="delete-phase" data-id="${esc(p.id)}" title="Smazat">×</button>
+      <button class="icon-btn icon-btn-del" data-action="delete-phase" data-id="${esc(p.id)}" title="Smazat">${ICON_TRASH}</button>
     </div>`).join("") || `<div class="empty-state">Zatím žádné fáze.</div>`;
 
   return `
-    <div class="sheet">
+    <div class="sheet adm-page">
+      <div class="emp-hero">
+        <div class="eyebrow">Administrativa</div>
+        <h1 class="emp-greet"><span class="emp-greet-small">Správa a data</span><span class="emp-greet-name">${state.adminSubTab === "reports" ? "Přehledy" : "Nastavení"}</span></h1>
+      </div>
+      ${state.adminSubTab === "settings" ? `
+      <div class="emp-stats">
+        <div class="emp-stat has"><div class="emp-stat-label">Zaměstnanci</div><div class="emp-stat-value">${state.config.employees.length}</div></div>
+        <div class="emp-stat has"><div class="emp-stat-label">Projekty</div><div class="emp-stat-value">${state.config.projects.length}</div></div>
+        <div class="emp-stat has"><div class="emp-stat-label">Fáze</div><div class="emp-stat-value">${state.config.phases.length}</div></div>
+      </div>` : ``}
       <div class="admin-subnav">
         <button type="button" data-action="switch-admin-subtab" data-subtab="settings" class="${state.adminSubTab === "settings" ? "active" : ""}">Nastavení</button>
         <button type="button" data-action="switch-admin-subtab" data-subtab="reports" class="${state.adminSubTab === "reports" ? "active" : ""}">Přehledy</button>
       </div>
 
       ${state.adminSubTab === "reports" ? `
-      <div class="admin-block">
+      <div class="adm-grid">
+      <div class="admin-block${state.adminOpenSection === "project-overview" ? " is-open" : ""}">
         ${adminSectionHeader("project-overview", "Přehled projektů")}
         ${state.adminOpenSection === "project-overview" ? adminProjectsOverviewTemplate() : ""}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "hours-overview" ? " is-open" : ""}">
         ${adminSectionHeader("hours-overview", "Přehled hodin")}
         ${state.adminOpenSection === "hours-overview" ? adminHoursOverviewTemplate() : ""}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "project-costs" ? " is-open" : ""}">
         ${adminSectionHeader("project-costs", "Náklady projektů")}
         ${state.adminOpenSection === "project-costs" ? adminCostsTemplate() : ""}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "payment-calendar" ? " is-open" : ""}">
         ${adminSectionHeader("payment-calendar", "Platební kalendář")}
         ${state.adminOpenSection === "payment-calendar" ? adminPaymentCalendarTemplate() : ""}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "records-filter" ? " is-open" : ""}">
         ${adminSectionHeader("records-filter", "Filtr záznamů")}
         ${state.adminOpenSection === "records-filter" ? adminRecordsTemplate() : ""}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "closed-projects" ? " is-open" : ""}">
         ${adminSectionHeader("closed-projects", "Uzavřené projekty")}
         ${state.adminOpenSection === "closed-projects" ? adminClosedProjectsTemplate() : ""}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "client-export" ? " is-open" : ""}">
         ${adminSectionHeader("client-export", "Export pro klienty")}
         ${state.adminOpenSection === "client-export" ? adminClientExportTemplate() : ""}
+      </div>
       </div>
       ` : ``}
 
       ${state.adminSubTab === "settings" ? `
-      <div class="admin-block">
+      <div class="adm-grid">
+      <div class="admin-block${state.adminOpenSection === "employees" ? " is-open" : ""}">
         ${adminSectionHeader("employees", `Zaměstnanci (${state.config.employees.length})`)}
         ${state.adminOpenSection === "employees" ? `
         ${empRows}
@@ -4854,7 +4924,7 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "projects" ? " is-open" : ""}">
         ${adminSectionHeader("projects", `Projekty (${state.config.projects.length})`)}
         ${state.adminOpenSection === "projects" ? `
         ${projRows}
@@ -4877,12 +4947,12 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "budgets" ? " is-open" : ""}">
         ${adminSectionHeader("budgets", "Rozpočty")}
         ${state.adminOpenSection === "budgets" ? adminBudgetsTemplate() : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "phases" ? " is-open" : ""}">
         ${adminSectionHeader("phases", `Fáze (${state.config.phases.length})`)}
         ${state.adminOpenSection === "phases" ? `
         ${phaseRows}
@@ -4897,7 +4967,7 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "import" ? " is-open" : ""}">
         ${adminSectionHeader("import", "Import")}
         ${state.adminOpenSection === "import" ? `
         <p class="q-hint" style="margin:0 0 14px;"><b style="color:var(--ink);">Import výkazů</b> — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka, Hodiny, Náklady — stejný formát, jaký jste posílal/a pro import Viktora. Neznámé projekty se přeskočí a nahlásí, žádná data se tím nepřepíšou.</p>
@@ -4924,7 +4994,7 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "export" ? " is-open" : ""}">
         ${adminSectionHeader("export", "Export")}
         ${state.adminOpenSection === "export" ? `
         <p class="q-hint" style="margin:0 0 8px;">Stáhne kompletní zálohu všech dat (zaměstnanci, projekty, fáze, všechny výkazy) do jednoho JSON souboru.</p>
@@ -4938,7 +5008,7 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "billing-profiles" ? " is-open" : ""}">
         ${adminSectionHeader("billing-profiles", `Fakturační údaje (${(state.config.billingProfiles || []).length})`)}
         ${state.adminOpenSection === "billing-profiles" ? `
         <p class="q-hint" style="margin:0 0 14px;">Vaše fakturační profily (max. 3) — výběr, který se použije při vystavení faktury, doplníme později.</p>
@@ -4947,7 +5017,7 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block">
+      <div class="admin-block${state.adminOpenSection === "security" ? " is-open" : ""}">
         ${adminSectionHeader("security", "Zabezpečení")}
         ${state.adminOpenSection === "security" ? `
         <p class="q-hint" style="margin:0 0 8px;">Admin heslo se ze bezpečnostních důvodů nastavuje mimo appku — v nastavení projektu na Vercelu (Environment Variables → <b style="color:var(--ink);">ADMIN_PASSWORD</b>) a po uložení stačí projekt znovu nasadit.</p>
@@ -4958,6 +5028,7 @@ function adminTemplate(){
         <p class="q-hint" style="margin:20px 0 8px;">Smaže všechny zaměstnance, projekty, fáze i jejich výkazy. Nevratné.</p>
         <button class="btn btn-danger btn-small" id="reset-app-btn">Smazat všechna data</button>
         ` : ``}
+      </div>
       </div>
       ` : ``}
     </div>`;
