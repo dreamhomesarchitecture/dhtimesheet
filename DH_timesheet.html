@@ -316,6 +316,27 @@
   .rec-chip .icon-btn{ width:26px; height:26px; font-size:12px; }
   .row-timer-btn{ width:26px; height:26px; font-size:11px; margin-right:6px; vertical-align:middle; }
   .row-running{ border-color:rgba(211,47,47,.55) !important; background:rgba(211,47,47,.05) !important; }
+  .landing{ display:grid; grid-template-columns:minmax(0,1fr) 340px; column-gap:44px; row-gap:28px; align-items:end; min-height:calc(100vh - 250px); }
+  .landing-bottom{ display:contents; }
+  .landing-hero{ grid-column:1; grid-row:1; align-self:center; margin:0; font-weight:900; font-size:clamp(60px, min(10.8vw, 19vh), 200px); line-height:.9; letter-spacing:-0.045em; color:var(--ink); overflow-wrap:break-word; }
+  .landing-hero em{ font-style:normal; color:var(--sage); }
+  .landing-login{ grid-column:2; grid-row:1; align-self:end; width:100%; max-width:340px; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-md); padding:20px 22px 22px; box-shadow:var(--shadow-md); }
+  .landing-login .login-title{ font-weight:800; font-size:19px; letter-spacing:-0.01em; margin-bottom:4px; }
+  .landing-login .login-hint{ color:var(--soft); font-size:13px; margin-bottom:12px; }
+  .landing-login input[type=text]{ width:100%; margin-bottom:12px; }
+  .landing-login .btn{ width:100%; }
+  .landing-login .gate{ text-align:left; padding:14px 0 0; margin-top:14px !important; border-top:1px solid var(--line); }
+  .landing-login .gate p{ margin:0 0 10px; font-size:13px; }
+  .landing-login .gate input{ max-width:none; margin:0 0 12px; text-align:left; }
+  .landing-login .gate .pw-wrap{ max-width:none; margin:0 0 12px; }
+  .landing-login .gate .pw-wrap input{ margin:0; }
+  .landing-login .gate label{ justify-content:flex-start !important; margin-bottom:12px !important; line-height:1.4; }
+  .landing-login .gate input[type=checkbox]{ margin:0; width:auto; flex:none; }
+  @media (max-width:1000px){
+    .landing{ grid-template-columns:1fr; min-height:0; }
+    .landing-hero{ font-size:clamp(46px, 16.4vw, 130px); }
+    .landing-login{ grid-column:1; grid-row:auto; }
+  }
   .pw-wrap{ position:relative; display:block; width:100%; }
   .pw-wrap input{ width:100%; }
   .gate .pw-wrap{ max-width:220px; margin:0 auto 16px; }
@@ -388,6 +409,9 @@
     .sheet{ padding:12px 2px 22px; }
     .topbar{ padding: 18px 18px 16px; }
     .brand img{ height:56px; }
+    .topbar.topbar-two-rows{ flex-wrap:wrap; row-gap:10px; padding-bottom:14px; }
+    .topbar-two-rows .topbar-right{ width:100%; justify-content:space-between; gap:12px; }
+    .topbar-two-rows .nav-links{ gap:18px; }
     .nav-links{ gap:16px; }
     .nav-links button{ font-size:10.5px; }
     .entry-head{ display:none; }
@@ -2496,14 +2520,14 @@ function render(){
     return;
   }
   app.innerHTML = `
-    <div class="topbar">
+    <div class="topbar ${state.currentEmployee && state.tab==="app" ? "topbar-two-rows" : ""}">
       <div class="brand" id="home-btn" role="button" tabindex="0" aria-label="Domů"><img src="${BRAND_LOGO}" alt="${esc(BRAND_MARK)}"></div>
       <div class="topbar-right">
         ${state.currentEmployee && state.tab==="app" ? `<button class="logout-link" id="logout-btn">Odhlásit</button>` : ``}
         <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Přepnout noční režim" aria-label="Přepnout noční režim">${currentTheme()==="dark" ? "☀" : "🌙"}</button>
         <div class="nav-links">
           <button data-tab="app" class="${state.tab==="app"?"active":""}">Výkazy</button>
-          <button data-tab="admin" class="${state.tab==="admin"?"active":""}" title="Administrace" aria-label="Administrace" style="font-size:16px;">⚙</button>
+          <button data-tab="admin" class="${state.tab==="admin"?"active":""}">Administrativa</button>
         </div>
       </div>
     </div>
@@ -2829,14 +2853,18 @@ function pickerTemplate(){
   }
 
   return `
-    <div class="sheet">
-      <div class="eyebrow">Časové výkazy</div>
-      <div class="q-title">Kdo jste?</div>
-      <div class="q-hint">Napište své křestní jméno.</div>
-      <input type="text" id="name-input-field" placeholder="např. Nikola" value="${esc(state.nameInputValue || "")}" autocomplete="off">
-      ${state.nameInputError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(state.nameInputError)}</div>` : ``}
-      <div style="margin-top:14px;"><button class="btn btn-sage" id="name-submit-btn">Pokračovat</button></div>
-      ${gate}
+    <div class="sheet landing">
+      <h1 class="landing-hero">Dobré výsledky začínají <em>přehledem.</em></h1>
+      <div class="landing-bottom">
+        <div class="landing-login">
+          <div class="login-title">Kdo jste?</div>
+          <div class="login-hint">Napište své křestní jméno.</div>
+          <input type="text" id="name-input-field" placeholder="např. nikola" value="${esc(state.nameInputValue || "")}" autocomplete="off">
+          ${state.nameInputError ? `<div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(state.nameInputError)}</div>` : ``}
+          <button class="btn btn-sage" id="name-submit-btn">Pokračovat</button>
+          ${gate}
+        </div>
+      </div>
     </div>`;
 }
 
