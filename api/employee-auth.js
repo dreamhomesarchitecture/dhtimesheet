@@ -35,6 +35,7 @@ module.exports = async (req, res) => {
       const emp = employees.find((e) => e.id === employeeId);
       if (!emp) return res.status(404).json({ error: "not found" });
       emp.password = newPassword;
+      emp.passwordChangedAt = Date.now();
       await putRaw("config", JSON.stringify(config), `Zmena hesla zamestnance (${employeeId})`);
       return res.status(200).json({ ok: true });
     }

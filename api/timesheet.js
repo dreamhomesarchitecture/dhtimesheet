@@ -34,6 +34,41 @@ function sanitizeConfig(rawValue) {
   return JSON.stringify(config);
 }
 
+// Zápis konfigurace přichází z administrace jako CELÝ soubor. Pokud má admin otevřenou
+// starší kopii, přepsal by tím hesla, která si mezitím změnili zaměstnanci. Proto se
+// u zaměstnanců, kteří už v uloženém souboru jsou, vždy ponechá uložené heslo — admin
+// ho měnit neumí (jen zakládá nové zaměstnance). Nové heslo projde jen s novějším
+// passwordChangedAt.
+async function mergeConfigPasswords(incomingValue) {
+  let incoming;
+  try {
+    incoming = JSON.parse(incomingValue);
+  } catch (e) {
+    return incomingValue;
+  }
+  const existing = await getRaw("config");
+  if (!existing.found) return incomingValue;
+  let stored;
+  try {
+    stored = JSON.parse(existing.value);
+  } catch (e) {
+    return incomingValue;
+  }
+  const storedById = {};
+  (stored.employees || []).forEach((e) => {
+    storedById[e.id] = e;
+  });
+  (incoming.employees || []).forEach((e) => {
+    const s = storedById[e.id];
+    if (!s || typeof s.password !== "string") return;
+    if (Number(e.passwordChangedAt || 0) > Number(s.passwordChangedAt || 0)) return;
+    e.password = s.password;
+    if (s.passwordChangedAt) e.passwordChangedAt = s.passwordChangedAt;
+    else delete e.passwordChangedAt;
+  });
+  return JSON.stringify(incoming);
+}
+
 module.exports = async (req, res) => {
   try {
     if (!GITHUB_TOKEN) return res.status(500).json({ error: "GITHUB_TOKEN not configured" });
@@ -66,7 +101,8 @@ module.exports = async (req, res) => {
       if (entriesEmployeeId !== null && !authorizedForEntries) return res.status(403).json({ error: "forbidden" });
       const value = req.body && req.body.value;
       if (typeof value !== "string") return res.status(400).json({ error: "missing value" });
-      await putRaw(key, value);
+      const toWrite = key === "config" ? await mergeConfigPasswords(value) : value;
+      await putRaw(key, toWrite);
       return res.status(200).json({ ok: true });
     }
 
