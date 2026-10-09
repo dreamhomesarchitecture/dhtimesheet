@@ -461,8 +461,8 @@
   .entry-row-cost:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
 
-  .entry-head-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-head-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px minmax(120px,1.2fr) 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row-labor{ display:grid; grid-template-columns: 22px 92px 1fr 90px 90px 110px 120px minmax(120px,1.2fr) 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-labor:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
   .entry-head-clientexp{ display:grid; grid-template-columns: 92px 130px 70px 64px 1fr 110px 100px 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
@@ -4635,6 +4635,7 @@ function projectDetailPageHtml(){
                 <input type="number" class="labor-edit-hours" min="0" step="0.01" value="${esc(en.hours)}" style="padding:6px 8px;font-size:13px;">
                 <span class="entry-num">${fmtKc(rate)}/h</span>
                 <span class="entry-num">${fmtKc(amount)}</span>
+                <input type="text" class="labor-edit-note" value="${esc(en.note || "")}" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;">
                 <span style="display:flex;gap:4px;">
                   <button type="button" class="icon-btn" data-action="save-labor-edit" title="Uložit">✓</button>
                   <button type="button" class="icon-btn" data-action="cancel-labor-edit" title="Zrušit">×</button>
@@ -4650,6 +4651,7 @@ function projectDetailPageHtml(){
               <span class="entry-num">${fmtH(en.hours)}</span>
               <span class="entry-num">${fmtKc(rate)}/h</span>
               <span class="entry-num">${fmtKc(amount)}</span>
+              <span class="entry-note">${esc(en.note || "")}</span>
               <button type="button" class="icon-btn" data-action="edit-labor-entry" data-id="${esc(en.id)}" title="Upravit">✎</button>
             </div>`;
           }).join("") : `<div class="empty-state">${allProjectLabor.length === 0 ? "Zatím žádné odpracované hodiny." : "Žádné hodiny neodpovídají zvolenému filtru."}</div>`;
@@ -4692,7 +4694,7 @@ function projectDetailPageHtml(){
             ${allProjectLabor.length ? laborFilterHtml : ``}
             <p class="q-hint" style="margin:0 0 12px;">${laborFiltersActive ? "Hodiny dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
             ${laborToolbarHtml}
-            <div class="entry-head-labor"><span></span><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span></span></div>
+            <div class="entry-head-labor"><span></span><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span>Poznámka</span><span></span></div>
             <div class="entries">${laborRowsHtml}</div>
           </div>`;
         })()}
@@ -6378,16 +6380,17 @@ function bindAdmin(){
     const date = row.querySelector(".labor-edit-date").value;
     const phaseId = row.querySelector(".labor-edit-phase").value;
     const hours = row.querySelector(".labor-edit-hours").value;
+    const note = row.querySelector(".labor-edit-note").value.trim();
     if(!date || !hours) return;
     const entries = await loadEntries(employeeId);
     const idx = entries.findIndex(e => e.id === entryId);
     if(idx !== -1){
-      entries[idx] = { ...entries[idx], date, phaseId, hours: Number(hours) };
+      entries[idx] = { ...entries[idx], date, phaseId, hours: Number(hours), note };
       await saveEntries(employeeId, "", entries);
     }
     if(state.adminEntriesFlat){
       const flatIdx = state.adminEntriesFlat.findIndex(e => e.id === entryId);
-      if(flatIdx !== -1) state.adminEntriesFlat[flatIdx] = { ...state.adminEntriesFlat[flatIdx], date, phaseId, hours: Number(hours) };
+      if(flatIdx !== -1) state.adminEntriesFlat[flatIdx] = { ...state.adminEntriesFlat[flatIdx], date, phaseId, hours: Number(hours), note };
     }
     state.editingLaborEntryId = null;
     showStamp();
