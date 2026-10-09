@@ -1199,6 +1199,23 @@ function numOrNull(v){
 }
 // Cena nákladu: `amount` je VŽDY cena bez DPH (používá se ve všech výpočtech a součtech),
 // ostatní údaje (sazba, DPH, cena s DPH, dodavatel) jsou doplňkové a dopočítávají se.
+function suppliersList(){ return (state.config && Array.isArray(state.config.suppliers)) ? state.config.suppliers : []; }
+function supplierByName(name){
+  const n = String(name || "").trim().toLowerCase();
+  return n ? suppliersList().find(sp => String(sp.name || "").trim().toLowerCase() === n) : null;
+}
+function costSupplierName(c){
+  const sp = c && c.supplierId ? suppliersList().find(x => x.id === c.supplierId) : null;
+  return sp && sp.name ? sp.name : (c && c.supplier) || "";
+}
+function supplierSelectOptionsHtml(c){
+  const list = suppliersList().filter(sp => sp.name).slice().sort((a, b) => a.name.localeCompare(b.name, "cs"));
+  const selId = c && c.supplierId && list.some(sp => sp.id === c.supplierId) ? c.supplierId : "";
+  const legacy = c && !selId && c.supplier ? c.supplier : "";
+  return `<option value="">— bez dodavatele —</option>`
+    + (legacy ? `<option value="text:${esc(legacy)}" selected>${esc(legacy)} (není v seznamu)</option>` : ``)
+    + list.map(sp => `<option value="${esc(sp.id)}" ${sp.id === selId ? "selected" : ""}>${esc(sp.name)}</option>`).join("");
+}
 function costPriceFieldsHtml(o){
   o = o || {};
   const c = o.cost || null;
@@ -1210,7 +1227,7 @@ function costPriceFieldsHtml(o){
   const netAttrs = `${o.netId ? `id="${o.netId}"` : ""} class="pf-net ${o.netClass || ""}"`;
   return `
         <div class="price-group" data-anchor="${c && has(c.amountGross) && c.priceAnchor === "gross" ? "gross" : "net"}">
-          <div class="field-row"><label class="field-label">Dodavatel</label><input type="text" class="pf-supplier" name="supplier" value="${esc(c && c.supplier || "")}" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label">Dodavatel</label><select class="pf-supplier" name="supplierId">${supplierSelectOptionsHtml(c)}</select></div>
           <div class="field-row"><label class="field-label">Cena bez DPH (Kč)</label><input type="number" ${netAttrs} name="amount" min="0" step="0.01" value="${esc(net)}" ${o.required ? "required" : ""}></div>
           <div class="field-row"><label class="field-label">DPH (%)</label><input type="number" class="pf-rate" name="vatRate" min="0" max="100" step="0.01" list="vat-rate-list" value="${esc(rate)}"></div>
           <div class="field-row"><label class="field-label">DPH (Kč)</label><input type="number" class="pf-vat" name="vatAmount" min="0" step="0.01" value="${esc(vat)}"></div>
@@ -1226,12 +1243,19 @@ function readPriceGroup(scope){
   let gross = numOrNull(q(".pf-gross").value);
   if(vat === null) vat = r2(net * (rate || 0) / 100);
   if(gross === null) gross = r2(net + vat);
-  const out = { amount: r2(net), vatAmount: r2(vat), amountGross: r2(gross), supplier: q(".pf-supplier").value.trim() };
+  const supVal = q(".pf-supplier").value;
+  const out = { amount: r2(net), vatAmount: r2(vat), amountGross: r2(gross), supplier: "", supplierId: undefined };
+  if(supVal.startsWith("text:")) out.supplier = supVal.slice(5);
+  else if(supVal){
+    const sp = suppliersList().find(x => x.id === supVal);
+    if(sp){ out.supplier = sp.name || ""; out.supplierId = sp.id; }
+  }
   if(rate !== null) out.vatRate = rate; else out.vatRate = undefined;
   return out;
 }
 function costNoteCellHtml(c){
-  const sup = c.supplier ? `<b class="cost-supplier">${esc(c.supplier)}</b>` : "";
+  const supName = costSupplierName(c);
+  const sup = supName ? `<b class="cost-supplier">${esc(supName)}</b>` : "";
   return `<span class="entry-note">${sup}${sup && c.note ? " · " : ""}${esc(c.note || "")}</span>`;
 }
 function costPriceCellHtml(c){
@@ -1805,7 +1829,7 @@ function buildCostsWorkbook(costs){
     projectsById[c.projectId] || "",
     c.phaseId || "",
     phasesById[c.phaseId] || "",
-    c.supplier || "",
+    costSupplierName(c),
     Number(c.amount || 0),
     c.vatRate !== undefined && c.vatRate !== "" ? Number(c.vatRate) : "",
     Number(c.vatAmount || 0),
@@ -2799,6 +2823,7 @@ function render(){
   else { content.innerHTML = appTemplate(); bindApp(); }
   bindProjectLinks();
   enhancePasswordFields();
+  document.querySelectorAll("select.pf-supplier").forEach(enhanceSearchableSelect);
 }
 
 const FOLLOW_US_LINKS = [
@@ -3996,7 +4021,7 @@ function adminCostsTemplate(){
     (!state.costFilterProjectId || c.projectId === state.costFilterProjectId) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
     (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
-    noteMatches(`${c.supplier || ""} ${c.note || ""}`, state.costFilterText)
+    noteMatches(`${costSupplierName(c)} ${c.note || ""}`, state.costFilterText)
   );
   const totalAmount = filtered.reduce((s,c) => s + Number(c.amount||0), 0);
   const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment || state.costFilterText;
@@ -4615,7 +4640,7 @@ function projectDetailPageHtml(){
           let projectCosts = allProjectCosts.filter(c =>
             (!costsFilterPhase || c.phaseId === costsFilterPhase) &&
             (!costsFilterPayment || c.paymentMethod === costsFilterPayment) &&
-            noteMatches(`${c.supplier || ""} ${c.note || ""}`, costsFilterText)
+            noteMatches(`${costSupplierName(c)} ${c.note || ""}`, costsFilterText)
           );
           const costsSort = state.projectCostsSort || "date";
           projectCosts = projectCosts.slice().sort((a,b) => {
@@ -4968,6 +4993,21 @@ function adminHoursOverviewTemplate(){
     </div>
     ${hoursOverviewTable("Podle měsíců", monthRows)}
     ${hoursOverviewTable("Podle zaměstnanců", employeeRows)}`;
+}
+
+/* ---------------- dodavatelé ---------------- */
+function adminSuppliersTemplate(){
+  const list = suppliersList().slice().sort((a, b) => {
+    if(!a.name !== !b.name) return a.name ? 1 : -1;
+    return String(a.name || "").localeCompare(String(b.name || ""), "cs");
+  });
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Seznam dodavatelů s fakturačními údaji. Doplňujte postupně — v nákladech projektů je pak vyberete z nabídky (stačí napsat první písmena názvu). Smazání dodavatele nezmění už zadané náklady.</p>
+    ${list.length > 6 ? `<div class="field-row project-search"><input type="text" id="supplier-search-input" placeholder="Hledat dodavatele…" autocomplete="off"></div>` : ``}
+    <div id="supplier-list">
+      ${list.length ? list.map(sp => `<div class="supplier-item" data-search="${esc(`${sp.name || ""} ${sp.ico || ""}`.toLowerCase())}">${billingProfileCardHtml(sp, { fieldClass: "supplier-field", deleteAction: "delete-supplier" })}</div>`).join("") : `<div class="empty-state">Zatím žádný dodavatel.</div>`}
+    </div>
+    <button type="button" class="btn btn-outline btn-small" id="add-supplier-btn">+ Přidat dodavatele</button>`;
 }
 
 /* ---------------- uzavírání měsíců ---------------- */
@@ -5474,6 +5514,11 @@ function adminTemplate(){
         ${(state.config.billingProfiles || []).length ? state.config.billingProfiles.map(bp => billingProfileCardHtml(bp, { showVatRate: true })).join("") : `<div class="empty-state">Zatím žádný fakturační profil.</div>`}
         ${(state.config.billingProfiles || []).length < 3 ? `<button type="button" class="btn btn-outline btn-small" id="add-billing-profile-btn">+ Přidat profil</button>` : `<p class="q-hint" style="margin:0;">Maximální počet profilů (3) dosažen.</p>`}
         ` : ``}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "suppliers" ? " is-open" : ""}">
+        ${adminSectionHeader("suppliers", `Dodavatelé${suppliersList().length ? ` (${suppliersList().length})` : ""}`)}
+        ${state.adminOpenSection === "suppliers" ? adminSuppliersTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "lock-months" ? " is-open" : ""}">
@@ -6941,7 +6986,11 @@ function bindAdmin(){
         if(rateIn !== null) priceExtra.vatRate = rateIn;
         else if(priceExtra.amount > 0 && priceExtra.vatAmount > 0) priceExtra.vatRate = r2(priceExtra.vatAmount / priceExtra.amount * 100);
         const supplier = supplierCol !== -1 ? String(row[supplierCol] || "").trim() : "";
-        if(supplier) priceExtra.supplier = supplier;
+        if(supplier){
+          const sp = supplierByName(supplier);
+          priceExtra.supplier = sp ? sp.name : supplier;
+          if(sp) priceExtra.supplierId = sp.id;
+        }
 
         const projStr = String(projVal).trim();
         const projectId = projStr.split(" - ")[0].trim();
@@ -7032,6 +7081,33 @@ function bindAdmin(){
     await saveConfig();
     render();
   };
+  document.querySelectorAll('.supplier-field').forEach(el => el.addEventListener("change", async () => {
+    const sp = suppliersList().find(x => x.id === el.getAttribute("data-id"));
+    if(!sp) return;
+    sp[el.getAttribute("data-field")] = el.value.trim();
+    await saveConfig();
+    showStamp();
+  }));
+  const addSupplierBtn = document.getElementById("add-supplier-btn");
+  if(addSupplierBtn) addSupplierBtn.onclick = async () => {
+    if(!state.config.suppliers) state.config.suppliers = [];
+    state.config.suppliers.push({ id: uid("sup"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "" });
+    await saveConfig();
+    render();
+  };
+  document.querySelectorAll('[data-action="delete-supplier"]').forEach(b => b.onclick = async () => {
+    if(!confirm("Smazat tohoto dodavatele?")) return;
+    state.config.suppliers = suppliersList().filter(x => x.id !== b.getAttribute("data-id"));
+    await saveConfig();
+    render();
+  });
+  const supplierSearchInput = document.getElementById("supplier-search-input");
+  if(supplierSearchInput) supplierSearchInput.addEventListener("input", () => {
+    const q = supplierSearchInput.value.trim().toLowerCase();
+    document.querySelectorAll("#supplier-list .supplier-item").forEach(item => {
+      item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
+    });
+  });
   document.querySelectorAll('[data-action="delete-billing-profile"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tento fakturační profil?")) return;
     state.config.billingProfiles = (state.config.billingProfiles || []).filter(p => p.id !== b.getAttribute("data-id"));

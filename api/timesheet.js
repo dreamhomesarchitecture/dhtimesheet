@@ -31,6 +31,7 @@ function sanitizeConfig(rawValue) {
     delete p.clientBillableRates;
   });
   delete config.billingProfiles;
+  delete config.suppliers;
   return JSON.stringify(config);
 }
 
