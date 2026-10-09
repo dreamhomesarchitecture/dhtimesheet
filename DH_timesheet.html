@@ -258,6 +258,7 @@
   .cal-daynum{ font-size:11px; color:var(--soft); }
   .cal-hours{ width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; transition: transform .15s; }
   .cal-hours.has{ background:var(--sage); color:#fff; }
+  .cal-hours.has.holiday{ background:transparent; color:var(--sage); box-shadow:inset 0 0 0 2px var(--sage); }
   .cal-hours.has:hover{ transform: scale(1.08); }
   .cal-hours.empty{ background:transparent; }
   .year-overview{ margin-bottom:20px; }
@@ -984,9 +985,11 @@ function excelDateToISO(dateVal){
   if(!isNaN(d)) return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
   return null;
 }
-const BUILT_IN_PHASES = [{ id: "DOV", name: "Dovolená" }, { id: "NN", name: "Nezatříděné" }];
+const BUILT_IN_PHASES = [{ id: "DOV", name: "Dovolená" }, { id: "NN", name: "Nezatříděné" }, { id: "SS", name: "Státní svátek" }];
+// Fáze, které existují jen v projektu 000 a nikdy se nenabízejí u jiných projektů.
+const BUILT_IN_ONLY_PHASES = ["DOV", "SS"];
 // First phase in the list is the preselected one: Nezatridene by default, never Dovolena.
-const FIXED_PROJECT_PHASES = { "000": ["NN", "DOV"] };
+const FIXED_PROJECT_PHASES = { "000": ["NN", "DOV", "SS"] };
 // Project 002 (OF - Nezatridene) is the only project where hours are logged without choosing a phase.
 const PHASELESS_PROJECT_IDS = ["002"];
 function isPhaselessProject(project){
@@ -3117,7 +3120,9 @@ function timesheetTemplate(){
 
   const hoursByDay = {};
   monthEntries.forEach(e => { hoursByDay[e.date] = (hoursByDay[e.date] || 0) + Number(e.hours || 0); });
-  const calendarHtml = buildMiniCalendar(state.month, hoursByDay);
+  const holidayDays = {};
+  monthEntries.forEach(e => { if(e.projectId === "000" && e.phaseId === "SS") holidayDays[e.date] = true; });
+  const calendarHtml = buildMiniCalendar(state.month, hoursByDay, holidayDays);
 
   const currentYear = state.month.slice(0,4);
   const currentMonthNum = state.month.slice(5,7);
@@ -3352,7 +3357,7 @@ function bulkToolbarHtml(listId, kind, items, ctxProjectId){
   const target = (state.bulkTarget || {})[listId] || {};
   const projOptions = `<option value="">— ponechat projekt —</option>` + state.config.projects.map(pr => `<option value="${esc(pr.id)}" ${target.projectId === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
   const phaseProject = state.config.projects.find(pr => pr.id === (target.projectId || ctxProjectId));
-  const phaseList = phaseProject ? phasesForProject(phaseProject) : state.config.phases.filter(ph => ph.id !== "DOV");
+  const phaseList = phaseProject ? phasesForProject(phaseProject) : state.config.phases.filter(ph => !BUILT_IN_ONLY_PHASES.includes(ph.id));
   const phaseOptions = `<option value="">— ponechat fázi —</option>`
     + (kind === "cost" ? `<option value="-" ${target.phaseId === "-" ? "selected" : ""}>— bez fáze —</option>` : ``)
     + phaseList.map(ph => `<option value="${esc(ph.id)}" ${target.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
@@ -3564,7 +3569,7 @@ function buildYearOverview(year, valuesByMonthNum, yearTotal, currentMonthNum, v
     </div>`;
 }
 
-function buildMiniCalendar(month, hoursByDay){
+function buildMiniCalendar(month, hoursByDay, holidayDays){
   const [y, m] = month.split("-").map(Number);
   const firstDay = new Date(y, m - 1, 1);
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -3579,7 +3584,7 @@ function buildMiniCalendar(month, hoursByDay){
     cells += `
       <div class="cal-day">
         <div class="cal-daynum">${d}</div>
-        <div class="cal-hours ${h ? "has" : "empty"}">${h ? fmtHShort(h) : ""}</div>
+        <div class="cal-hours ${h ? "has" : "empty"} ${h && holidayDays && holidayDays[dateStr] ? "holiday" : ""}" ${h && holidayDays && holidayDays[dateStr] ? 'title="Státní svátek"' : ""}>${h ? fmtHShort(h) : ""}</div>
       </div>`;
   }
   return `<div class="mini-calendar">${cells}</div>`;
@@ -4361,7 +4366,7 @@ function projectDetailPageHtml(){
         <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
           <p class="q-hint" style="margin:0 0 10px;">Fáze dostupné pro tento projekt. Nic vybráno = zaměstnanci u něj neuvidí žádnou fázi.</p>
           <div class="phase-picker">
-            ${state.config.phases.filter(ph => ph.id !== "DOV").map(ph => `<button type="button" class="phase-chip ${phaseIds.includes(ph.id) ? "selected" : ""}" data-action="toggle-project-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
+            ${state.config.phases.filter(ph => !BUILT_IN_ONLY_PHASES.includes(ph.id)).map(ph => `<button type="button" class="phase-chip ${phaseIds.includes(ph.id) ? "selected" : ""}" data-action="toggle-project-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
           </div>
         </div>
         ${phaseIds.length ? `
@@ -5125,7 +5130,7 @@ function adminTemplate(){
     return `
     <div class="admin-project-item">
       <div class="admin-project-head" data-action="open-project-page" data-id="${esc(p.id)}" style="cursor:pointer;">
-        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${FIXED_PROJECT_PHASES[p.id] ? "· Nezatříděné, Dovolená" : isPhaselessProject(p) ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
+        <span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)} <span class="meta">${FIXED_PROJECT_PHASES[p.id] ? "· Nezatříděné, Dovolená, Státní svátek" : isPhaselessProject(p) ? "· bez fází" : (assignedCount ? `· ${assignedCount} fází` : "· žádné fáze")}${p.investor ? ` · ${esc(p.investor)}` : ``}</span></span>
         <button class="icon-btn icon-btn-del" data-action="delete-project" data-id="${esc(p.id)}" title="Smazat">${ICON_TRASH}</button>
       </div>
     </div>`;
@@ -5240,7 +5245,7 @@ function adminTemplate(){
           <div class="field-row" style="margin-top:10px;">
             <label class="field-label">Fáze (nepovinné, jde doplnit i později)</label>
             <div class="phase-picker" id="new-project-phase-picker">
-              ${state.config.phases.filter(ph => ph.id !== "DOV").map(ph => `<button type="button" class="phase-chip" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
+              ${state.config.phases.filter(ph => !BUILT_IN_ONLY_PHASES.includes(ph.id)).map(ph => `<button type="button" class="phase-chip" data-phase-id="${esc(ph.id)}">${esc(ph.id)}</button>`).join("")}
             </div>
           </div>
           ${state.projError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.projError)}</div>` : ``}
