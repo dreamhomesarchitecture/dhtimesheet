@@ -486,6 +486,12 @@
   .action-toast.warn{ background:var(--danger); border-radius:var(--radius-md); }
   .action-toast-btn{ background:var(--sage); color:#14130f; border:none; border-radius:999px; padding:7px 14px; font:inherit; font-size:12.5px; font-weight:800; cursor:pointer; white-space:nowrap; }
   .action-toast-btn:hover{ filter:brightness(1.08); }
+  .price-group{ display:contents; }
+  .cost-edit-price{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:10px; padding-top:6px; }
+  .cost-edit-price .field-row{ flex:1 1 130px; }
+  .cost-edit-price input{ padding:6px 8px; font-size:13px; }
+  .cost-gross{ display:block; font-size:11px; font-weight:500; color:var(--soft); }
+  .cost-supplier{ color:var(--ink); }
   .lock-chips{ display:flex; flex-wrap:wrap; gap:10px; }
   .lock-chip{ display:inline-flex; align-items:center; gap:8px; background:var(--tan-tint); color:var(--ink); border-radius:999px; padding:6px 8px 6px 14px; font-size:13px; font-weight:600; }
   .lock-chip-open{ background:var(--paper); border:1px solid var(--line); border-radius:999px; padding:4px 11px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; color:var(--ink); }
@@ -561,6 +567,7 @@
 <body>
 <div class="app" id="app"></div>
 <div id="toast" class="stamp-toast">✓ Zapsáno</div>
+<datalist id="vat-rate-list"><option value="0"><option value="12"><option value="21"></datalist>
 
 <script>
 (function(){
@@ -1183,6 +1190,91 @@ function showActionToast(message, opts){
 }
 function fmtH(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:2}) + " h"; }
 function fmtHShort(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:1}); }
+function fmtKc2(n){ return (Number(n) || 0).toLocaleString("cs-CZ", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " Kč"; }
+function r2(n){ return Math.round((Number(n) || 0) * 100) / 100; }
+function numOrNull(v){
+  if(v === "" || v === null || v === undefined) return null;
+  const n = Number(String(v).replace(",", "."));
+  return isFinite(n) ? n : null;
+}
+// Cena nákladu: `amount` je VŽDY cena bez DPH (používá se ve všech výpočtech a součtech),
+// ostatní údaje (sazba, DPH, cena s DPH, dodavatel) jsou doplňkové a dopočítávají se.
+function costPriceFieldsHtml(o){
+  o = o || {};
+  const c = o.cost || null;
+  const has = v => v !== undefined && v !== null && v !== "";
+  const net = c && has(c.amount) ? c.amount : "";
+  const rate = c ? (has(c.vatRate) ? c.vatRate : "") : 21;
+  const vat = c && has(c.vatAmount) ? c.vatAmount : (net !== "" && rate !== "" ? r2(net * rate / 100) : "");
+  const gross = c && has(c.amountGross) ? c.amountGross : (net !== "" ? r2(Number(net) + Number(vat || 0)) : "");
+  const netAttrs = `${o.netId ? `id="${o.netId}"` : ""} class="pf-net ${o.netClass || ""}"`;
+  return `
+        <div class="price-group" data-anchor="${c && has(c.amountGross) && c.priceAnchor === "gross" ? "gross" : "net"}">
+          <div class="field-row"><label class="field-label">Dodavatel</label><input type="text" class="pf-supplier" name="supplier" value="${esc(c && c.supplier || "")}" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label">Cena bez DPH (Kč)</label><input type="number" ${netAttrs} name="amount" min="0" step="0.01" value="${esc(net)}" ${o.required ? "required" : ""}></div>
+          <div class="field-row"><label class="field-label">DPH (%)</label><input type="number" class="pf-rate" name="vatRate" min="0" max="100" step="0.01" list="vat-rate-list" value="${esc(rate)}"></div>
+          <div class="field-row"><label class="field-label">DPH (Kč)</label><input type="number" class="pf-vat" name="vatAmount" min="0" step="0.01" value="${esc(vat)}"></div>
+          <div class="field-row"><label class="field-label">Cena s DPH (Kč)</label><input type="number" class="pf-gross" name="amountGross" min="0" step="0.01" value="${esc(gross)}"></div>
+        </div>`;
+}
+function readPriceGroup(scope){
+  const q = sel => scope.querySelector(sel);
+  const net = numOrNull(q(".pf-net").value);
+  if(net === null || !(net >= 0)) return null;
+  const rate = numOrNull(q(".pf-rate").value);
+  let vat = numOrNull(q(".pf-vat").value);
+  let gross = numOrNull(q(".pf-gross").value);
+  if(vat === null) vat = r2(net * (rate || 0) / 100);
+  if(gross === null) gross = r2(net + vat);
+  const out = { amount: r2(net), vatAmount: r2(vat), amountGross: r2(gross), supplier: q(".pf-supplier").value.trim() };
+  if(rate !== null) out.vatRate = rate; else out.vatRate = undefined;
+  return out;
+}
+function costNoteCellHtml(c){
+  const sup = c.supplier ? `<b class="cost-supplier">${esc(c.supplier)}</b>` : "";
+  return `<span class="entry-note">${sup}${sup && c.note ? " · " : ""}${esc(c.note || "")}</span>`;
+}
+function costPriceCellHtml(c){
+  const hasVat = Number(c.vatAmount) > 0 || (Number(c.amountGross) && Number(c.amountGross) !== Number(c.amount));
+  return `<span class="entry-num">${fmtKc2(c.amount)}${hasVat ? `<small class="cost-gross">s DPH ${fmtKc2(c.amountGross)}</small>` : ``}</span>`;
+}
+document.addEventListener("input", e => {
+  const t = e.target;
+  const g = t && t.closest && t.closest(".price-group");
+  if(!g) return;
+  const q = sel => g.querySelector(sel);
+  const net = q(".pf-net"), rate = q(".pf-rate"), vat = q(".pf-vat"), gross = q(".pf-gross");
+  if(t === net) g.dataset.anchor = "net";
+  else if(t === gross) g.dataset.anchor = "gross";
+  const anchor = g.dataset.anchor || "net";
+  const rr = numOrNull(rate.value) || 0;
+  if(t === vat){
+    const v = numOrNull(vat.value), n = numOrNull(net.value), gr = numOrNull(gross.value);
+    if(v === null) return;
+    if(anchor === "gross" && gr !== null){
+      const nn = r2(gr - v);
+      net.value = nn;
+      rate.value = nn > 0 ? r2(v / nn * 100) : "";
+    } else if(n !== null){
+      rate.value = n > 0 ? r2(v / n * 100) : "";
+      gross.value = r2(n + v);
+    }
+    return;
+  }
+  if(anchor === "gross"){
+    const gr = numOrNull(gross.value);
+    if(gr === null){ net.value = ""; vat.value = ""; return; }
+    const nn = r2(gr / (1 + rr / 100));
+    net.value = nn;
+    vat.value = r2(gr - nn);
+  } else {
+    const n = numOrNull(net.value);
+    if(n === null){ gross.value = ""; vat.value = ""; return; }
+    const v = r2(n * rr / 100);
+    vat.value = v;
+    gross.value = r2(n + v);
+  }
+});
 function fmtKc(n){ return (Number(n)||0).toLocaleString("cs-CZ",{maximumFractionDigits:0}) + " Kč"; }
 function czContractPrice(n){
   const cents = Math.round((Number(n)||0) * 100);
@@ -1702,23 +1794,29 @@ function buildTimesheetWorkbook(entriesByEmployee){
 function buildCostsWorkbook(costs){
   const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
   const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
-  const header = ["Datum", "Číslo projektu", "Projekt", "Fáze", "Název fáze", "Cena (Kč)", "Platba", "Poznámka"];
+  const header = ["Datum", "Číslo projektu", "Projekt", "Fáze", "Název fáze", "Dodavatel", "Cena bez DPH (Kč)", "DPH (%)", "DPH (Kč)", "Cena s DPH (Kč)", "Platba", "Poznámka"];
   const sorted = (costs || []).slice().sort((a,b) => (a.date || "").localeCompare(b.date || ""));
   const totalAmount = sorted.reduce((s,c) => s + Number(c.amount||0), 0);
+  const totalVat = sorted.reduce((s,c) => s + Number(c.vatAmount||0), 0);
+  const totalGross = sorted.reduce((s,c) => s + (c.amountGross !== undefined && c.amountGross !== "" ? Number(c.amountGross) : Number(c.amount||0)), 0);
   const rows = sorted.map(c => [
     c.date || "",
     c.projectId || "",
     projectsById[c.projectId] || "",
     c.phaseId || "",
     phasesById[c.phaseId] || "",
+    c.supplier || "",
     Number(c.amount || 0),
+    c.vatRate !== undefined && c.vatRate !== "" ? Number(c.vatRate) : "",
+    Number(c.vatAmount || 0),
+    c.amountGross !== undefined && c.amountGross !== "" ? Number(c.amountGross) : Number(c.amount || 0),
     c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "",
     c.note || ""
   ]);
   rows.push([]);
-  rows.push(["", "", "", "", "Celkem náklady", totalAmount, "", ""]);
+  rows.push(["", "", "", "", "Celkem náklady", "", totalAmount, "", totalVat, totalGross, "", ""]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 13 }, { wch: 10 }, { wch: 40 }];
+  ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 22 }, { wch: 17 }, { wch: 9 }, { wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 40 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Náklady");
   return wb;
@@ -3898,7 +3996,7 @@ function adminCostsTemplate(){
     (!state.costFilterProjectId || c.projectId === state.costFilterProjectId) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
     (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
-    noteMatches(c.note, state.costFilterText)
+    noteMatches(`${c.supplier || ""} ${c.note || ""}`, state.costFilterText)
   );
   const totalAmount = filtered.reduce((s,c) => s + Number(c.amount||0), 0);
   const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment || state.costFilterText;
@@ -3913,15 +4011,15 @@ function adminCostsTemplate(){
       <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
       <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
       <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
-      <span class="entry-num">${fmtKc(c.amount)}</span>
-      <span class="entry-note">${esc(c.note||"")}</span>
+      ${costPriceCellHtml(c)}
+      ${costNoteCellHtml(c)}
       <button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
       <button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>
     </div>`;
   }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
   return `
-    <p class="q-hint" style="margin:0 0 14px;">${filtersActive ? "Náklady dle filtru" : "Celkové náklady"}: <b style="color:var(--ink);">${fmtKc(totalAmount)}</b></p>
+    <p class="q-hint" style="margin:0 0 14px;">${filtersActive ? "Náklady dle filtru" : "Celkové náklady"} (bez DPH): <b style="color:var(--ink);">${fmtKc(totalAmount)}</b> · všechny součty a výpočty v aplikaci počítají s cenou bez DPH.</p>
 
     <form id="add-cost-form">
       ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
@@ -3929,7 +4027,7 @@ function adminCostsTemplate(){
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
         <div class="field-row"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
-        <div class="field-row"><label class="field-label">Cena (Kč)</label><input type="number" name="amount" min="0" step="1" value="${editingCost ? esc(editingCost.amount) : ""}" required></div>
+        ${costPriceFieldsHtml({ cost: editingCost, required: true })}
         <div class="field-row"><label class="field-label">Platba</label>
           <select name="paymentMethod" required>
             <option value="hotove" ${editingCost && editingCost.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
@@ -3961,7 +4059,7 @@ function adminCostsTemplate(){
         ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
       ${bulkToolbarHtml("gcosts", "cost", sorted, "")}
-      <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Cena</span><span>Poznámka</span><span></span><span></span></div>
+      <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Bez DPH</span><span>Dodavatel · poznámka</span><span></span><span></span></div>
       <div class="entries">${rows}</div>
     </div>`;
 }
@@ -3969,7 +4067,7 @@ function adminCostsTemplate(){
 function costImportFormHtml(){
   return `
     <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
-      <p class="q-hint" style="margin:0 0 14px;"><b style="color:var(--ink);">Import nákladů</b> — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka (za co), Cena, Platba (hotově/účtem).</p>
+      <p class="q-hint" style="margin:0 0 14px;"><b style="color:var(--ink);">Import nákladů</b> — nahrajte .xlsx soubor se sloupci Datum, Projekt, Fáze, Poznámka (za co), Cena, Platba (hotově/účtem). Volitelně Dodavatel, Cena bez DPH, DPH (%), DPH (Kč), Cena s DPH — chybějící údaje se dopočítají a do výpočtů jde vždy cena bez DPH. Když je ve sloupci jen „Cena“, bere se jako cena bez DPH.</p>
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Soubor (.xlsx)</label><input type="file" id="cost-import-file-input" accept=".xlsx,.xls"></div>
         <div class="field-row"><button class="btn btn-outline btn-small" type="button" id="cost-import-parse-btn">Načíst soubor</button></div>
@@ -4517,7 +4615,7 @@ function projectDetailPageHtml(){
           let projectCosts = allProjectCosts.filter(c =>
             (!costsFilterPhase || c.phaseId === costsFilterPhase) &&
             (!costsFilterPayment || c.paymentMethod === costsFilterPayment) &&
-            noteMatches(c.note, costsFilterText)
+            noteMatches(`${c.supplier || ""} ${c.note || ""}`, costsFilterText)
           );
           const costsSort = state.projectCostsSort || "date";
           projectCosts = projectCosts.slice().sort((a,b) => {
@@ -4562,12 +4660,13 @@ function projectDetailPageHtml(){
                   <option value="hotove" ${c.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
                   <option value="ucet" ${c.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option>
                 </select>
-                <input type="number" class="cost-edit-amount" min="0" step="1" value="${esc(c.amount)}" style="padding:6px 8px;font-size:13px;">
-                <input type="text" class="cost-edit-note" value="${esc(c.note||"")}" style="padding:6px 8px;font-size:13px;">
+                <span class="meta">ceny níže ↓</span>
+                <input type="text" class="cost-edit-note" value="${esc(c.note||"")}" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;">
                 <span style="display:flex;gap:4px;">
                   <button type="button" class="icon-btn" data-action="save-project-cost-edit" title="Uložit">✓</button>
                   <button type="button" class="icon-btn" data-action="cancel-project-cost-edit" title="Zrušit">×</button>
                 </span>
+                <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
               </div>`;
             }
             return `
@@ -4575,8 +4674,8 @@ function projectDetailPageHtml(){
               <span class="entry-date">${bulkRowCbHtml("pcosts", c.id)}${esc(c.date)}</span>
               <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
               <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
-              <span class="entry-num">${fmtKc(c.amount)}</span>
-              <span class="entry-note">${esc(c.note||"")}</span>
+              ${costPriceCellHtml(c)}
+              ${costNoteCellHtml(c)}
               <button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
             </div>`;
           }).join("") : `<div class="empty-state">${allProjectCosts.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
@@ -4670,7 +4769,7 @@ function projectDetailPageHtml(){
                   <option value="">—</option>
                   ${phasesForProject(p).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("")}
                 </select></div>
-                <div class="field-row"><label class="field-label">Cena (Kč)</label><input type="number" id="project-cost-add-amount" min="0" step="1"></div>
+                ${costPriceFieldsHtml({ netId: "project-cost-add-amount" })}
                 <div class="field-row"><label class="field-label">Platba</label>
                   <select id="project-cost-add-payment">
                     <option value="hotove">Hotově</option>
@@ -4685,7 +4784,7 @@ function projectDetailPageHtml(){
             ${allProjectCosts.length ? costsFilterHtml : ``}
             <p class="q-hint" style="margin:0 0 12px;">${costsFiltersActive ? "Náklady dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
             ${bulkToolbarHtml("pcosts", "cost", projectCosts, p.id)}
-            <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Kč</span><span>Poznámka</span><span></span></div>
+            <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Bez DPH</span><span>Dodavatel · poznámka</span><span></span></div>
             <div class="entries">${costsRowsHtml}</div>
           </div>
 
@@ -6115,16 +6214,15 @@ function bindAdmin(){
     const projectId = projectCostAddBtn.getAttribute("data-project-id");
     const date = document.getElementById("project-cost-add-date").value;
     const phaseId = document.getElementById("project-cost-add-phase").value;
-    const amountRaw = document.getElementById("project-cost-add-amount").value;
+    const price = readPriceGroup(projectCostAddBtn.closest(".phase-block"));
     const paymentMethod = document.getElementById("project-cost-add-payment").value;
     const note = document.getElementById("project-cost-add-note").value.trim();
-    const amount = Number(amountRaw);
-    if(!date || amountRaw === "" || !(amount >= 0) || !paymentMethod){
+    if(!date || !price || !paymentMethod){
       setState({ projectCostAddError: "Vyplňte datum a cenu." });
       return;
     }
     if(!state.costs) state.costs = [];
-    state.costs.push({ id: uid("cost"), date, projectId, phaseId, amount, paymentMethod, note });
+    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note });
     state.projectCostAddError = "";
     await saveCosts();
     showStamp();
@@ -6359,13 +6457,14 @@ function bindAdmin(){
     const date = row.querySelector(".cost-edit-date").value;
     const phaseId = row.querySelector(".cost-edit-phase").value;
     const paymentMethod = row.querySelector(".cost-edit-payment").value;
-    const amount = row.querySelector(".cost-edit-amount").value;
+    const price = readPriceGroup(row);
     const note = row.querySelector(".cost-edit-note").value;
-    if(!date || amount === "") return;
+    if(!date || !price) return;
     cost.date = date;
     cost.phaseId = phaseId;
     cost.paymentMethod = paymentMethod;
-    cost.amount = Number(amount);
+    Object.assign(cost, price);
+    if(price.vatRate === undefined) delete cost.vatRate;
     cost.note = note.trim();
     await saveCosts();
     state.editingProjectCostId = null;
@@ -6733,9 +6832,9 @@ function bindAdmin(){
   if(addCostForm) addCostForm.addEventListener("submit", async e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(addCostForm).entries());
-    const amount = Number(data.amount);
-    if(!data.date || !data.projectId || !(amount >= 0) || !data.paymentMethod) return;
-    const fields = { date: data.date, projectId: data.projectId, phaseId: data.phaseId || "", amount, paymentMethod: data.paymentMethod, note: (data.note || "").trim() };
+    const price = readPriceGroup(addCostForm);
+    if(!data.date || !data.projectId || !price || !data.paymentMethod) return;
+    const fields = { date: data.date, projectId: data.projectId, phaseId: data.phaseId || "", ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim() };
     if(!state.costs) state.costs = [];
     if(state.editingCostId){
       const idx = state.costs.findIndex(c => c.id === state.editingCostId);
@@ -6801,7 +6900,14 @@ function bindAdmin(){
       const projCol = findCol(["project", "projekt"]);
       const phaseCol = findCol(["phase", "fáze", "faze"]);
       const noteCol = findCol(["note", "poznámka", "poznamka", "za co"]);
-      const amountCol = findCol(["cena", "cost", "náklad", "naklad", "částka", "castka"]);
+      const colBy = fn => { for(let i = 0; i < headerRow.length; i++){ if(fn(String(headerRow[i] || "").toLowerCase())) return i; } return -1; };
+      const netCol = colBy(h => h.includes("bez dph"));
+      const grossCol = colBy(h => h.includes("s dph"));
+      const rateCol = colBy(h => h.includes("dph") && h.includes("%") || h.includes("sazba"));
+      const vatCol = colBy(h => h.includes("dph") && !h.includes("bez") && !h.includes("s dph") && !h.includes("%") && !h.includes("sazba"));
+      const supplierCol = colBy(h => h.includes("dodavatel") || h.includes("supplier"));
+      const genericAmountCol = colBy(h => ["cena", "cost", "náklad", "naklad", "částka", "castka"].some(k => h.includes(k)) && !h.includes("s dph"));
+      const amountCol = netCol !== -1 ? netCol : (genericAmountCol !== -1 ? genericAmountCol : grossCol);
       const paymentCol = findCol(["platba", "hotov", "účet", "ucet", "způsob", "zpusob"]);
       if(dateCol === -1 || projCol === -1 || amountCol === -1){
         setState({ costImportError: "Chybí povinné sloupce (Datum, Projekt, Cena).", costImportPreview: null }); return;
@@ -6816,14 +6922,26 @@ function bindAdmin(){
       for(let i = headerRowIdx + 1; i < rows.length; i++){
         const row = rows[i];
         if(!row || row.every(c => c === undefined || c === "")) continue;
-        const dateVal = row[dateCol], projVal = row[projCol], amountVal = row[amountCol];
-        if(dateVal === undefined || projVal === undefined || amountVal === undefined || amountVal === "") continue;
+        const numCell = v => typeof v === "number" ? v : numOrNull(String(v === undefined ? "" : v).replace(/[\s\u00a0]/g, ""));
+        const dateVal = row[dateCol], projVal = row[projCol];
+        if(dateVal === undefined || projVal === undefined) continue;
 
         const dateStr = excelDateToISO(dateVal);
         if(!dateStr) continue;
 
-        const amount = Number(amountVal);
-        if(!(amount >= 0)) continue;
+        const rateIn = rateCol !== -1 ? numCell(row[rateCol]) : null;
+        const grossIn = grossCol !== -1 ? numCell(row[grossCol]) : null;
+        const vatIn = vatCol !== -1 ? numCell(row[vatCol]) : null;
+        let amount = numCell(row[amountCol]);
+        if(amount === null && grossIn !== null && amountCol !== grossCol) amount = r2(grossIn / (1 + (rateIn || 0) / 100));
+        if(amountCol === grossCol && amount !== null) amount = r2(amount / (1 + (rateIn || 0) / 100));
+        if(amount === null || !(amount >= 0)) continue;
+        const priceExtra = { amount: r2(amount), vatAmount: vatIn !== null ? r2(vatIn) : r2(amount * (rateIn || 0) / 100) };
+        priceExtra.amountGross = grossIn !== null ? r2(grossIn) : r2(priceExtra.amount + priceExtra.vatAmount);
+        if(rateIn !== null) priceExtra.vatRate = rateIn;
+        else if(priceExtra.amount > 0 && priceExtra.vatAmount > 0) priceExtra.vatRate = r2(priceExtra.vatAmount / priceExtra.amount * 100);
+        const supplier = supplierCol !== -1 ? String(row[supplierCol] || "").trim() : "";
+        if(supplier) priceExtra.supplier = supplier;
 
         const projStr = String(projVal).trim();
         const projectId = projStr.split(" - ")[0].trim();
@@ -6844,7 +6962,7 @@ function bindAdmin(){
         }
 
         const note = noteCol !== -1 ? String(row[noteCol] || "").trim() : "";
-        parsed.push({ id: uid("cost"), date: dateStr, projectId, phaseId, amount, paymentMethod, note });
+        parsed.push({ id: uid("cost"), date: dateStr, projectId, phaseId, ...priceExtra, paymentMethod, note });
       }
 
       if(parsed.length === 0){ setState({ costImportError: "V souboru se nenašel žádný platný řádek k importu.", costImportPreview: null }); return; }
