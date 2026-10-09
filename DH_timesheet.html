@@ -486,6 +486,12 @@
   .action-toast.warn{ background:var(--danger); border-radius:var(--radius-md); }
   .action-toast-btn{ background:var(--sage); color:#14130f; border:none; border-radius:999px; padding:7px 14px; font:inherit; font-size:12.5px; font-weight:800; cursor:pointer; white-space:nowrap; }
   .action-toast-btn:hover{ filter:brightness(1.08); }
+  .sup-cost-head, .sup-cost-row{ display:grid; grid-template-columns: 96px 1.3fr 60px 70px 130px 1.2fr; gap:10px; align-items:center; }
+  .sup-cost-head{ padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .sup-cost-row{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:13px 15px; background:var(--paper); }
+  .sup-cost-total{ display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding:14px 15px 0; border-top:1px solid var(--line); font-size:14px; color:var(--soft); }
+  .sup-cost-total b{ color:var(--ink); font-size:20px; }
+  @media (max-width:640px){ .sup-cost-head{ display:none; } .sup-cost-row{ grid-template-columns:1fr; gap:6px; } }
   .price-group{ display:contents; }
   .cost-edit-price{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:10px; padding-top:6px; }
   .cost-edit-price .field-row{ flex:1 1 130px; }
@@ -889,6 +895,7 @@ let state = {
   editingEntryId: null,
   editingLaborEntryId: null,
   editingRecordId: null,
+  editingSupplierId: null,
   recordEditError: "",
   bulkSel: {},
   bulkTarget: {},
@@ -4996,18 +5003,90 @@ function adminHoursOverviewTemplate(){
 }
 
 /* ---------------- dodavatelé ---------------- */
+function supplierCosts(sp){
+  const nm = String(sp.name || "").trim().toLowerCase();
+  return (state.costs || []).filter(c => c.supplierId ? c.supplierId === sp.id : (nm && String(c.supplier || "").trim().toLowerCase() === nm));
+}
+function supplierTotals(costs){
+  return {
+    count: costs.length,
+    net: costs.reduce((a, c) => a + Number(c.amount || 0), 0),
+    gross: costs.reduce((a, c) => a + (c.amountGross !== undefined && c.amountGross !== "" && c.amountGross !== null ? Number(c.amountGross) : Number(c.amount || 0)), 0)
+  };
+}
 function adminSuppliersTemplate(){
   const list = suppliersList().slice().sort((a, b) => {
     if(!a.name !== !b.name) return a.name ? 1 : -1;
     return String(a.name || "").localeCompare(String(b.name || ""), "cs");
   });
+  const loading = state.costs === null;
+  const rows = list.map(sp => {
+    const t = supplierTotals(supplierCosts(sp));
+    return `
+    <div class="project-item" data-search="${esc(`${sp.name || ""} ${sp.ico || ""}`.toLowerCase())}">
+      <div class="project-row" data-action="open-supplier" data-id="${esc(sp.id)}">
+        <span class="chevron">▸</span>
+        <span class="meta">${esc(sp.ico || "")}</span>
+        <span class="name">${sp.name ? esc(sp.name) : `<i style="color:var(--soft);">bez názvu</i>`}</span>
+        <span class="project-hours ${t.net ? "" : "zero"}">${loading ? "…" : fmtKc(t.net)}</span>
+      </div>
+    </div>`;
+  }).join("");
   return `
-    <p class="q-hint" style="margin:0 0 14px;">Seznam dodavatelů s fakturačními údaji. Doplňujte postupně — v nákladech projektů je pak vyberete z nabídky (stačí napsat první písmena názvu). Smazání dodavatele nezmění už zadané náklady.</p>
+    <p class="q-hint" style="margin:0 0 14px;">Klikněte na dodavatele pro fakturační údaje a seznam nákladů, které jste mu zaplatili. V nákladech projektů je pak vyberete z nabídky (stačí napsat první písmena názvu).</p>
     ${list.length > 6 ? `<div class="field-row project-search"><input type="text" id="supplier-search-input" placeholder="Hledat dodavatele…" autocomplete="off"></div>` : ``}
-    <div id="supplier-list">
-      ${list.length ? list.map(sp => `<div class="supplier-item" data-search="${esc(`${sp.name || ""} ${sp.ico || ""}`.toLowerCase())}">${billingProfileCardHtml(sp, { fieldClass: "supplier-field", deleteAction: "delete-supplier" })}</div>`).join("") : `<div class="empty-state">Zatím žádný dodavatel.</div>`}
-    </div>
-    <button type="button" class="btn btn-outline btn-small" id="add-supplier-btn">+ Přidat dodavatele</button>`;
+    ${list.length ? `
+    <div class="project-head"><span></span><span>IČ</span><span>Dodavatel</span><span style="text-align:right;">Zaplaceno bez DPH</span></div>
+    <div class="project-list" id="supplier-list">${rows}</div>` : `<div class="empty-state">Zatím žádný dodavatel.</div>`}
+    <div style="margin-top:14px;"><button type="button" class="btn btn-outline btn-small" id="add-supplier-btn">+ Přidat dodavatele</button></div>`;
+}
+function supplierDetailPageHtml(){
+  const sp = suppliersList().find(x => x.id === state.editingSupplierId);
+  if(!sp){
+    return `
+    <div class="sheet emp-page">
+      <button class="logout-link" data-action="back-to-suppliers">← Zpět na dodavatele</button>
+      <div class="empty-state" style="margin-top:20px;">Dodavatel nenalezen.</div>
+    </div>`;
+  }
+  const costs = supplierCosts(sp).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const t = supplierTotals(costs);
+  const loading = state.costs === null;
+  const rows = costs.map(c => {
+    const proj = state.config.projects.find(p => p.id === c.projectId);
+    const phase = state.config.phases.find(p => p.id === c.phaseId);
+    return `
+    <div class="sup-cost-row">
+      <span class="entry-date">${esc(c.date)}</span>
+      <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
+      <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
+      <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
+      ${costPriceCellHtml(c)}
+      <span class="entry-note">${esc(c.note || "")}</span>
+    </div>`;
+  }).join("");
+  return `
+    <div class="sheet emp-page">
+      <button class="logout-link" data-action="back-to-suppliers" style="margin-bottom:22px;">← Zpět na dodavatele</button>
+      ${pageHeroHtml("Dodavatel", sp.ico ? `IČ ${sp.ico}` : "Fakturační údaje a zaplacené náklady", sp.name || "Nový dodavatel")}
+      <div class="emp-stats">
+        <div class="emp-stat ${t.net ? "has" : ""}"><div class="emp-stat-label">Zaplaceno bez DPH</div><div class="emp-stat-value">${loading ? "…" : fmtKc2(t.net)}</div></div>
+        <div class="emp-stat ${t.gross ? "has" : ""}"><div class="emp-stat-label">Zaplaceno s DPH</div><div class="emp-stat-value">${loading ? "…" : fmtKc2(t.gross)}</div></div>
+        <div class="emp-stat"><div class="emp-stat-label">Počet nákladů</div><div class="emp-stat-value">${loading ? "…" : t.count}</div></div>
+      </div>
+      <div class="admin-block is-open">
+        <div class="admin-block-title"><span>Fakturační údaje</span></div>
+        ${billingProfileCardHtml(sp, { fieldClass: "supplier-field", deleteAction: "delete-supplier" })}
+      </div>
+      <div class="admin-block is-open">
+        <div class="admin-block-title"><span>Zaplacené náklady</span></div>
+        ${loading ? `<div class="empty-state">Načítání…</div>` : costs.length ? `
+          <p class="q-hint" style="margin:0 0 12px;">Celkem <b style="color:var(--ink);">${fmtKc2(t.net)}</b> bez DPH${t.gross !== t.net ? ` (s DPH ${fmtKc2(t.gross)})` : ``}. Náklady se k dodavateli přiřazují při zadání nákladu projektu.</p>
+          <div class="sup-cost-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Bez DPH</span><span>Poznámka</span></div>
+          <div class="entries">${rows}</div>
+          <div class="sup-cost-total"><span>Celkem bez DPH</span><b>${fmtKc2(t.net)}</b></div>` : `<div class="empty-state">Tomuto dodavateli zatím nebyl zadán žádný náklad.</div>`}
+      </div>
+    </div>`;
 }
 
 /* ---------------- uzavírání měsíců ---------------- */
@@ -5251,6 +5330,10 @@ function adminTemplate(){
 
   if(state.expandedPaymentCalendarProjectId){
     return paymentCalendarPageHtml();
+  }
+
+  if(state.editingSupplierId){
+    return supplierDetailPageHtml();
   }
 
   if(state.editingProjectId){
@@ -5988,7 +6071,7 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budgets" || newSection === "budget-watch" || newSection === "timesheet-export" || newSection === "vacation"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budgets" || newSection === "budget-watch" || newSection === "suppliers" || newSection === "timesheet-export" || newSection === "vacation"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
@@ -7085,26 +7168,42 @@ function bindAdmin(){
     const sp = suppliersList().find(x => x.id === el.getAttribute("data-id"));
     if(!sp) return;
     sp[el.getAttribute("data-field")] = el.value.trim();
+    if(el.getAttribute("data-field") === "name"){
+      const heroName = document.querySelector(".page-hero .emp-greet-name");
+      if(heroName) heroName.textContent = sp.name || "Nový dodavatel";
+    }
     await saveConfig();
     showStamp();
   }));
   const addSupplierBtn = document.getElementById("add-supplier-btn");
   if(addSupplierBtn) addSupplierBtn.onclick = async () => {
     if(!state.config.suppliers) state.config.suppliers = [];
-    state.config.suppliers.push({ id: uid("sup"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "" });
+    const fresh = { id: uid("sup"), name: "", ico: "", dic: "", address: "", bankAccount: "", email: "", phone: "" };
+    state.config.suppliers.push(fresh);
     await saveConfig();
-    render();
+    setState({ editingSupplierId: fresh.id });
+    window.scrollTo(0, 0);
   };
+  document.querySelectorAll('[data-action="open-supplier"]').forEach(row => row.onclick = () => {
+    setState({ editingSupplierId: row.getAttribute("data-id") });
+    if(state.costs === null && !state.costsLoading) loadAdminCosts();
+    window.scrollTo(0, 0);
+  });
+  document.querySelectorAll('[data-action="back-to-suppliers"]').forEach(b => b.onclick = () => {
+    setState({ editingSupplierId: null, adminOpenSection: "suppliers" });
+    window.scrollTo(0, 0);
+  });
   document.querySelectorAll('[data-action="delete-supplier"]').forEach(b => b.onclick = async () => {
-    if(!confirm("Smazat tohoto dodavatele?")) return;
+    if(!confirm("Smazat tohoto dodavatele? Už zadané náklady zůstanou zachované.")) return;
     state.config.suppliers = suppliersList().filter(x => x.id !== b.getAttribute("data-id"));
     await saveConfig();
-    render();
+    setState({ editingSupplierId: null, adminOpenSection: "suppliers" });
+    window.scrollTo(0, 0);
   });
   const supplierSearchInput = document.getElementById("supplier-search-input");
   if(supplierSearchInput) supplierSearchInput.addEventListener("input", () => {
     const q = supplierSearchInput.value.trim().toLowerCase();
-    document.querySelectorAll("#supplier-list .supplier-item").forEach(item => {
+    document.querySelectorAll("#supplier-list .project-item").forEach(item => {
       item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
     });
   });
