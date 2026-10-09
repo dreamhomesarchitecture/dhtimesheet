@@ -7313,6 +7313,22 @@ function bindDateInputGuard(){
   }, true);
 }
 bindSelectOnFocus();
+// Enter v hledání projektů: když zbyde jediný projekt, otevře se.
+const PROJECT_SEARCH_LISTS = {
+  "all-project-search-input": "all-project-list",
+  "admin-project-search-input": "admin-project-list",
+  "payment-calendar-search-input": "payment-calendar-project-list"
+};
+document.addEventListener("keydown", e => {
+  if(e.key !== "Enter" || !e.target || !PROJECT_SEARCH_LISTS[e.target.id]) return;
+  const list = document.getElementById(PROJECT_SEARCH_LISTS[e.target.id]);
+  if(!list) return;
+  const visible = Array.from(list.querySelectorAll(".project-item")).filter(it => it.style.display !== "none");
+  if(visible.length !== 1 || visible[0].classList.contains("open")) return;
+  e.preventDefault();
+  const row = visible[0].querySelector(".project-row");
+  if(row) row.click();
+});
 bindDateInputGuard();
 init();
 if("serviceWorker" in navigator && location.protocol === "https:"){ window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {})); }
