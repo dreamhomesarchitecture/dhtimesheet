@@ -7324,10 +7324,12 @@ document.addEventListener("keydown", e => {
   const list = document.getElementById(PROJECT_SEARCH_LISTS[e.target.id]);
   if(!list) return;
   const visible = Array.from(list.querySelectorAll(".project-item")).filter(it => it.style.display !== "none");
-  if(visible.length !== 1 || visible[0].classList.contains("open")) return;
+  if(visible.length !== 1) return;
   e.preventDefault();
-  const row = visible[0].querySelector(".project-row");
-  if(row) row.click();
+  // V administračním přehledu projektů se otevírá přímo detail projektu (jako klik na zelené číslo).
+  const target = (e.target.id === "admin-project-search-input" && state.adminUnlocked && visible[0].querySelector(".entry-proj[data-project-id]"))
+    || visible[0].querySelector(".project-row");
+  if(target) target.click();
 });
 bindDateInputGuard();
 init();
