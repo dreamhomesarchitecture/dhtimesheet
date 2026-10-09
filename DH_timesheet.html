@@ -451,8 +451,8 @@
   .entry-row-compact{ display:grid; grid-template-columns: 92px 64px 84px 1fr 28px 28px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-compact:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
-  .entry-head-wide{ display:grid; grid-template-columns: 118px 130px 1fr 70px 64px 84px 1fr; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
-  .entry-row-wide{ display:grid; grid-template-columns: 118px 130px 1fr 70px 64px 84px 1fr; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
+  .entry-head-wide{ display:grid; grid-template-columns: 118px 130px 1fr 70px 64px 84px 1fr 62px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
+  .entry-row-wide{ display:grid; grid-template-columns: 118px 130px 1fr 70px 64px 84px 1fr 62px; align-items:center; gap:10px; border:1px solid var(--line); border-radius: var(--radius-sm); padding:13px 15px; transition:border-color .15s, box-shadow .15s; background:var(--paper); }
   .entry-row-wide:hover{ border-color: var(--soft); box-shadow: var(--shadow-sm); }
 
   .entry-head-cost{ display:grid; grid-template-columns: 118px 1fr 90px 90px 1fr 28px; gap:10px; padding:0 15px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); margin-bottom:4px; }
@@ -880,6 +880,8 @@ let state = {
   entryTimerAccumulated: 0,
   editingEntryId: null,
   editingLaborEntryId: null,
+  editingRecordId: null,
+  recordEditError: "",
   bulkSel: {},
   bulkTarget: {},
   bulkError: {},
@@ -4002,6 +4004,27 @@ function adminRecordsTemplate(){
   const rows = sorted.length ? sorted.map(e => {
     const proj = state.config.projects.find(p => p.id === e.projectId);
     const phase = state.config.phases.find(p => p.id === e.phaseId);
+    if(state.editingRecordId === e.id){
+      const editProject = proj || state.config.projects[0];
+      const editPhaseless = isPhaselessProject(editProject);
+      const projectOptions = state.config.projects.map(p => `<option value="${esc(p.id)}" ${e.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+      const phaseOptions = editProject ? phasesForProject(editProject).map(ph => `<option value="${esc(ph.id)}" ${e.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "";
+      return `
+    <div class="entry-row-wide record-edit-row" data-record-edit-row="${esc(e.id)}" data-employee-id="${esc(e.employeeId)}">
+      <input type="date" class="record-edit-date" value="${esc(e.date)}" style="padding:6px 8px;font-size:13px;">
+      <span>${esc(e.employeeName)}</span>
+      <select class="record-edit-project" style="padding:6px 8px;font-size:13px;">${projectOptions}</select>
+      <select class="record-edit-phase" style="padding:6px 8px;font-size:13px;" ${editPhaseless ? "disabled" : ""}>${editPhaseless ? `<option value="">—</option>` : phaseOptions}</select>
+      <input type="number" class="record-edit-hours" min="0.01" step="0.01" value="${esc(e.hours)}" style="padding:6px 8px;font-size:13px;">
+      <input type="number" class="record-edit-cost" min="0" step="1" value="${e.cost ? esc(e.cost) : ""}" placeholder="0" style="padding:6px 8px;font-size:13px;">
+      <input type="text" class="record-edit-note" value="${esc(e.note || "")}" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;">
+      <span style="display:flex;gap:4px;">
+        <button type="button" class="icon-btn" data-action="save-record-edit" title="Uložit">✓</button>
+        <button type="button" class="icon-btn" data-action="cancel-record-edit" title="Zrušit">×</button>
+      </span>
+      ${state.recordEditError ? `<div class="q-hint" style="color:var(--danger);grid-column:1/-1;margin:2px 0 0;">${esc(state.recordEditError)}</div>` : ``}
+    </div>`;
+    }
     return `
     <div class="entry-row-wide">
       <span class="entry-date">${bulkRowCbHtml("records", e.id)}${esc(e.date)}</span>
@@ -4011,6 +4034,7 @@ function adminRecordsTemplate(){
       <span class="entry-num">${fmtH(e.hours)}</span>
       <span class="entry-num">${fmtKc(e.cost)}</span>
       <span class="entry-note">${esc(e.note||"")}</span>
+      <button type="button" class="icon-btn" data-action="edit-record" data-id="${esc(e.id)}" title="Upravit">✎</button>
     </div>`;
   }).join("") : `<div class="empty-state">${filtersActive ? "Žádné záznamy neodpovídají zvolenému filtru." : "Zatím nejsou zadané žádné hodiny."}</div>`;
 
@@ -4019,7 +4043,7 @@ function adminRecordsTemplate(){
     ${filtersActive ? `<button class="btn btn-small" type="button" id="records-filter-reset-btn" style="margin-bottom:14px;">Zrušit filtr</button>` : ``}
     <p class="q-hint" style="margin:0 0 14px;">${sorted.length} záznamů · <b style="color:var(--ink);">${fmtH(totalHours)}</b> celkem${totalCost ? ` · ${fmtKc(totalCost)}` : ``}</p>
     ${bulkToolbarHtml("records", "entry", sorted, "")}
-    <div class="entry-head-wide"><span>Datum</span><span>Zaměstnanec</span><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span></div>
+    <div class="entry-head-wide"><span>Datum</span><span>Zaměstnanec</span><span>Projekt</span><span>Fáze</span><span>Hodiny</span><span>Náklady</span><span>Poznámka</span><span></span></div>
     <div class="entries">${rows}</div>`;
 }
 
@@ -6220,6 +6244,69 @@ function bindAdmin(){
   document.querySelectorAll('[data-action="open-payment-calendar-from-project"]').forEach(b => b.onclick = () => {
     setState({ expandedPaymentCalendarProjectId: b.getAttribute("data-id") });
     window.scrollTo(0, 0);
+  });
+  document.querySelectorAll('[data-action="edit-record"]').forEach(b => b.onclick = () => {
+    setState({ editingRecordId: b.getAttribute("data-id"), recordEditError: "" });
+  });
+  document.querySelectorAll('[data-action="cancel-record-edit"]').forEach(b => b.onclick = () => {
+    setState({ editingRecordId: null, recordEditError: "" });
+  });
+  document.querySelectorAll("[data-record-edit-row]").forEach(row => {
+    const projectSel = row.querySelector(".record-edit-project");
+    const phaseSel = row.querySelector(".record-edit-phase");
+    if(!projectSel || !phaseSel) return;
+    projectSel.addEventListener("change", () => {
+      const project = state.config.projects.find(p => p.id === projectSel.value);
+      if(isPhaselessProject(project)){
+        phaseSel.innerHTML = `<option value="">—</option>`;
+        phaseSel.disabled = true;
+        return;
+      }
+      phaseSel.disabled = false;
+      const list = project ? phasesForProject(project) : [];
+      phaseSel.innerHTML = list.length
+        ? list.map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("")
+        : `<option value="" disabled selected>— žádné fáze —</option>`;
+    });
+    row.querySelectorAll("input, select").forEach(el => el.addEventListener("keydown", ev => {
+      if(ev.key !== "Enter") return;
+      ev.preventDefault();
+      const saveBtn = row.querySelector('[data-action="save-record-edit"]');
+      if(saveBtn) saveBtn.click();
+    }));
+  });
+  document.querySelectorAll('[data-action="save-record-edit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest("[data-record-edit-row]");
+    if(!row) return;
+    const entryId = row.getAttribute("data-record-edit-row");
+    const employeeId = row.getAttribute("data-employee-id");
+    const date = row.querySelector(".record-edit-date").value;
+    const projectId = row.querySelector(".record-edit-project").value;
+    const project = state.config.projects.find(p => p.id === projectId);
+    const phaseless = isPhaselessProject(project);
+    const phaseId = phaseless ? "" : row.querySelector(".record-edit-phase").value;
+    const hours = Number(row.querySelector(".record-edit-hours").value);
+    const cost = row.querySelector(".record-edit-cost").value;
+    const note = row.querySelector(".record-edit-note").value.trim();
+    if(!date || !(hours > 0) || !project) return;
+    if(!phaseless && !phaseId){ setState({ recordEditError: "Vyberte fázi." }); return; }
+    if(phaseId === "AD" && !note){ setState({ recordEditError: "U autorského dozoru je poznámka povinná." }); return; }
+    const entries = await loadEntries(employeeId);
+    const idx = entries.findIndex(e => e.id === entryId);
+    if(idx === -1){ setState({ recordEditError: "Záznam se nepodařilo najít." }); return; }
+    const patch = { date, projectId, phaseId, hours, cost: cost === "" ? 0 : Number(cost), note };
+    entries[idx] = { ...entries[idx], ...patch };
+    await saveEntries(employeeId, "", entries);
+    if(state.adminEntriesFlat){
+      const flatIdx = state.adminEntriesFlat.findIndex(e => e.id === entryId);
+      if(flatIdx !== -1) state.adminEntriesFlat[flatIdx] = { ...state.adminEntriesFlat[flatIdx], ...patch };
+    }
+    state.projectTotals = null;
+    state.allEntriesFlat = null;
+    state.editingRecordId = null;
+    state.recordEditError = "";
+    showStamp();
+    render();
   });
   document.querySelectorAll('[data-action="edit-labor-entry"]').forEach(b => b.onclick = () => {
     setState({ editingLaborEntryId: b.getAttribute("data-id") });
