@@ -492,12 +492,31 @@
   .sup-cost-total{ display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding:14px 15px 0; border-top:1px solid var(--line); font-size:14px; color:var(--soft); }
   .sup-cost-total b{ color:var(--ink); font-size:20px; }
   @media (max-width:640px){ .sup-cost-head{ display:none; } .sup-cost-row{ grid-template-columns:1fr; gap:6px; } }
+  .cost-card{ display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:14px; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px 16px; margin-bottom:8px; transition:border-color .15s, box-shadow .15s; }
+  .cost-card.has-cb{ grid-template-columns:22px 1fr auto auto; }
+  .cost-card:hover{ border-color:var(--soft); box-shadow:var(--shadow-sm); }
+  .cc-title{ font-weight:700; font-size:14.5px; line-height:1.3; }
+  .cc-sub{ font-size:13px; color:var(--soft); margin-top:2px; }
+  .cc-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; font-size:12px; color:var(--soft); }
+  .cc-dot{ opacity:.5; }
+  .cc-projname{ color:var(--soft); }
+  .cost-card .entry-num{ text-align:right; font-weight:700; font-size:15px; white-space:nowrap; }
+  .cc-act{ display:flex; gap:4px; opacity:.4; transition:opacity .15s; min-width:29px; }
+  .cost-card:hover .cc-act, .cost-card:focus-within .cc-act{ opacity:1; }
+  @media (hover:none){ .cc-act{ opacity:1; } }
+  @media (max-width:640px){ .cost-card{ gap:10px; padding:12px; } .cost-card.has-cb{ grid-template-columns:22px 1fr auto; } .cost-card:not(.has-cb){ grid-template-columns:1fr auto; } .cc-act{ grid-column:1 / -1; justify-content:flex-end; } }
   .price-group{ display:contents; }
   .cost-edit-price{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:10px; padding-top:6px; }
   .cost-edit-price .field-row{ flex:1 1 130px; }
   .cost-edit-price input{ padding:6px 8px; font-size:13px; }
   .cost-gross{ display:block; font-size:11px; font-weight:500; color:var(--soft); }
   .cost-supplier{ color:var(--ink); }
+  .review-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid var(--line); border-radius:var(--radius-sm); padding:13px 16px; margin-bottom:8px; background:var(--paper); }
+  .review-date{ font-weight:500; color:var(--soft); font-size:12.5px; margin-left:6px; }
+  .review-reasons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .review-chip{ font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:999px; }
+  .review-chip.bad{ background:rgba(179,56,44,.12); color:var(--danger); }
+  .review-chip.warn{ background:var(--tan-tint); color:var(--ink); }
   .lock-chips{ display:flex; flex-wrap:wrap; gap:10px; }
   .lock-chip{ display:inline-flex; align-items:center; gap:8px; background:var(--tan-tint); color:var(--ink); border-radius:999px; padding:6px 8px 6px 14px; font-size:13px; font-weight:600; }
   .lock-chip-open{ background:var(--paper); border:1px solid var(--line); border-radius:999px; padding:4px 11px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; color:var(--ink); }
@@ -1259,6 +1278,40 @@ function readPriceGroup(scope){
   }
   if(rate !== null) out.vatRate = rate; else out.vatRate = undefined;
   return out;
+}
+function fmtDateCz(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return m ? `${Number(m[3])}. ${Number(m[2])}. ${m[1]}` : esc(iso || "");
+}
+// Řádek nákladu – dvouřádková karta: nahoře dodavatel (tučně) + poznámka, pod tím malým písmem
+// datum, projekt, fáze a platba; vpravo cena bez DPH (s DPH menším písmem) a tlačítka.
+function costCardHtml(c, o){
+  o = o || {};
+  const proj = state.config.projects.find(p => p.id === c.projectId);
+  const phase = state.config.phases.find(p => p.id === c.phaseId);
+  const supName = o.showSupplier === false ? "" : costSupplierName(c);
+  const title = supName || c.note || "";
+  const sub = supName ? (c.note || "") : "";
+  const meta = [`<span>${fmtDateCz(c.date)}</span>`];
+  if(o.showProject !== false){
+    meta.push(proj
+      ? `<span><span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)}</span> <span class="cc-projname">${esc(proj.name)}</span></span>`
+      : `<span class="entry-proj gone">smazaný projekt</span>`);
+  }
+  if(phase) meta.push(`<span class="entry-phase">${esc(phase.id)}</span>`);
+  meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
+  const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
+  return `
+    <div class="cost-card ${cb ? "has-cb" : ""}">
+      ${cb ? `<span class="cc-cb">${cb}</span>` : ``}
+      <div class="cc-main">
+        <div class="cc-title">${title ? esc(title) : `<span style="color:var(--soft);font-weight:500;">bez popisu</span>`}</div>
+        ${sub ? `<div class="cc-sub">${esc(sub)}</div>` : ``}
+        <div class="cc-meta">${meta.join(`<span class="cc-dot">·</span>`)}</div>
+      </div>
+      ${costPriceCellHtml(c)}
+      <div class="cc-act">${o.actionsHtml || ""}</div>
+    </div>`;
 }
 function costNoteCellHtml(c){
   const supName = costSupplierName(c);
@@ -4035,19 +4088,7 @@ function adminCostsTemplate(){
 
   const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const rows = sorted.length ? sorted.map(c => {
-    const proj = state.config.projects.find(p => p.id === c.projectId);
-    const phase = state.config.phases.find(p => p.id === c.phaseId);
-    return `
-    <div class="entry-row">
-      <span class="entry-date">${bulkRowCbHtml("gcosts", c.id)}${esc(c.date)}</span>
-      <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
-      <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
-      <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
-      ${costPriceCellHtml(c)}
-      ${costNoteCellHtml(c)}
-      <button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
-      <button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>
-    </div>`;
+    return costCardHtml(c, { cbList: "gcosts", actionsHtml: `<button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
   }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
   return `
@@ -4091,7 +4132,6 @@ function adminCostsTemplate(){
         ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
       ${bulkToolbarHtml("gcosts", "cost", sorted, "")}
-      <div class="entry-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Bez DPH</span><span>Dodavatel · poznámka</span><span></span><span></span></div>
       <div class="entries">${rows}</div>
     </div>`;
 }
@@ -4701,15 +4741,7 @@ function projectDetailPageHtml(){
                 <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
               </div>`;
             }
-            return `
-            <div class="entry-row-cost">
-              <span class="entry-date">${bulkRowCbHtml("pcosts", c.id)}${esc(c.date)}</span>
-              <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : `<span class="meta">—</span>`}</span>
-              <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
-              ${costPriceCellHtml(c)}
-              ${costNoteCellHtml(c)}
-              <button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>
-            </div>`;
+            return costCardHtml(c, { cbList: "pcosts", showProject: false, actionsHtml: `<button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>` });
           }).join("") : `<div class="empty-state">${allProjectCosts.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
           const allProjectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
@@ -4816,7 +4848,6 @@ function projectDetailPageHtml(){
             ${allProjectCosts.length ? costsFilterHtml : ``}
             <p class="q-hint" style="margin:0 0 12px;">${costsFiltersActive ? "Náklady dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
             ${bulkToolbarHtml("pcosts", "cost", projectCosts, p.id)}
-            <div class="entry-head-cost"><span>Datum</span><span>Fáze</span><span>Platba</span><span>Bez DPH</span><span>Dodavatel · poznámka</span><span></span></div>
             <div class="entries">${costsRowsHtml}</div>
           </div>
 
@@ -5052,19 +5083,7 @@ function supplierDetailPageHtml(){
   const costs = supplierCosts(sp).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const t = supplierTotals(costs);
   const loading = state.costs === null;
-  const rows = costs.map(c => {
-    const proj = state.config.projects.find(p => p.id === c.projectId);
-    const phase = state.config.phases.find(p => p.id === c.phaseId);
-    return `
-    <div class="sup-cost-row">
-      <span class="entry-date">${esc(c.date)}</span>
-      <span>${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)} ${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}</span>
-      <span>${phase ? `<span class="entry-phase">${esc(phase.id)}</span>` : ``}</span>
-      <span class="meta">${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>
-      ${costPriceCellHtml(c)}
-      <span class="entry-note">${esc(c.note || "")}</span>
-    </div>`;
-  }).join("");
+  const rows = costs.map(c => costCardHtml(c, { showSupplier: false })).join("");
   return `
     <div class="sheet emp-page">
       <button class="logout-link" data-action="back-to-suppliers" style="margin-bottom:22px;">← Zpět na dodavatele</button>
@@ -5082,7 +5101,6 @@ function supplierDetailPageHtml(){
         <div class="admin-block-title"><span>Zaplacené náklady</span></div>
         ${loading ? `<div class="empty-state">Načítání…</div>` : costs.length ? `
           <p class="q-hint" style="margin:0 0 12px;">Celkem <b style="color:var(--ink);">${fmtKc2(t.net)}</b> bez DPH${t.gross !== t.net ? ` (s DPH ${fmtKc2(t.gross)})` : ``}. Náklady se k dodavateli přiřazují při zadání nákladu projektu.</p>
-          <div class="sup-cost-head"><span>Datum</span><span>Projekt</span><span>Fáze</span><span>Platba</span><span>Bez DPH</span><span>Poznámka</span></div>
           <div class="entries">${rows}</div>
           <div class="sup-cost-total"><span>Celkem bez DPH</span><b>${fmtKc2(t.net)}</b></div>` : `<div class="empty-state">Tomuto dodavateli zatím nebyl zadán žádný náklad.</div>`}
       </div>
@@ -5241,6 +5259,80 @@ function exportTimesheetCsv(kind){
   });
   rows.push(["Celkem", "", "", "", "", csvNum(th), csvNum(tc), ""]);
   downloadCsv(rows, `${base}.csv`);
+}
+
+/* ---------------- kontrola záznamů ---------------- */
+function reviewScopeStart(scope){
+  const now = new Date();
+  if(scope === "all") return "";
+  if(scope === "year") return `${now.getFullYear()}-01-01`;
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+function reviewIssues(){
+  if(state.adminEntriesFlat === null) return null;
+  const from = reviewScopeStart(state.reviewScope || "last2");
+  const today = todayStr();
+  const out = [];
+  const dayTotals = {};
+  state.adminEntriesFlat.forEach(e => {
+    if(!e.date || e.date < from) return;
+    const key = `${e.employeeId}|${e.date}`;
+    const d = dayTotals[key] = dayTotals[key] || { employeeId: e.employeeId, employeeName: e.employeeName, date: e.date, hours: 0, count: 0 };
+    d.hours += Number(e.hours || 0);
+    d.count++;
+    const reasons = [];
+    const project = state.config.projects.find(p => p.id === e.projectId);
+    const hours = Number(e.hours || 0);
+    if(hours > 12) reasons.push({ level: "bad", text: `${fmtH(hours)} v jednom záznamu` });
+    if(e.date > today) reasons.push({ level: "bad", text: "datum v budoucnosti" });
+    if(!project) reasons.push({ level: "bad", text: "projekt už neexistuje" });
+    else {
+      if(e.phaseId && isPhaseClosedOnDate(project, e.phaseId, e.date)) reasons.push({ level: "warn", text: "fáze je k tomuto datu uzavřená" });
+      if(e.phaseId === "AD" && !String(e.note || "").trim()) reasons.push({ level: "warn", text: "chybí poznámka u autorského dozoru" });
+    }
+    const wd = new Date(`${e.date}T12:00:00`).getDay();
+    const isHoliday = !!czechPublicHolidays(Number(e.date.slice(0, 4)))[e.date];
+    const legitOff = e.projectId === "000" && (e.phaseId === "SS" || e.phaseId === "DOV");
+    if((wd === 0 || wd === 6 || isHoliday) && !legitOff) reasons.push({ level: "warn", text: wd === 0 || wd === 6 ? "zápis na víkend" : "zápis na státní svátek" });
+    if(reasons.length) out.push({ kind: "entry", date: e.date, employeeId: e.employeeId, employeeName: e.employeeName, entry: e, reasons });
+  });
+  Object.values(dayTotals).forEach(d => {
+    if(d.hours > 12 && d.count > 1) out.push({ kind: "day", date: d.date, employeeId: d.employeeId, employeeName: d.employeeName, day: d, reasons: [{ level: "bad", text: `${fmtH(d.hours)} za jeden den (${d.count} záznamy)` }] });
+  });
+  return out.sort((a, b) => b.date.localeCompare(a.date) || String(a.employeeName).localeCompare(String(b.employeeName), "cs"));
+}
+function adminReviewTemplate(){
+  const issues = reviewIssues();
+  const scope = state.reviewScope || "last2";
+  const scopeSelect = `
+    <div class="field-row" style="max-width:260px;margin-bottom:14px;"><label class="field-label">Období</label>
+      <select id="review-scope-select">
+        <option value="last2" ${scope === "last2" ? "selected" : ""}>Tento a minulý měsíc</option>
+        <option value="year" ${scope === "year" ? "selected" : ""}>Letošní rok</option>
+        <option value="all" ${scope === "all" ? "selected" : ""}>Všechno</option>
+      </select></div>`;
+  if(issues === null) return `${scopeSelect}<div class="empty-state">Načítání…</div>`;
+  const rows = issues.map(it => {
+    const proj = it.entry ? state.config.projects.find(p => p.id === it.entry.projectId) : null;
+    const phase = it.entry ? state.config.phases.find(p => p.id === it.entry.phaseId) : null;
+    const what = it.kind === "entry"
+      ? `${proj ? `<span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)}</span> <span class="cc-projname">${esc(proj.name)}</span>` : `<span class="entry-proj gone">smazaný projekt</span>`}${phase ? ` <span class="entry-phase">${esc(phase.id)}</span>` : ``} · <b>${fmtH(it.entry.hours)}</b>${it.entry.note ? ` · ${esc(it.entry.note)}` : ``}`
+      : `Všechny záznamy toho dne dohromady`;
+    return `
+    <div class="review-row">
+      <div class="review-main">
+        <div class="cc-title">${esc(it.employeeName)} <span class="review-date">${fmtDateCz(it.date)}</span></div>
+        <div class="cc-sub">${what}</div>
+        <div class="review-reasons">${it.reasons.map(r => `<span class="review-chip ${r.level}">${esc(r.text)}</span>`).join("")}</div>
+      </div>
+      <button type="button" class="btn btn-outline btn-small" data-action="review-open" data-employee="${esc(it.employeeId)}" data-date="${esc(it.date)}" data-id="${it.entry ? esc(it.entry.id) : ""}">${it.entry ? "Upravit" : "Zobrazit"}</button>
+    </div>`;
+  }).join("");
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Záznamy, které vypadají jako překlep nebo chyba: víc než 12 hodin v jednom záznamu nebo za den, datum v budoucnosti, zápis na víkend či státní svátek, uzavřená fáze, smazaný projekt nebo chybějící poznámka u autorského dozoru. Víkendová dovolená a státní svátek na projektu 000 se nehlásí.</p>
+    ${scopeSelect}
+    ${issues.length ? `<p class="q-hint" style="margin:0 0 10px;"><b style="color:var(--ink);">${issues.length}</b> ${issues.length === 1 ? "záznam ke kontrole" : issues.length < 5 ? "záznamy ke kontrole" : "záznamů ke kontrole"}</p>${rows}` : `<div class="empty-state">V tomto období není nic podezřelého.</div>`}`;
 }
 
 /* ---------------- dovolená ---------------- */
@@ -5470,6 +5562,11 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "client-export" ? " is-open" : ""}">
         ${adminSectionHeader("client-export", "Export pro klienty")}
         ${state.adminOpenSection === "client-export" ? adminClientExportTemplate() : ""}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "review" ? " is-open" : ""}">
+        ${adminSectionHeader("review", (() => { const rv = reviewIssues(); return `Kontrola záznamů${rv && rv.length ? ` <span class="bw-count ${rv.some(r => r.reasons.some(x => x.level === "bad")) ? "over" : ""}">${rv.length}</span>` : ""}`; })())}
+        ${state.adminOpenSection === "review" ? adminReviewTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "budget-watch" ? " is-open" : ""}">
@@ -6064,6 +6161,21 @@ function bindAdmin(){
   if(exportEmpSel) exportEmpSel.addEventListener("change", () => setState({ exportEmployeeId: exportEmpSel.value }));
   document.querySelectorAll('[data-action="export-timesheet-detail"]').forEach(b => b.onclick = () => exportTimesheetCsv("detail"));
   document.querySelectorAll('[data-action="export-timesheet-summary"]').forEach(b => b.onclick = () => exportTimesheetCsv("summary"));
+  const reviewScopeSel = document.getElementById("review-scope-select");
+  if(reviewScopeSel) reviewScopeSel.addEventListener("change", () => setState({ reviewScope: reviewScopeSel.value }));
+  document.querySelectorAll('[data-action="review-open"]').forEach(b => b.onclick = () => {
+    const id = b.getAttribute("data-id");
+    const date = b.getAttribute("data-date");
+    setState({
+      adminOpenSection: "records-filter",
+      recordsFilterEmployeeId: b.getAttribute("data-employee"),
+      recordsFilterFrom: date, recordsFilterTo: date,
+      recordsFilterProjectId: "", recordsFilterPhaseId: "", recordsFilterText: "",
+      editingRecordId: id || null, recordEditError: ""
+    });
+    const sec = document.querySelector('[data-action="toggle-admin-section"][data-section="records-filter"]');
+    if(sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   const vacationYearSel = document.getElementById("vacation-year-select");
   if(vacationYearSel) vacationYearSel.addEventListener("change", () => setState({ vacationYear: vacationYearSel.value }));
 
@@ -6071,7 +6183,7 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budgets" || newSection === "budget-watch" || newSection === "suppliers" || newSection === "timesheet-export" || newSection === "vacation"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budgets" || newSection === "budget-watch" || newSection === "review" || newSection === "suppliers" || newSection === "timesheet-export" || newSection === "vacation"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
