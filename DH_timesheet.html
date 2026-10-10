@@ -5276,7 +5276,7 @@ const REVIEW_RULES = [
   { id: "bigDay", label: "Víc než 12 hodin za jeden den" },
   { id: "future", label: "Datum v budoucnosti" },
   { id: "weekend", label: "Zápis na víkend nebo státní svátek" },
-  { id: "closedPhase", label: "Fáze je k datu uzavřená" },
+  { id: "closedPhase", label: "Záznam po uzavření fáze (v den uzavření je v pořádku)" },
   { id: "deletedProject", label: "Smazaný projekt" },
   { id: "adNote", label: "Chybí poznámka u autorského dozoru" }
 ];
@@ -5300,7 +5300,7 @@ function reviewIssues(){
     if(e.date > today && reviewRuleOn("future")) reasons.push({ level: "bad", text: "datum v budoucnosti" });
     if(!project){ if(reviewRuleOn("deletedProject")) reasons.push({ level: "bad", text: "projekt už neexistuje" }); }
     else {
-      if(e.phaseId && reviewRuleOn("closedPhase") && isPhaseClosedOnDate(project, e.phaseId, e.date)) reasons.push({ level: "warn", text: "fáze je k tomuto datu uzavřená" });
+      if(e.phaseId && reviewRuleOn("closedPhase") && isPhaseClosedOnDate(project, e.phaseId, e.date) && e.date !== project.closedPhases[e.phaseId]) reasons.push({ level: "warn", text: "fáze je k tomuto datu uzavřená" });
       if(e.phaseId === "AD" && reviewRuleOn("adNote") && !String(e.note || "").trim()) reasons.push({ level: "warn", text: "chybí poznámka u autorského dozoru" });
     }
     const wd = new Date(`${e.date}T12:00:00`).getDay();
