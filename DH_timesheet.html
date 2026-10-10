@@ -210,10 +210,6 @@
   .emp-stat::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--line); }
   .emp-stat.has::before{ background:var(--sage); }
   .emp-stat-label{ font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); margin-bottom:8px; }
-  .emp-stat-value small{ font-size:.5em; font-weight:600; color:var(--soft); letter-spacing:0; }
-  .emp-stat.done .emp-stat-value{ color:var(--sage); }
-  .emp-progress{ position:absolute; left:0; right:0; bottom:0; height:4px; background:var(--sage-tint); }
-  .emp-progress i{ display:block; height:100%; background:var(--sage); transition:width .4s; }
   .emp-stat-value{ font-size:clamp(24px,3.4vw,34px); font-weight:800; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; }
   :is(.emp-page,.adm-page) .admin-block{ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); padding:22px 26px; margin-bottom:16px; transition:box-shadow .2s, transform .2s, border-color .2s; }
   :is(.emp-page,.adm-page) .admin-block:not(.is-open){ padding-top:20px; padding-bottom:20px; }
@@ -3399,18 +3395,11 @@ function timesheetTemplate(){
   const todayH = state.entries.filter(e => e.date === today).reduce((a,e)=>a+Number(e.hours||0),0);
   const yearH = yearEntries.reduce((a,e)=>a+Number(e.hours||0),0);
   const firstName = String(emp.greeting || "").trim() || String(emp.name || "").trim().split(/\s+/)[0] || "";
-  const statTile = (label, value, cls, progress) => `
+  const statTile = (label, value, cls) => `
         <div class="emp-stat ${cls || ""}">
           <div class="emp-stat-label">${label}</div>
           <div class="emp-stat-value">${value}</div>
-          ${progress !== undefined ? `<div class="emp-progress"><i style="width:${Math.max(0, Math.min(100, progress))}%;"></i></div>` : ``}
         </div>`;
-  // Denní norma se ukazuje jen ve všední den, který není státní svátek.
-  const todayDate = new Date();
-  const todayIsWorkday = todayDate.getDay() !== 0 && todayDate.getDay() !== 6 && !czechPublicHolidays(todayDate.getFullYear())[todayStr()];
-  const todayTile = todayIsWorkday
-    ? statTile("Dnes", `${fmtH(todayH)} <small>z ${DAILY_NORM_HOURS} h</small>`, todayH >= DAILY_NORM_HOURS ? "has done" : todayH ? "has" : "", todayH / DAILY_NORM_HOURS * 100)
-    : statTile("Dnes", fmtH(todayH), todayH ? "has" : "");
 
   return `
     <div class="sheet emp-page">
@@ -3422,7 +3411,7 @@ function timesheetTemplate(){
       </div>
 
       <div class="emp-stats">
-        ${todayTile}
+        ${statTile("Dnes", fmtH(todayH), todayH ? "has" : "")}
         ${statTile("Měsíc · " + esc(fmtMonthLabel(state.month)), fmtH(totalH), totalH ? "has" : "")}
         ${statTile("Rok " + esc(currentYear), fmtH(yearH), yearH ? "has" : "")}
         ${Number(emp.vacationDays) > 0 ? statTile("Dovolená " + esc(todayStr().slice(0,4)) + " · zbývá", fmtDays(Number(emp.vacationDays) - vacationHoursUsed(state.entries, todayStr().slice(0,4)) / VACATION_HOURS_PER_DAY) + " dní", "has") : ``}
@@ -5256,7 +5245,6 @@ function exportTimesheetCsv(kind){
 
 /* ---------------- dovolená ---------------- */
 const VACATION_HOURS_PER_DAY = 8;
-const DAILY_NORM_HOURS = 8;
 function vacationHoursUsed(entries, year){
   return entries.filter(e => e.projectId === "000" && e.phaseId === "DOV" && (e.date || "").slice(0, 4) === String(year))
     .reduce((a, e) => a + Number(e.hours || 0), 0);
