@@ -511,6 +511,8 @@
   .cost-edit-price input{ padding:6px 8px; font-size:13px; }
   .cost-gross{ display:block; font-size:11px; font-weight:500; color:var(--soft); }
   .cost-supplier{ color:var(--ink); }
+  .review-rules{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:6px 18px; margin-bottom:16px; padding:14px 16px; background:var(--sage-tint); border-radius:var(--radius-sm); }
+  .review-rule{ display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; }
   .review-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid var(--line); border-radius:var(--radius-sm); padding:13px 16px; margin-bottom:8px; background:var(--paper); }
   .review-date{ font-weight:500; color:var(--soft); font-size:12.5px; margin-left:6px; }
   .review-reasons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
@@ -5269,6 +5271,16 @@ function reviewScopeStart(scope){
   const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
+const REVIEW_RULES = [
+  { id: "bigEntry", label: "Víc než 12 hodin v jednom záznamu" },
+  { id: "bigDay", label: "Víc než 12 hodin za jeden den" },
+  { id: "future", label: "Datum v budoucnosti" },
+  { id: "weekend", label: "Zápis na víkend nebo státní svátek" },
+  { id: "closedPhase", label: "Fáze je k datu uzavřená" },
+  { id: "deletedProject", label: "Smazaný projekt" },
+  { id: "adNote", label: "Chybí poznámka u autorského dozoru" }
+];
+function reviewRuleOn(id){ return !(state.config.reviewRules && state.config.reviewRules[id] === false); }
 function reviewIssues(){
   if(state.adminEntriesFlat === null) return null;
   const from = reviewScopeStart(state.reviewScope || "last2");
@@ -5284,21 +5296,21 @@ function reviewIssues(){
     const reasons = [];
     const project = state.config.projects.find(p => p.id === e.projectId);
     const hours = Number(e.hours || 0);
-    if(hours > 12) reasons.push({ level: "bad", text: `${fmtH(hours)} v jednom záznamu` });
-    if(e.date > today) reasons.push({ level: "bad", text: "datum v budoucnosti" });
-    if(!project) reasons.push({ level: "bad", text: "projekt už neexistuje" });
+    if(hours > 12 && reviewRuleOn("bigEntry")) reasons.push({ level: "bad", text: `${fmtH(hours)} v jednom záznamu` });
+    if(e.date > today && reviewRuleOn("future")) reasons.push({ level: "bad", text: "datum v budoucnosti" });
+    if(!project){ if(reviewRuleOn("deletedProject")) reasons.push({ level: "bad", text: "projekt už neexistuje" }); }
     else {
-      if(e.phaseId && isPhaseClosedOnDate(project, e.phaseId, e.date)) reasons.push({ level: "warn", text: "fáze je k tomuto datu uzavřená" });
-      if(e.phaseId === "AD" && !String(e.note || "").trim()) reasons.push({ level: "warn", text: "chybí poznámka u autorského dozoru" });
+      if(e.phaseId && reviewRuleOn("closedPhase") && isPhaseClosedOnDate(project, e.phaseId, e.date)) reasons.push({ level: "warn", text: "fáze je k tomuto datu uzavřená" });
+      if(e.phaseId === "AD" && reviewRuleOn("adNote") && !String(e.note || "").trim()) reasons.push({ level: "warn", text: "chybí poznámka u autorského dozoru" });
     }
     const wd = new Date(`${e.date}T12:00:00`).getDay();
     const isHoliday = !!czechPublicHolidays(Number(e.date.slice(0, 4)))[e.date];
     const legitOff = e.projectId === "000" && (e.phaseId === "SS" || e.phaseId === "DOV");
-    if((wd === 0 || wd === 6 || isHoliday) && !legitOff) reasons.push({ level: "warn", text: wd === 0 || wd === 6 ? "zápis na víkend" : "zápis na státní svátek" });
+    if((wd === 0 || wd === 6 || isHoliday) && !legitOff && reviewRuleOn("weekend")) reasons.push({ level: "warn", text: wd === 0 || wd === 6 ? "zápis na víkend" : "zápis na státní svátek" });
     if(reasons.length) out.push({ kind: "entry", date: e.date, employeeId: e.employeeId, employeeName: e.employeeName, entry: e, reasons });
   });
   Object.values(dayTotals).forEach(d => {
-    if(d.hours > 12 && d.count > 1) out.push({ kind: "day", date: d.date, employeeId: d.employeeId, employeeName: d.employeeName, day: d, reasons: [{ level: "bad", text: `${fmtH(d.hours)} za jeden den (${d.count} záznamy)` }] });
+    if(d.hours > 12 && d.count > 1 && reviewRuleOn("bigDay")) out.push({ kind: "day", date: d.date, employeeId: d.employeeId, employeeName: d.employeeName, day: d, reasons: [{ level: "bad", text: `${fmtH(d.hours)} za jeden den (${d.count} záznamy)` }] });
   });
   return out.sort((a, b) => b.date.localeCompare(a.date) || String(a.employeeName).localeCompare(String(b.employeeName), "cs"));
 }
@@ -5312,7 +5324,12 @@ function adminReviewTemplate(){
         <option value="year" ${scope === "year" ? "selected" : ""}>Letošní rok</option>
         <option value="all" ${scope === "all" ? "selected" : ""}>Všechno</option>
       </select></div>`;
-  if(issues === null) return `${scopeSelect}<div class="empty-state">Načítání…</div>`;
+  const rulesHtml = `
+    <div class="review-rules">
+      <div class="field-label" style="margin-bottom:8px;">Co hlídat</div>
+      ${REVIEW_RULES.map(r => `<label class="review-rule"><input type="checkbox" class="review-rule-cb" data-rule="${r.id}" ${reviewRuleOn(r.id) ? "checked" : ""}> ${esc(r.label)}</label>`).join("")}
+    </div>`;
+  if(issues === null) return `${rulesHtml}${scopeSelect}<div class="empty-state">Načítání…</div>`;
   const rows = issues.map(it => {
     const proj = it.entry ? state.config.projects.find(p => p.id === it.entry.projectId) : null;
     const phase = it.entry ? state.config.phases.find(p => p.id === it.entry.phaseId) : null;
@@ -5330,7 +5347,8 @@ function adminReviewTemplate(){
     </div>`;
   }).join("");
   return `
-    <p class="q-hint" style="margin:0 0 14px;">Záznamy, které vypadají jako překlep nebo chyba: víc než 12 hodin v jednom záznamu nebo za den, datum v budoucnosti, zápis na víkend či státní svátek, uzavřená fáze, smazaný projekt nebo chybějící poznámka u autorského dozoru. Víkendová dovolená a státní svátek na projektu 000 se nehlásí.</p>
+    <p class="q-hint" style="margin:0 0 14px;">Záznamy, které vypadají jako překlep nebo chyba. Zaškrtnutím níže určíte, co se hlídá. Víkendová dovolená a státní svátek na projektu 000 se nehlásí.</p>
+    ${rulesHtml}
     ${scopeSelect}
     ${issues.length ? `<p class="q-hint" style="margin:0 0 10px;"><b style="color:var(--ink);">${issues.length}</b> ${issues.length === 1 ? "záznam ke kontrole" : issues.length < 5 ? "záznamy ke kontrole" : "záznamů ke kontrole"}</p>${rows}` : `<div class="empty-state">V tomto období není nic podezřelého.</div>`}`;
 }
@@ -6161,6 +6179,13 @@ function bindAdmin(){
   if(exportEmpSel) exportEmpSel.addEventListener("change", () => setState({ exportEmployeeId: exportEmpSel.value }));
   document.querySelectorAll('[data-action="export-timesheet-detail"]').forEach(b => b.onclick = () => exportTimesheetCsv("detail"));
   document.querySelectorAll('[data-action="export-timesheet-summary"]').forEach(b => b.onclick = () => exportTimesheetCsv("summary"));
+  document.querySelectorAll(".review-rule-cb").forEach(cb => cb.addEventListener("change", async () => {
+    if(!state.config.reviewRules) state.config.reviewRules = {};
+    state.config.reviewRules[cb.getAttribute("data-rule")] = cb.checked;
+    await saveConfig();
+    showStamp();
+    render();
+  }));
   const reviewScopeSel = document.getElementById("review-scope-select");
   if(reviewScopeSel) reviewScopeSel.addEventListener("change", () => setState({ reviewScope: reviewScopeSel.value }));
   document.querySelectorAll('[data-action="review-open"]').forEach(b => b.onclick = () => {
