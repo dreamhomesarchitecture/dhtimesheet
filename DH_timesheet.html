@@ -1287,6 +1287,14 @@ function fmtDateCz(iso){
 }
 // Řádek nákladu – dvouřádková karta: nahoře dodavatel (tučně) + poznámka, pod tím malým písmem
 // datum, projekt, fáze a platba; vpravo cena bez DPH (s DPH menším písmem) a tlačítka.
+function employeeSelectOptionsHtml(selectedId){
+  const list = state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
+  return `<option value="">— bez zaměstnance —</option>` + list.map(e => `<option value="${esc(e.id)}" ${e.id === selectedId ? "selected" : ""}>${esc(e.name)}</option>`).join("");
+}
+function costEmployeeName(c){
+  const e = c && c.employeeId ? state.config.employees.find(x => x.id === c.employeeId) : null;
+  return e ? e.name : "";
+}
 function costCardHtml(c, o){
   o = o || {};
   const proj = state.config.projects.find(p => p.id === c.projectId);
@@ -1302,6 +1310,8 @@ function costCardHtml(c, o){
   }
   if(phase) meta.push(`<span class="entry-phase">${esc(phase.id)}</span>`);
   meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
+  const empName = costEmployeeName(c);
+  if(empName) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
   const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
   return `
     <div class="cost-card ${cb ? "has-cb" : ""}">
@@ -1880,7 +1890,7 @@ function buildTimesheetWorkbook(entriesByEmployee){
 function buildCostsWorkbook(costs){
   const projectsById = {}; state.config.projects.forEach(p => projectsById[p.id] = p.name);
   const phasesById = {}; state.config.phases.forEach(p => phasesById[p.id] = p.name);
-  const header = ["Datum", "Číslo projektu", "Projekt", "Fáze", "Název fáze", "Dodavatel", "Cena bez DPH (Kč)", "DPH (%)", "DPH (Kč)", "Cena s DPH (Kč)", "Platba", "Poznámka"];
+  const header = ["Datum", "Číslo projektu", "Projekt", "Fáze", "Název fáze", "Dodavatel", "Zaměstnanec", "Cena bez DPH (Kč)", "DPH (%)", "DPH (Kč)", "Cena s DPH (Kč)", "Platba", "Poznámka"];
   const sorted = (costs || []).slice().sort((a,b) => (a.date || "").localeCompare(b.date || ""));
   const totalAmount = sorted.reduce((s,c) => s + Number(c.amount||0), 0);
   const totalVat = sorted.reduce((s,c) => s + Number(c.vatAmount||0), 0);
@@ -1892,6 +1902,7 @@ function buildCostsWorkbook(costs){
     c.phaseId || "",
     phasesById[c.phaseId] || "",
     costSupplierName(c),
+    costEmployeeName(c),
     Number(c.amount || 0),
     c.vatRate !== undefined && c.vatRate !== "" ? Number(c.vatRate) : "",
     Number(c.vatAmount || 0),
@@ -1900,9 +1911,9 @@ function buildCostsWorkbook(costs){
     c.note || ""
   ]);
   rows.push([]);
-  rows.push(["", "", "", "", "Celkem náklady", "", totalAmount, "", totalVat, totalGross, "", ""]);
+  rows.push(["", "", "", "", "Celkem náklady", "", "", totalAmount, "", totalVat, totalGross, "", ""]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 22 }, { wch: 17 }, { wch: 9 }, { wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 40 }];
+  ws["!cols"] = [{ wch: 11 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 17 }, { wch: 9 }, { wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 40 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Náklady");
   return wb;
@@ -4083,7 +4094,7 @@ function adminCostsTemplate(){
     (!state.costFilterProjectId || c.projectId === state.costFilterProjectId) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
     (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
-    noteMatches(`${costSupplierName(c)} ${c.note || ""}`, state.costFilterText)
+    noteMatches(`${costSupplierName(c)} ${costEmployeeName(c)} ${c.note || ""}`, state.costFilterText)
   );
   const totalAmount = filtered.reduce((s,c) => s + Number(c.amount||0), 0);
   const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment || state.costFilterText;
@@ -4101,6 +4112,7 @@ function adminCostsTemplate(){
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
+        <div class="field-row"><label class="field-label">Zaměstnanec</label><select name="employeeId" id="cost-employee-select">${employeeSelectOptionsHtml(editingCost ? editingCost.employeeId : "")}</select></div>
         <div class="field-row"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
         ${costPriceFieldsHtml({ cost: editingCost, required: true })}
         <div class="field-row"><label class="field-label">Platba</label>
@@ -4689,7 +4701,7 @@ function projectDetailPageHtml(){
           let projectCosts = allProjectCosts.filter(c =>
             (!costsFilterPhase || c.phaseId === costsFilterPhase) &&
             (!costsFilterPayment || c.paymentMethod === costsFilterPayment) &&
-            noteMatches(`${costSupplierName(c)} ${c.note || ""}`, costsFilterText)
+            noteMatches(`${costSupplierName(c)} ${costEmployeeName(c)} ${c.note || ""}`, costsFilterText)
           );
           const costsSort = state.projectCostsSort || "date";
           projectCosts = projectCosts.slice().sort((a,b) => {
@@ -4740,7 +4752,7 @@ function projectDetailPageHtml(){
                   <button type="button" class="icon-btn" data-action="save-project-cost-edit" title="Uložit">✓</button>
                   <button type="button" class="icon-btn" data-action="cancel-project-cost-edit" title="Zrušit">×</button>
                 </span>
-                <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
+                <div class="cost-edit-price"><div class="field-row"><label class="field-label">Zaměstnanec</label><select class="cost-edit-employee">${employeeSelectOptionsHtml(c.employeeId)}</select></div>${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
               </div>`;
             }
             return costCardHtml(c, { cbList: "pcosts", showProject: false, actionsHtml: `<button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>` });
@@ -4835,6 +4847,7 @@ function projectDetailPageHtml(){
                   <option value="">—</option>
                   ${phasesForProject(p).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("")}
                 </select></div>
+                <div class="field-row"><label class="field-label">Zaměstnanec</label><select id="project-cost-add-employee">${employeeSelectOptionsHtml("")}</select></div>
                 ${costPriceFieldsHtml({ netId: "project-cost-add-amount" })}
                 <div class="field-row"><label class="field-label">Platba</label>
                   <select id="project-cost-add-payment">
@@ -6487,7 +6500,8 @@ function bindAdmin(){
       return;
     }
     if(!state.costs) state.costs = [];
-    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note });
+    const employeeId = document.getElementById("project-cost-add-employee").value || undefined;
+    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note, employeeId });
     state.projectCostAddError = "";
     await saveCosts();
     showStamp();
@@ -6730,6 +6744,8 @@ function bindAdmin(){
     cost.paymentMethod = paymentMethod;
     Object.assign(cost, price);
     if(price.vatRate === undefined) delete cost.vatRate;
+    const editEmp = row.querySelector(".cost-edit-employee").value;
+    if(editEmp) cost.employeeId = editEmp; else delete cost.employeeId;
     cost.note = note.trim();
     await saveCosts();
     state.editingProjectCostId = null;
@@ -7099,7 +7115,7 @@ function bindAdmin(){
     const data = Object.fromEntries(new FormData(addCostForm).entries());
     const price = readPriceGroup(addCostForm);
     if(!data.date || !data.projectId || !price || !data.paymentMethod) return;
-    const fields = { date: data.date, projectId: data.projectId, phaseId: data.phaseId || "", ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim() };
+    const fields = { date: data.date, projectId: data.projectId, phaseId: data.phaseId || "", ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: data.employeeId || undefined };
     if(!state.costs) state.costs = [];
     if(state.editingCostId){
       const idx = state.costs.findIndex(c => c.id === state.editingCostId);
