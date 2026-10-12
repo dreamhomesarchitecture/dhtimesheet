@@ -500,6 +500,7 @@
   .cc-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px; font-size:12px; color:var(--soft); }
   .cc-dot{ opacity:.5; }
   .cc-projname{ color:var(--soft); }
+  .entry-proj.emp{ background:var(--tan-tint); color:var(--ink); cursor:default; }
   .cost-card .entry-num{ text-align:right; font-weight:700; font-size:15px; white-space:nowrap; }
   .cc-act{ display:flex; gap:4px; opacity:.4; transition:opacity .15s; min-width:29px; }
   .cost-card:hover .cc-act, .cost-card:focus-within .cc-act{ opacity:1; }
@@ -1303,15 +1304,17 @@ function costCardHtml(c, o){
   const title = supName || c.note || "";
   const sub = supName ? (c.note || "") : "";
   const meta = [`<span>${fmtDateCz(c.date)}</span>`];
+  const empName = costEmployeeName(c);
   if(o.showProject !== false){
     meta.push(proj
       ? `<span><span class="entry-proj" data-project-id="${esc(proj.id)}">#${esc(proj.id)}</span> <span class="cc-projname">${esc(proj.name)}</span></span>`
-      : `<span class="entry-proj gone">smazaný projekt</span>`);
+      : (!c.projectId && c.employeeId
+        ? `<span><span class="entry-proj emp">zaměstnanec</span> <span class="cc-projname">${esc(empName || "smazaný zaměstnanec")}</span></span>`
+        : `<span class="entry-proj gone">smazaný projekt</span>`));
   }
   if(phase) meta.push(`<span class="entry-phase">${esc(phase.id)}</span>`);
   meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
-  const empName = costEmployeeName(c);
-  if(empName) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
+  if(empName && proj) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
   const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
   return `
     <div class="cost-card ${cb ? "has-cb" : ""}">
@@ -4080,18 +4083,22 @@ function paymentCalendarPageHtml(){
 function adminCostsTemplate(){
   const costs = state.costs || [];
   const editingCost = state.editingCostId ? costs.find(c => c.id === state.editingCostId) : null;
-  const formProject = editingCost
+  const editingEmployeeCost = !!(editingCost && !editingCost.projectId && editingCost.employeeId);
+  const formProject = editingEmployeeCost ? null : editingCost
     ? (state.config.projects.find(p => p.id === editingCost.projectId) || state.config.projects[0])
     : state.config.projects[0];
   const formPhases = formProject ? phasesForProject(formProject) : [];
-  const projectOptions = state.config.projects.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const employeesSorted = state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
+  const projectOptions = state.config.projects.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.projectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("")
+    + employeesSorted.map(e => `<option value="emp:${esc(e.id)}" ${editingEmployeeCost && editingCost.employeeId === e.id ? "selected" : ""}>Zaměstnanec – ${esc(e.name)}</option>`).join("");
   const phaseOptions = `<option value="">—</option>` + formPhases.map(p => `<option value="${esc(p.id)}" ${editingCost && editingCost.phaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
 
-  const filterProjectOptions = `<option value="">Všechny projekty</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.costFilterProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("");
+  const filterProjectOptions = `<option value="">Všechny projekty i zaměstnanci</option>` + state.config.projects.map(p => `<option value="${esc(p.id)}" ${state.costFilterProjectId === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("")
+    + employeesSorted.map(e => `<option value="emp:${esc(e.id)}" ${state.costFilterProjectId === "emp:" + e.id ? "selected" : ""}>Zaměstnanec – ${esc(e.name)}</option>`).join("");
   const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.costFilterPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
 
   const filtered = costs.filter(c =>
-    (!state.costFilterProjectId || c.projectId === state.costFilterProjectId) &&
+    (!state.costFilterProjectId || (String(state.costFilterProjectId).startsWith("emp:") ? (!c.projectId && c.employeeId === String(state.costFilterProjectId).slice(4)) : c.projectId === state.costFilterProjectId)) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
     (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
     noteMatches(`${costSupplierName(c)} ${costEmployeeName(c)} ${c.note || ""}`, state.costFilterText)
@@ -4112,7 +4119,6 @@ function adminCostsTemplate(){
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
-        <div class="field-row"><label class="field-label">Zaměstnanec</label><select name="employeeId" id="cost-employee-select">${employeeSelectOptionsHtml(editingCost ? editingCost.employeeId : "")}</select></div>
         <div class="field-row"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
         ${costPriceFieldsHtml({ cost: editingCost, required: true })}
         <div class="field-row"><label class="field-label">Platba</label>
@@ -4752,7 +4758,7 @@ function projectDetailPageHtml(){
                   <button type="button" class="icon-btn" data-action="save-project-cost-edit" title="Uložit">✓</button>
                   <button type="button" class="icon-btn" data-action="cancel-project-cost-edit" title="Zrušit">×</button>
                 </span>
-                <div class="cost-edit-price"><div class="field-row"><label class="field-label">Zaměstnanec</label><select class="cost-edit-employee">${employeeSelectOptionsHtml(c.employeeId)}</select></div>${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
+                <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
               </div>`;
             }
             return costCardHtml(c, { cbList: "pcosts", showProject: false, actionsHtml: `<button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button>` });
@@ -4847,7 +4853,6 @@ function projectDetailPageHtml(){
                   <option value="">—</option>
                   ${phasesForProject(p).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("")}
                 </select></div>
-                <div class="field-row"><label class="field-label">Zaměstnanec</label><select id="project-cost-add-employee">${employeeSelectOptionsHtml("")}</select></div>
                 ${costPriceFieldsHtml({ netId: "project-cost-add-amount" })}
                 <div class="field-row"><label class="field-label">Platba</label>
                   <select id="project-cost-add-payment">
@@ -6500,8 +6505,7 @@ function bindAdmin(){
       return;
     }
     if(!state.costs) state.costs = [];
-    const employeeId = document.getElementById("project-cost-add-employee").value || undefined;
-    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note, employeeId });
+    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note });
     state.projectCostAddError = "";
     await saveCosts();
     showStamp();
@@ -6744,8 +6748,6 @@ function bindAdmin(){
     cost.paymentMethod = paymentMethod;
     Object.assign(cost, price);
     if(price.vatRate === undefined) delete cost.vatRate;
-    const editEmp = row.querySelector(".cost-edit-employee").value;
-    if(editEmp) cost.employeeId = editEmp; else delete cost.employeeId;
     cost.note = note.trim();
     await saveCosts();
     state.editingProjectCostId = null;
@@ -7115,7 +7117,8 @@ function bindAdmin(){
     const data = Object.fromEntries(new FormData(addCostForm).entries());
     const price = readPriceGroup(addCostForm);
     if(!data.date || !data.projectId || !price || !data.paymentMethod) return;
-    const fields = { date: data.date, projectId: data.projectId, phaseId: data.phaseId || "", ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: data.employeeId || undefined };
+    const isEmployeeTarget = String(data.projectId).startsWith("emp:");
+    const fields = { date: data.date, projectId: isEmployeeTarget ? "" : data.projectId, phaseId: isEmployeeTarget ? "" : (data.phaseId || ""), ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: isEmployeeTarget ? String(data.projectId).slice(4) : undefined };
     if(!state.costs) state.costs = [];
     if(state.editingCostId){
       const idx = state.costs.findIndex(c => c.id === state.editingCostId);
