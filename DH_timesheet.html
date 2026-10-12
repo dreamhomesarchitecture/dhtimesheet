@@ -420,11 +420,11 @@
   .follow-us a:hover{ opacity:1; transform:scale(1.12); color:var(--sage); }
   .follow-us svg{ width:24px; height:24px; display:block; }
   @media (min-width:1500px){
-    .follow-us{ position:fixed; right:22px; top:50%; transform:translateY(-50%); flex-direction:column; gap:0; margin:0; padding:0; border:0; z-index:40; }
-    .follow-us-label{ writing-mode:vertical-rl; transform:rotate(180deg); font-size:22px; margin-bottom:12px; }
-    .follow-us-line{ width:1px; height:110px; margin-bottom:26px; }
-    .follow-us-icons{ flex-direction:column; gap:26px; }
-    .follow-us svg{ width:26px; height:26px; }
+    .follow-us{ position:fixed; right:14px; top:50%; transform:translateY(-50%); flex-direction:column; gap:0; margin:0; padding:0; border:0; z-index:40; }
+    .follow-us-label{ writing-mode:vertical-rl; transform:rotate(180deg); font-size:13px; margin-bottom:7px; }
+    .follow-us-line{ width:1px; height:66px; margin-bottom:16px; }
+    .follow-us-icons{ flex-direction:column; gap:16px; }
+    .follow-us svg{ width:16px; height:16px; }
   }
   .pw-wrap{ position:relative; display:block; width:100%; }
   .pw-wrap input{ width:100%; }
@@ -3250,7 +3250,7 @@ function pickerTemplate(){
       <div class="landing-hero-wrap"><h1 class="landing-hero">Za každou hodinou je kus <em>dobré práce.</em></h1></div>
       <div class="landing-bottom">
         <div class="landing-login">
-          <div class="login-title">Kdo jste?</div>
+          <div class="login-title">Přihlášení</div>
           <div class="login-hint">Napište své křestní jméno.</div>
           <input type="text" id="name-input-field" placeholder="např. nikola" value="${esc(state.nameInputValue || "")}" autocomplete="off">
           ${state.nameInputError ? `<div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(state.nameInputError)}</div>` : ``}
