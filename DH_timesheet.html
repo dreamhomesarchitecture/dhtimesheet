@@ -283,6 +283,9 @@
   .mchart-avg span{ position:absolute; right:2px; transform:translateY(-100%); font-size:10px; font-weight:700; color:var(--tan); background:var(--paper); padding:0 4px; border-radius:4px; }
   .mchart-bars{ position:absolute; left:36px; right:0; top:0; bottom:0; display:flex; gap:6px; }
   .mchart-col{ flex:1; min-width:0; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; cursor:pointer; border-radius:6px; outline:none; }
+  .mchart-col{ position:relative; }
+  .mchart-frame{ position:absolute; left:50%; bottom:22px; transform:translateX(-50%); width:min(100%, 36px); border:1.5px dashed var(--soft); border-radius:5px; pointer-events:none; box-sizing:border-box; opacity:.8; }
+  .mchart-frame-key{ width:12px !important; height:10px !important; border:1.5px dashed var(--soft); background:transparent; border-radius:3px !important; box-sizing:border-box; }
   .mchart-col.nojump{ cursor:default; }
   .mchart-val{ height:14px; line-height:14px; font-size:10px; font-weight:700; color:var(--ink); white-space:nowrap; font-variant-numeric:tabular-nums; }
   .mchart-bar{ width:100%; max-width:26px; display:flex; flex-direction:column-reverse; border-radius:4px 4px 0 0; overflow:hidden; transition:filter .15s; }
@@ -3692,13 +3695,28 @@ function chartShortValue(v, isCost){
 }
 
 // values: 12 numbers (Jan..Dec). Used by both the employee view and the admin hours overview.
+// Počet pracovních dní v měsíci: pondělí–pátek bez českých státních svátků.
+const WORKDAY_HOURS = 8;
+function workdaysInMonth(year, monthIndex){
+  const holidays = czechPublicHolidays(year);
+  const days = new Date(year, monthIndex + 1, 0).getDate();
+  let n = 0;
+  for(let d = 1; d <= days; d++){
+    const wd = new Date(year, monthIndex, d).getDay();
+    const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    if(wd !== 0 && wd !== 6 && !holidays[key]) n++;
+  }
+  return n;
+}
 function monthChartHtml(o){
   const isCost = o.metric === "cost";
   const fmt = isCost ? fmtKc : fmtH;
   const values = o.values;
   const values0 = o.values000 || new Array(12).fill(0);
   const max = Math.max(0, ...values);
-  const top = chartNiceTop(max);
+  const showNorm = !!o.showNorm && !isCost;
+  const norms = showNorm ? values.map((_, i) => workdaysInMonth(Number(o.year), i) * WORKDAY_HOURS) : [];
+  const top = chartNiceTop(Math.max(max, ...norms, 0));
   const nonZero = values.filter(v => v > 0);
   const total = values.reduce((s,v) => s + v, 0);
   const avg = nonZero.length ? total / nonZero.length : 0;
@@ -3719,11 +3737,13 @@ function monthChartHtml(o){
     const frac = v > 0 ? Math.max(0.02, v / top) : 0;
     const v0 = Math.min(values0[i] || 0, v);
     const vp = v - v0;
-    const label = `${CHART_MONTHS_FULL[i]} ${o.year} · celkem ${fmt(v)} (projektové ${fmt(vp)} · 000 ${fmt(v0)})`;
+    const normNote = showNorm ? ` · norma ${fmtH(norms[i])} (${norms[i] / WORKDAY_HOURS} prac. dní × ${WORKDAY_HOURS} h)` : "";
+    const label = `${CHART_MONTHS_FULL[i]} ${o.year} · celkem ${fmt(v)} (projektové ${fmt(vp)} · 000 ${fmt(v0)})${normNote}`;
     const selected = o.selected === mm;
     const jump = o.jump ? `data-action="jump-month" data-month="${o.year}-${mm}"` : "";
     return `
       <div class="mchart-col ${selected ? "selected" : ""} ${o.jump ? "" : "nojump"}" tabindex="0" role="${o.jump ? "button" : "img"}" aria-label="${esc(label)}" data-chart-label="${esc(label)}" ${jump}>
+        ${showNorm ? `<div class="mchart-frame" style="height:calc((100% - 22px) * ${norms[i] / top});"></div>` : ``}
         <div class="mchart-val">${v > 0 ? esc(chartShortValue(v, isCost)) : ""}</div>
         <div class="mchart-bar" style="height:calc((100% - 22px) * ${frac});"><i class="seg-p" style="flex:${vp} 1 0;"></i><i class="seg-0" style="flex:${v0} 1 0;"></i></div>
         <div class="mchart-m">${CHART_MONTHS_SHORT[i]}</div>
@@ -3738,7 +3758,7 @@ function monthChartHtml(o){
           <button type="button" data-action="set-month-chart-metric" data-metric="cost" class="${isCost ? "active" : ""}">Náklady</button>
         </span>
       </div>
-      <div class="mchart-legend"><span><i style="background:var(--sage);"></i>Projektové (bez 000)</span><span><i style="background:var(--tan);"></i>000 (DH)</span></div>
+      <div class="mchart-legend"><span><i style="background:var(--sage);"></i>Projektové (bez 000)</span><span><i style="background:var(--tan);"></i>000 (DH)</span>${showNorm ? `<span><i class="mchart-frame-key"></i>Měsíční norma (pracovní dny × ${WORKDAY_HOURS} h)</span>` : ``}</div>
       <p class="mchart-summary">Celkem <b>${esc(fmt(total))}</b> (projektové <b>${esc(fmt(totalProj))}</b> · 000 <b>${esc(fmt(total0))}</b>) · průměr <b>${esc(fmt(avg))}</b>/měsíc${maxIdx >= 0 ? ` · nejvíc <b>${esc(fmt(max))}</b> (${CHART_MONTHS_SHORT[maxIdx]})` : ``}</p>
       <div class="mchart">
         <div class="mchart-grid">${grid}</div>
@@ -3782,7 +3802,7 @@ function buildYearOverview(year, valuesByMonthNum, yearTotal, currentMonthNum, v
         <span class="year-label">${year} <span class="year-total">· ${isCost ? fmtKc(yearTotal) : fmtH(yearTotal)} celkem</span></span>
         <button class="icon-btn" data-action="year-next" type="button">›</button>
       </div>
-      ${monthChartHtml({ year, values, values000, metric: state.monthChartMetric, selected: currentMonthNum, jump: true, showAvg: true })}
+      ${monthChartHtml({ year, values, values000, metric: state.monthChartMetric, selected: currentMonthNum, jump: true, showAvg: true, showNorm: true })}
     </div>`;
 }
 
@@ -5046,7 +5066,7 @@ function adminHoursOverviewTemplate(){
       if(e.projectId === "000") chartValues000[mi] += Number(e[chartField] || 0);
     }
   });
-  const chartHtml = monthChartHtml({ year: selectedYear, values: chartValues, values000: chartValues000, metric: state.monthChartMetric, selected: "", jump: false, showAvg: true });
+  const chartHtml = monthChartHtml({ year: selectedYear, values: chartValues, values000: chartValues000, metric: state.monthChartMetric, selected: "", jump: false, showAvg: true, showNorm: !!selectedEmployeeId });
 
   return `
     <div class="form-grid" style="max-width:520px;margin-bottom:16px;">
@@ -5164,6 +5184,10 @@ function pendingBillingPayments(){
   });
   return out;
 }
+// Platba = jedno číslo platby v rámci projektu (stejné číslo u více fází či položek je jedna platba).
+function billingPaymentCount(list){
+  return new Set(list.map(it => `${it.project.id}|${String(it.pay.number).trim()}`)).size;
+}
 function adminBillingPaymentsTemplate(){
   const list = pendingBillingPayments();
   if(!list.length) return `<div class="empty-state">Všechny platby s číslem mají vyplněné datum úhrady.</div>`;
@@ -5194,7 +5218,7 @@ function adminBillingPaymentsTemplate(){
     </div>`;
   }).join("");
   return `
-    <p class="q-hint" style="margin:0 0 14px;">Platby, které mají číslo, ale ještě nemají vyplněné datum úhrady. Datum doplníte přímo tady, platba se pak z přehledu ztratí. Celkem čeká <b style="color:var(--ink);">${list.length}</b> ${list.length === 1 ? "platba" : list.length < 5 ? "platby" : "plateb"} na <b style="color:var(--ink);">${fmtKc(total)}</b>.</p>
+    <p class="q-hint" style="margin:0 0 14px;">Platby, které mají číslo, ale ještě nemají vyplněné datum úhrady. Datum doplníte přímo tady, platba se pak z přehledu ztratí. Celkem čeká <b style="color:var(--ink);">${billingPaymentCount(list)}</b> ${billingPaymentCount(list) === 1 ? "platba" : billingPaymentCount(list) < 5 ? "platby" : "plateb"} na <b style="color:var(--ink);">${fmtKc(total)}</b>.</p>
     ${groups}`;
 }
 
@@ -5657,7 +5681,7 @@ function adminTemplate(){
       </div>
 
       <div class="admin-block${state.adminOpenSection === "billing-payments" ? " is-open" : ""}">
-        ${adminSectionHeader("billing-payments", (() => { const n = pendingBillingPayments().length; return `Správa plateb k fakturaci${n ? ` <span class="bw-count">${n}</span>` : ""}`; })())}
+        ${adminSectionHeader("billing-payments", (() => { const n = billingPaymentCount(pendingBillingPayments()); return `Správa plateb k fakturaci${n ? ` <span class="bw-count">${n}</span>` : ""}`; })())}
         ${state.adminOpenSection === "billing-payments" ? adminBillingPaymentsTemplate() : ""}
       </div>
 
