@@ -512,6 +512,15 @@
   .cost-edit-price input{ padding:6px 8px; font-size:13px; }
   .cost-gross{ display:block; font-size:11px; font-weight:500; color:var(--soft); }
   .cost-supplier{ color:var(--ink); }
+  .bill-group{ border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--paper); margin-bottom:12px; overflow:hidden; }
+  .bill-group-head{ display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; padding:12px 16px; background:var(--sage-tint); }
+  .bill-sub{ margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; }
+  .bill-row{ display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:16px; padding:12px 16px; border-top:1px solid var(--line); }
+  .bill-num{ display:inline-block; font-size:12px; font-weight:800; padding:2px 9px; border-radius:999px; background:var(--tan-tint); margin-right:4px; }
+  .bill-amount{ font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bill-paid{ display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--soft); }
+  .bill-paid input{ padding:6px 8px; font-size:13px; width:150px; }
+  @media (max-width:640px){ .bill-row{ grid-template-columns:1fr auto; } .bill-paid{ grid-column:1 / -1; } }
   .review-rules{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:6px 18px; margin-bottom:16px; padding:14px 16px; background:var(--sage-tint); border-radius:var(--radius-sm); }
   .review-rule{ display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; }
   .review-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid var(--line); border-radius:var(--radius-sm); padding:13px 16px; margin-bottom:8px; background:var(--paper); }
@@ -2617,15 +2626,19 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
     doc.addImage(BRAND_LOGO, "PNG", pageWidth/2 - logoW/2, 12, logoW, logoH);
   }catch(e){}
 
+  const isInvoice = opts.kind === "invoice";
+  const supplierIsVatPayer = (Number(supplier && supplier.vatRate) || 0) > 0;
   doc.setFont("Lato", "bold");
   doc.setFontSize(19);
-  doc.text("proforma faktura", pageWidth/2, 46, { align: "center" });
+  doc.text(isInvoice ? (supplierIsVatPayer ? "faktura – daňový doklad" : "faktura") : "proforma faktura", pageWidth/2, 46, { align: "center" });
 
-  doc.setFont("Lato", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(179,56,44);
-  doc.text("TOTO NENÍ DAŇOVÝ DOKLAD", pageWidth/2, 55, { align: "center" });
-  doc.setTextColor(0,0,0);
+  if(!isInvoice){
+    doc.setFont("Lato", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(179,56,44);
+    doc.text("TOTO NENÍ DAŇOVÝ DOKLAD", pageWidth/2, 55, { align: "center" });
+    doc.setTextColor(0,0,0);
+  }
 
   const issueDate = todayStr();
   const dueDate = opts.dueDate || addDaysToDateStr(issueDate, 7);
@@ -2634,10 +2647,12 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   let y = 70;
   const infoRows = [
     ["číslo faktury / var. symbol", invoiceNumber],
-    ["datum vystavení", fmtDateDotsPadded(issueDate)],
-    ["datum splatnosti", fmtDateDotsPadded(dueDate)],
-    ["stavba", `${project.id}${jobNumberSuffix(project.name)} - ${project.name || ""}`]
+    ["datum vystavení", fmtDateDotsPadded(issueDate)]
   ];
+  if(isInvoice && supplierIsVatPayer) infoRows.push(["datum uskutečnění zdanitelného plnění", fmtDateDotsPadded(opts.taxDate || issueDate)]);
+  infoRows.push(["datum splatnosti", fmtDateDotsPadded(dueDate)]);
+  if(isInvoice) infoRows.push(["forma úhrady", "bankovním převodem"]);
+  infoRows.push(["stavba", `${project.id}${jobNumberSuffix(project.name)} - ${project.name || ""}`]);
   doc.setFontSize(10);
   infoRows.forEach(([label, value]) => {
     doc.setFont("Lato", "bold");
@@ -3994,9 +4009,14 @@ function buildPaymentCalendarDetail(projectId){
             Splatnost
             <input type="date" id="payment-calendar-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
           </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Datum uskutečnění zdanitelného plnění — jen u skutečné faktury plátce DPH">
+            Datum plnění
+            <input type="date" id="payment-calendar-proforma-tax-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+          </label>
           <input type="text" id="payment-calendar-proforma-item-label" placeholder="Položka faktury" style="width:220px;padding:6px 8px;font-size:13px;" value="Projektová činnost ve výstavbě">
           <button type="button" class="btn btn-tan btn-small" id="payment-calendar-proforma-btn" data-project-id="${esc(p.id)}">Exportovat PROFORMA fakturu</button>
-          ` : `<span class="q-hint" style="margin:0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</span>`}
+          <button type="button" class="btn btn-sage btn-small" id="payment-calendar-invoice-btn" data-project-id="${esc(p.id)}">Vystavit FAKTURU</button>
+          ` : `<span class="q-hint" style="margin:0;">Pro export proforma faktury i faktury nejprve přidejte fakturační profil v Nastavení.</span>`}
         </div>
       </div>` : ``}
       ${projectBillingProfiles(p).length ? `
@@ -4363,10 +4383,15 @@ function adminClientExportTemplate(){
           Splatnost
           <input type="date" id="client-export-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
         </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Datum uskutečnění zdanitelného plnění — jen u skutečné faktury plátce DPH">
+          Datum plnění
+          <input type="date" id="client-export-proforma-tax-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+        </label>
         <input type="text" id="client-export-proforma-item-label" placeholder="Položka faktury" style="width:220px;padding:6px 8px;font-size:13px;" value="Autorský dozor na stavbě">
         <button type="button" class="btn btn-tan btn-small" id="client-export-proforma-btn" data-project-id="${esc(selectedProject.id)}">Exportovat PROFORMA fakturu</button>
+        <button type="button" class="btn btn-sage btn-small" id="client-export-invoice-btn" data-project-id="${esc(selectedProject.id)}">Vystavit FAKTURU</button>
       </div>
-      ` : `<p class="q-hint" style="margin:10px 0 0;">Pro export proforma faktury nejprve přidejte fakturační profil v Nastavení.</p>`}
+      ` : `<p class="q-hint" style="margin:10px 0 0;">Pro export proforma faktury i faktury nejprve přidejte fakturační profil v Nastavení.</p>`}
       ` : `<p class="q-hint" style="margin:0;">Pro export vyberte konkrétní projekt ve filtru.</p>`}
     </div>`;
 
@@ -5127,6 +5152,52 @@ function supplierDetailPageHtml(){
     </div>`;
 }
 
+/* ---------------- správa plateb k fakturaci ---------------- */
+function pendingBillingPayments(){
+  const out = [];
+  sortedProjects().forEach(p => {
+    paymentCalendarRows(p).forEach(r => {
+      r.payments.forEach(pay => {
+        if(String(pay.number || "").trim() && !pay.date) out.push({ project: p, row: r, pay });
+      });
+    });
+  });
+  return out;
+}
+function adminBillingPaymentsTemplate(){
+  const list = pendingBillingPayments();
+  if(!list.length) return `<div class="empty-state">Všechny platby s číslem mají vyplněné datum úhrady.</div>`;
+  const total = list.reduce((a, it) => a + (Number(it.pay.amount) || 0), 0);
+  const byProject = {};
+  list.forEach(it => { (byProject[it.project.id] = byProject[it.project.id] || { project: it.project, items: [] }).items.push(it); });
+  const groups = Object.values(byProject).map(g => {
+    const sub = g.items.reduce((a, it) => a + (Number(it.pay.amount) || 0), 0);
+    const rows = g.items
+      .sort((a, b) => String(a.pay.number).localeCompare(String(b.pay.number), "cs", { numeric: true }))
+      .map(it => `
+      <div class="bill-row" data-project-id="${esc(g.project.id)}" data-phase-id="${esc(it.row.phaseId)}" data-item-id="${esc(it.row.itemId || "legacy")}" data-payment-id="${esc(it.pay.id)}">
+        <div class="bill-main">
+          <div class="cc-title"><span class="bill-num">č. ${esc(it.pay.number)}</span> ${esc(it.row.label)} <span class="entry-phase">${esc(it.row.phaseId)}</span></div>
+          ${it.pay.note ? `<div class="cc-sub">${esc(it.pay.note)}</div>` : ``}
+        </div>
+        <div class="bill-amount">${fmtKc(it.pay.amount)}</div>
+        <label class="bill-paid" title="Vyplněním data se platba označí jako uhrazená a zmizí z tohoto seznamu"><span>uhrazeno dne</span><input type="date" class="billing-paid-date"></label>
+      </div>`).join("");
+    return `
+    <div class="bill-group">
+      <div class="bill-group-head">
+        <span><span class="entry-proj" data-project-id="${esc(g.project.id)}">#${esc(g.project.id)}</span> <b>${esc(g.project.name)}</b></span>
+        <span class="bill-sub">${fmtKc(sub)}</span>
+        <button type="button" class="btn btn-outline btn-small" data-action="billing-open-calendar" data-id="${esc(g.project.id)}">Platební kalendář</button>
+      </div>
+      ${rows}
+    </div>`;
+  }).join("");
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Platby, které mají číslo, ale ještě nemají vyplněné datum úhrady. Datum doplníte přímo tady, platba se pak z přehledu ztratí. Celkem čeká <b style="color:var(--ink);">${list.length}</b> ${list.length === 1 ? "platba" : list.length < 5 ? "platby" : "plateb"} na <b style="color:var(--ink);">${fmtKc(total)}</b>.</p>
+    ${groups}`;
+}
+
 /* ---------------- uzavírání měsíců ---------------- */
 function adminLockMonthsTemplate(){
   const locked = lockedMonthsList().slice().sort().reverse();
@@ -5583,6 +5654,11 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "payment-calendar" ? " is-open" : ""}">
         ${adminSectionHeader("payment-calendar", "Platební kalendář")}
         ${state.adminOpenSection === "payment-calendar" ? adminPaymentCalendarTemplate() : ""}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "billing-payments" ? " is-open" : ""}">
+        ${adminSectionHeader("billing-payments", (() => { const n = pendingBillingPayments().length; return `Správa plateb k fakturaci${n ? ` <span class="bw-count">${n}</span>` : ""}`; })())}
+        ${state.adminOpenSection === "billing-payments" ? adminBillingPaymentsTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "records-filter" ? " is-open" : ""}">
@@ -6345,6 +6421,23 @@ function bindAdmin(){
     showStamp();
     render();
   }));
+  document.querySelectorAll(".billing-paid-date").forEach(inp => inp.addEventListener("change", async () => {
+    if(!inp.value) return;
+    const row = inp.closest(".bill-row");
+    const project = state.config.projects.find(x => x.id === row.getAttribute("data-project-id"));
+    if(!project) return;
+    const payments = resolvePaymentsArray(project, row.getAttribute("data-phase-id"), row.getAttribute("data-item-id"));
+    const payment = payments && payments.find(pay => pay.id === row.getAttribute("data-payment-id"));
+    if(!payment) return;
+    payment.date = inp.value;
+    await saveConfig();
+    showStamp();
+    render();
+  }));
+  document.querySelectorAll('[data-action="billing-open-calendar"]').forEach(b => b.onclick = () => {
+    setState({ expandedPaymentCalendarProjectId: b.getAttribute("data-id") });
+    window.scrollTo(0, 0);
+  });
   const paymentCalendarPdfBtn = document.getElementById("payment-calendar-pdf-btn");
   if(paymentCalendarPdfBtn) paymentCalendarPdfBtn.onclick = async () => {
     const projectId = paymentCalendarPdfBtn.getAttribute("data-project-id");
@@ -6385,9 +6478,8 @@ function bindAdmin(){
     }
   };
 
-  const paymentCalendarProformaBtn = document.getElementById("payment-calendar-proforma-btn");
-  if(paymentCalendarProformaBtn) paymentCalendarProformaBtn.onclick = async () => {
-    const projectId = paymentCalendarProformaBtn.getAttribute("data-project-id");
+  const runPaymentCalendarInvoice = async (btn, kind) => {
+    const projectId = btn.getAttribute("data-project-id");
     const project = state.config.projects.find(x => x.id === projectId);
     if(!project) return;
     const numbers = Array.from(document.querySelectorAll(".payment-calendar-number-checkbox:checked")).map(el => el.value);
@@ -6407,17 +6499,21 @@ function bindAdmin(){
     const invoiceNumber = `${project.id}${numbers[0] || ""}`;
     const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
     const invoiceRows = [{ phaseId: "", label: itemLabel, amount: totalAmount, payments: [{ amount: totalAmount, number: numbers[0] || "", date: "", note: "" }] }];
-    paymentCalendarProformaBtn.disabled = true;
-    const origText = paymentCalendarProformaBtn.textContent;
-    paymentCalendarProformaBtn.textContent = "Generuji…";
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = "Generuji…";
     try{
-      const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate });
-      doc.save(`proforma-faktura_${invoiceNumber}_${todayStr()}.pdf`);
+      const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate, kind, taxDate: (document.getElementById("payment-calendar-proforma-tax-date") || {}).value || todayStr() });
+      doc.save(`${kind === "invoice" ? "faktura" : "proforma-faktura"}_${invoiceNumber}_${todayStr()}.pdf`);
     } finally {
-      paymentCalendarProformaBtn.disabled = false;
-      paymentCalendarProformaBtn.textContent = origText;
+      btn.disabled = false;
+      btn.textContent = origText;
     }
   };
+  [["payment-calendar-proforma-btn", "proforma"], ["payment-calendar-invoice-btn", "invoice"]].forEach(([id, kind]) => {
+    const b = document.getElementById(id);
+    if(b) b.onclick = () => runPaymentCalendarInvoice(b, kind);
+  });
 
   const readContractDspInputs = (projectId) => {
     const project = state.config.projects.find(x => x.id === projectId);
@@ -7565,9 +7661,8 @@ function bindAdmin(){
       clientExportPdfBtn.textContent = origText;
     }
   };
-  const clientExportProformaBtn = document.getElementById("client-export-proforma-btn");
-  if(clientExportProformaBtn) clientExportProformaBtn.onclick = async () => {
-    const project = state.config.projects.find(x => x.id === clientExportProformaBtn.getAttribute("data-project-id"));
+  const runClientExportInvoice = async (btn, kind) => {
+    const project = state.config.projects.find(x => x.id === btn.getAttribute("data-project-id"));
     if(!project) return;
     const supplierSelect = document.getElementById("client-export-proforma-supplier");
     const supplier = (state.config.billingProfiles || []).find(bp => bp.id === (supplierSelect && supplierSelect.value));
@@ -7597,17 +7692,21 @@ function bindAdmin(){
     const itemLabel = (itemLabelInput && itemLabelInput.value.trim()) || "Autorský dozor na stavbě";
     const rows = [{ phaseId: "", label: itemLabel, amount: subtotal, payments: [{ amount: subtotal, number: "", date: "", note: "" }] }];
 
-    clientExportProformaBtn.disabled = true;
-    const origText = clientExportProformaBtn.textContent;
-    clientExportProformaBtn.textContent = "Generuji…";
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = "Generuji…";
     try{
-      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate });
-      doc.save(`proforma-faktura_${invoiceNumber}_${todayStr()}.pdf`);
+      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate, kind, taxDate: (document.getElementById("client-export-proforma-tax-date") || {}).value || todayStr() });
+      doc.save(`${kind === "invoice" ? "faktura" : "proforma-faktura"}_${invoiceNumber}_${todayStr()}.pdf`);
     } finally {
-      clientExportProformaBtn.disabled = false;
-      clientExportProformaBtn.textContent = origText;
+      btn.disabled = false;
+      btn.textContent = origText;
     }
   };
+  [["client-export-proforma-btn", "proforma"], ["client-export-invoice-btn", "invoice"]].forEach(([id, kind]) => {
+    const b = document.getElementById(id);
+    if(b) b.onclick = () => runClientExportInvoice(b, kind);
+  });
 
   const closedProjectsYear = document.getElementById("closed-projects-year");
   if(closedProjectsYear) closedProjectsYear.addEventListener("change", () => setState({ closedProjectsYear: closedProjectsYear.value }));
