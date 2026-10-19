@@ -1058,8 +1058,20 @@ function ensureBuiltInPhases(config){
 }
 // Pořadí fází určuje záložka Nastavení → Fáze (pořadí v config.phases); platí ve všech projektech.
 // Zkratky, které aplikace používá pro speciální funkce (pevné fáze projektu 000, smlouva o dílo, autorský dozor) – jejich zkratku nelze měnit.
-const PHASE_IDS_LOCKED = ["NN", "DOV", "SS", "DSP", "I", "AD"];
+const PHASE_IDS_LOCKED = ["NN", "DOV", "SS"];
+// Fáze se zvláštním významem (DSP a Inženýring ve smlouvě o dílo, Autorský dozor s povinnou poznámkou).
+// Zkratku lze změnit – aplikace si ji pamatuje v config.phaseRoles.
+const PHASE_ROLE_DEFAULTS = { dsp: "DSP", inz: "I", ad: "AD" };
+function phaseRoleId(role){
+  return (state.config && state.config.phaseRoles && state.config.phaseRoles[role]) || PHASE_ROLE_DEFAULTS[role];
+}
 async function renamePhaseEverywhere(oldId, newId){
+  Object.keys(PHASE_ROLE_DEFAULTS).forEach(role => {
+    if(phaseRoleId(role) === oldId){
+      if(!state.config.phaseRoles) state.config.phaseRoles = {};
+      state.config.phaseRoles[role] = newId;
+    }
+  });
   state.config.projects.forEach(p => {
     if(Array.isArray(p.phaseIds)) p.phaseIds = p.phaseIds.map(x => x === oldId ? newId : x);
     ["closedPhases", "phaseBudgets", "phaseBudgetItems", "phaseBudgetPayments", "phaseBudgetPaymentDates"].forEach(k => {
@@ -2447,8 +2459,8 @@ function computeDspInzenyringContractFields(project, customer, opts){
   const clientName = (customer.name || "").trim();
   const clientAddress = (customer.address || "").trim();
 
-  const faze1 = phaseBudgetTotal(project, "DSP");
-  const faze2 = phaseBudgetTotal(project, "I");
+  const faze1 = phaseBudgetTotal(project, phaseRoleId("dsp"));
+  const faze2 = phaseBudgetTotal(project, phaseRoleId("inz"));
   const total = faze1 + faze2;
   const withVat = n => n * (1 + vatRate/100);
   const aAmt = 0.5*faze1 + 0.5*faze2;
@@ -3455,7 +3467,7 @@ function timesheetTemplate(){
     : `<option value="" disabled selected>— žádné fáze —</option>`;
   const canSubmitInitially = formPhaseless || formPhases.length > 0;
   const canLogHours = projects.length > 0;
-  const formNoteRequired = formPhases.length > 0 && formPhases[0].id === "AD";
+  const formNoteRequired = formPhases.length > 0 && formPhases[0].id === phaseRoleId("ad");
 
   const timesheetOpen = state.showTimesheet;
   const timesheetBody = `
@@ -4091,7 +4103,7 @@ function buildPaymentCalendarDetail(projectId){
           <button type="button" class="btn btn-tan btn-small" id="contract-dsp-generate-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (.docx)</button>
           <button type="button" class="btn btn-outline btn-small" id="contract-dsp-generate-pdf-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (PDF)</button>
         </div>
-        <div class="q-hint" style="margin:8px 0 0;">Fáze 1 (DSP): ${fmtKc(phaseBudgetTotal(p, "DSP"))} · Fáze 2 (Inženýring): ${fmtKc(phaseBudgetTotal(p, "I"))}</div>
+        <div class="q-hint" style="margin:8px 0 0;">Fáze 1 (${esc(phaseRoleId("dsp"))}): ${fmtKc(phaseBudgetTotal(p, phaseRoleId("dsp")))} · Fáze 2 (${esc(phaseRoleId("inz"))}): ${fmtKc(phaseBudgetTotal(p, phaseRoleId("inz")))}</div>
       </div>
       ` : ``}
     </div>`;
@@ -5437,7 +5449,7 @@ function reviewIssues(){
     if(!project){ if(reviewRuleOn("deletedProject")) reasons.push({ level: "bad", text: "projekt už neexistuje" }); }
     else {
       if(e.phaseId && reviewRuleOn("closedPhase") && isPhaseClosedOnDate(project, e.phaseId, e.date) && e.date !== project.closedPhases[e.phaseId]) reasons.push({ level: "warn", text: "fáze je k tomuto datu uzavřená" });
-      if(e.phaseId === "AD" && reviewRuleOn("adNote") && !String(e.note || "").trim()) reasons.push({ level: "warn", text: "chybí poznámka u autorského dozoru" });
+      if(e.phaseId === phaseRoleId("ad") && reviewRuleOn("adNote") && !String(e.note || "").trim()) reasons.push({ level: "warn", text: "chybí poznámka u autorského dozoru" });
     }
     const wd = new Date(`${e.date}T12:00:00`).getDay();
     const isHoliday = !!czechPublicHolidays(Number(e.date.slice(0, 4)))[e.date];
@@ -5661,7 +5673,7 @@ function adminTemplate(){
   const phaseRows = state.config.phases.map((p, i, arr) => state.editingPhaseId === p.id ? `
     <div class="resp-item phase-edit-row" data-phase-edit-row="${esc(p.id)}" style="flex-wrap:wrap;">
       <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
-        <input type="text" class="phase-edit-id" value="${esc(p.id)}" ${PHASE_IDS_LOCKED.includes(p.id) ? `disabled title="Tuto zkratku používá aplikace pro speciální funkci, nelze ji změnit."` : ""} style="width:100px;padding:6px 8px;font-size:13px;" aria-label="Zkratka">
+        <input type="text" class="phase-edit-id" value="${esc(p.id)}" ${PHASE_IDS_LOCKED.includes(p.id) ? `disabled title="Tuto zkratku používá aplikace pro pevné fáze projektu 000, nelze ji změnit."` : ""} style="width:100px;padding:6px 8px;font-size:13px;" aria-label="Zkratka">
         <input type="text" class="phase-edit-name" value="${esc(p.name)}" style="flex:1;min-width:200px;padding:6px 8px;font-size:13px;" aria-label="Popis fáze">
       </div>
       <div style="display:flex;gap:4px;">
@@ -5976,7 +5988,7 @@ function bindApp(){
 
   function updateNoteRequirement(){
     if(!noteInput || !phaseSelect) return;
-    const isAD = phaseSelect.value === "AD";
+    const isAD = phaseSelect.value === phaseRoleId("ad");
     if(isAD){
       noteInput.setAttribute("required", "required");
       noteInput.placeholder = "povinné u autorského dozoru";
@@ -6150,7 +6162,7 @@ function bindApp(){
     const isPhaseless = isPhaselessProject(project);
     const fields = { date: data.date, hours: Number(data.hours), projectId: data.projectId, phaseId: data.phaseId, cost: Number(data.cost)||0, note: (data.note||"").trim() };
     if(!fields.date || !fields.hours || !fields.projectId || (!isPhaseless && !fields.phaseId)) return;
-    if(fields.phaseId === "AD" && !fields.note) return;
+    if(fields.phaseId === phaseRoleId("ad") && !fields.note) return;
     if(isDateLocked(fields.date)){ warnLocked(fields.date); return; }
     if(!isPhaseless && !getFormPhaseOptions(project, fields.date).some(p => p.id === fields.phaseId)){
       setState({ entryError: "Tato fáze je k zadanému datu uzavřená, hodiny pod ni nelze zapsat." });
@@ -6219,7 +6231,7 @@ function bindApp(){
     if(!date || !(Number(hours) > 0) || !project) return;
     if(isDateLocked(date) || isDateLocked(state.entries[idx].date)){ warnLocked(isDateLocked(date) ? date : state.entries[idx].date); return; }
     if(!isPhaseless && !phaseId){ setState({ entryError: "Vyberte fázi." }); return; }
-    if(phaseId === "AD" && !note){ setState({ entryError: "U autorského dozoru je poznámka povinná." }); return; }
+    if(phaseId === phaseRoleId("ad") && !note){ setState({ entryError: "U autorského dozoru je poznámka povinná." }); return; }
     if(!isPhaseless && !getFormPhaseOptions(project, date).some(p => p.id === phaseId)){
       setState({ entryError: "Tato fáze je k zadanému datu uzavřená, hodiny pod ni nelze zapsat." });
       return;
@@ -6861,7 +6873,7 @@ function bindAdmin(){
     const note = row.querySelector(".record-edit-note").value.trim();
     if(!date || !(hours > 0) || !project) return;
     if(!phaseless && !phaseId){ setState({ recordEditError: "Vyberte fázi." }); return; }
-    if(phaseId === "AD" && !note){ setState({ recordEditError: "U autorského dozoru je poznámka povinná." }); return; }
+    if(phaseId === phaseRoleId("ad") && !note){ setState({ recordEditError: "U autorského dozoru je poznámka povinná." }); return; }
     const entries = await loadEntries(employeeId);
     const idx = entries.findIndex(e => e.id === entryId);
     if(idx === -1){ setState({ recordEditError: "Záznam se nepodařilo najít." }); return; }
