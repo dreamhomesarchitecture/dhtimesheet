@@ -929,6 +929,8 @@ let state = {
   editingEntryId: null,
   editingLaborEntryId: null,
   editingRecordId: null,
+  editingPhaseId: null,
+  phaseEditError: "",
   editingSupplierId: null,
   recordEditError: "",
   bulkSel: {},
@@ -1053,6 +1055,42 @@ function ensureBuiltInPhases(config){
     if(!config.phases.some(ph => ph.id === bp.id)){ config.phases.push({ ...bp }); changed = true; }
   });
   return changed;
+}
+// Pořadí fází určuje záložka Nastavení → Fáze (pořadí v config.phases); platí ve všech projektech.
+// Zkratky, které aplikace používá pro speciální funkce (pevné fáze projektu 000, smlouva o dílo, autorský dozor) – jejich zkratku nelze měnit.
+const PHASE_IDS_LOCKED = ["NN", "DOV", "SS", "DSP", "I", "AD"];
+async function renamePhaseEverywhere(oldId, newId){
+  state.config.projects.forEach(p => {
+    if(Array.isArray(p.phaseIds)) p.phaseIds = p.phaseIds.map(x => x === oldId ? newId : x);
+    ["closedPhases", "phaseBudgets", "phaseBudgetItems", "phaseBudgetPayments", "phaseBudgetPaymentDates"].forEach(k => {
+      if(p[k] && Object.prototype.hasOwnProperty.call(p[k], oldId)){ p[k][newId] = p[k][oldId]; delete p[k][oldId]; }
+    });
+  });
+  const costs = state.costs || await loadCosts();
+  let costsChanged = false;
+  costs.forEach(c => { if(c.phaseId === oldId){ c.phaseId = newId; costsChanged = true; } });
+  if(costsChanged){ state.costs = costs; await saveCosts(); }
+  await Promise.all(state.config.employees.map(async emp => {
+    const entries = await loadEntries(emp.id);
+    let changed = false;
+    entries.forEach(e => { if(e.phaseId === oldId){ e.phaseId = newId; changed = true; } });
+    if(changed) await saveEntries(emp.id, emp.name, entries);
+  }));
+  state.adminEntriesFlat = null;
+  state.allEntriesFlat = null;
+  state.projectTotals = null;
+}
+function phaseRank(phaseId){
+  const i = state.config.phases.findIndex(ph => ph.id === phaseId);
+  return i === -1 ? 100000 : i;
+}
+function sortProjectPhasesByMaster(config){
+  const rank = id => { const i = (config.phases || []).findIndex(ph => ph.id === id); return i === -1 ? 100000 : i; };
+  (config.projects || []).forEach(p => {
+    if(Array.isArray(p.phaseIds) && p.phaseIds.length > 1){
+      p.phaseIds = p.phaseIds.map((id, i) => ({ id, i })).sort((a, b) => rank(a.id) - rank(b.id) || a.i - b.i).map(x => x.id);
+    }
+  });
 }
 function phasesForProject(project){
   if(project && FIXED_PROJECT_PHASES[project.id]){
@@ -1817,7 +1855,7 @@ async function attemptAdminLogin(password){
   }catch(e){ return false; }
 }
 async function saveConfig(){
-  try{ await storageSet("config", JSON.stringify(state.config)); }
+  try{ sortProjectPhasesByMaster(state.config); await storageSet("config", JSON.stringify(state.config)); }
   catch(e){ console.error("saveConfig failed", e); }
 }
 async function loadEntries(employeeId){
@@ -2887,6 +2925,7 @@ function render(){
     app.innerHTML = `<div class="topbar"><div class="brand"><img src="${BRAND_LOGO}" alt="${esc(BRAND_MARK)}"></div></div><div class="sheet" style="margin-top:148px;"><div class="empty-state">Načítání…</div></div>`;
     return;
   }
+  sortProjectPhasesByMaster(state.config);
   app.innerHTML = `
     <div class="topbar ${state.currentEmployee && state.tab==="app" ? "topbar-two-rows" : ""}">
       <div class="brand" id="home-btn" role="button" tabindex="0" aria-label="Domů"><img src="${BRAND_LOGO}" alt="${esc(BRAND_MARK)}"></div>
@@ -3067,13 +3106,7 @@ function buildProjectDetail(projectId){
   const assignedIds = (project && project.phaseIds) ? project.phaseIds : [];
   const idsWithHours = Object.keys(byPhase);
   const phaseIds = Array.from(new Set([...assignedIds, ...idsWithHours]));
-  const masterOrder = phases.map(p => p.id);
-  phaseIds.sort((a,b) => {
-    const ha = byPhase[a] || 0;
-    const hb = byPhase[b] || 0;
-    if(hb !== ha) return hb - ha;
-    return masterOrder.indexOf(a) - masterOrder.indexOf(b);
-  });
+  phaseIds.sort((a,b) => phaseRank(a) - phaseRank(b));
 
   const phaseBlocks = phaseIds.map(pid => {
     const phase = phases.find(p => p.id === pid);
@@ -3112,11 +3145,7 @@ function buildMyProjectDetail(projectId){
     byPhase[pid].total += Number(e.hours||0);
     byPhase[pid].entries.push(e);
   });
-  const masterOrder = phases.map(p => p.id);
-  const phaseIds = Object.keys(byPhase).sort((a,b) => {
-    if(byPhase[b].total !== byPhase[a].total) return byPhase[b].total - byPhase[a].total;
-    return masterOrder.indexOf(a) - masterOrder.indexOf(b);
-  });
+  const phaseIds = Object.keys(byPhase).sort((a,b) => phaseRank(a) - phaseRank(b));
   const phaseBlocks = phaseIds.map(pid => {
     const phase = phases.find(p => p.id === pid);
     const label = phase ? esc(phase.name) : (pid === "—" ? "Bez fáze" : esc(pid));
@@ -3879,13 +3908,7 @@ function buildAdminProjectOverviewDetail(projectId){
   const assignedIds = (project && project.phaseIds) ? project.phaseIds : [];
   const idsWithHours = Object.keys(byPhase);
   const phaseIds = Array.from(new Set([...assignedIds, ...idsWithHours]));
-  const masterOrder = phases.map(p => p.id);
-  phaseIds.sort((a,b) => {
-    const ha = byPhase[a] ? byPhase[a].total : 0;
-    const hb = byPhase[b] ? byPhase[b].total : 0;
-    if(hb !== ha) return hb - ha;
-    return masterOrder.indexOf(a) - masterOrder.indexOf(b);
-  });
+  phaseIds.sort((a,b) => phaseRank(a) - phaseRank(b));
 
   const phaseBlocks = phaseIds.map(pid => {
     const phase = phases.find(p => p.id === pid);
@@ -5635,10 +5658,26 @@ function adminTemplate(){
     </div>`;
   }).join("") || `<div class="empty-state">Zatím žádné projekty.</div>`;
 
-  const phaseRows = state.config.phases.map(p => `
+  const phaseRows = state.config.phases.map((p, i, arr) => state.editingPhaseId === p.id ? `
+    <div class="resp-item phase-edit-row" data-phase-edit-row="${esc(p.id)}" style="flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
+        <input type="text" class="phase-edit-id" value="${esc(p.id)}" ${PHASE_IDS_LOCKED.includes(p.id) ? `disabled title="Tuto zkratku používá aplikace pro speciální funkci, nelze ji změnit."` : ""} style="width:100px;padding:6px 8px;font-size:13px;" aria-label="Zkratka">
+        <input type="text" class="phase-edit-name" value="${esc(p.name)}" style="flex:1;min-width:200px;padding:6px 8px;font-size:13px;" aria-label="Popis fáze">
+      </div>
+      <div style="display:flex;gap:4px;">
+        <button type="button" class="icon-btn" data-action="save-phase-edit" title="Uložit">✓</button>
+        <button type="button" class="icon-btn" data-action="cancel-phase-edit" title="Zrušit">×</button>
+      </div>
+      ${state.phaseEditError ? `<div class="q-hint" style="color:var(--danger);flex-basis:100%;margin:6px 0 0;">${esc(state.phaseEditError)}</div>` : ``}
+    </div>` : `
     <div class="resp-item">
       <div><span class="entry-phase">${esc(p.id)}</span> ${esc(p.name)}</div>
-      <button class="icon-btn icon-btn-del" data-action="delete-phase" data-id="${esc(p.id)}" title="Smazat">${ICON_TRASH}</button>
+      <div style="display:flex;gap:4px;">
+        <button class="icon-btn" data-action="edit-phase" data-id="${esc(p.id)}" title="Upravit zkratku a popis">✎</button>
+        <button class="icon-btn" data-action="move-phase" data-dir="up" data-id="${esc(p.id)}" title="Posunout výš" aria-label="Posunout výš" ${i === 0 ? "disabled" : ""}>↑</button>
+        <button class="icon-btn" data-action="move-phase" data-dir="down" data-id="${esc(p.id)}" title="Posunout níž" aria-label="Posunout níž" ${i === arr.length - 1 ? "disabled" : ""}>↓</button>
+        <button class="icon-btn icon-btn-del" data-action="delete-phase" data-id="${esc(p.id)}" title="Smazat">${ICON_TRASH}</button>
+      </div>
     </div>`).join("") || `<div class="empty-state">Zatím žádné fáze.</div>`;
 
   return `
@@ -5770,6 +5809,7 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "phases" ? " is-open" : ""}">
         ${adminSectionHeader("phases", `Fáze (${state.config.phases.length})`)}
         ${state.adminOpenSection === "phases" ? `
+        <p class="q-hint" style="margin:0 0 12px;">Šipkami určíte pořadí fází. Platí ve všech projektech, bez ohledu na to, kdy byla která fáze přidána.</p>
         ${phaseRows}
         <form id="add-phase-form" style="margin-top:14px;">
           <div class="form-grid">
@@ -7033,6 +7073,49 @@ function bindAdmin(){
     await saveConfig();
     render();
   }));
+  document.querySelectorAll('[data-action="edit-phase"]').forEach(b => b.onclick = () => setState({ editingPhaseId: b.getAttribute("data-id"), phaseEditError: "" }));
+  document.querySelectorAll('[data-action="cancel-phase-edit"]').forEach(b => b.onclick = () => setState({ editingPhaseId: null, phaseEditError: "" }));
+  document.querySelectorAll('[data-action="save-phase-edit"]').forEach(b => b.onclick = async () => {
+    const row = b.closest("[data-phase-edit-row]");
+    if(!row) return;
+    const oldId = row.getAttribute("data-phase-edit-row");
+    const phase = state.config.phases.find(x => x.id === oldId);
+    if(!phase) return;
+    const idInput = row.querySelector(".phase-edit-id");
+    const newId = idInput.disabled ? oldId : idInput.value.trim();
+    const newName = row.querySelector(".phase-edit-name").value.trim();
+    if(!newId || !newName){ setState({ phaseEditError: "Vyplňte zkratku i popis fáze." }); return; }
+    if(newId !== oldId && state.config.phases.some(x => x.id.toLowerCase() === newId.toLowerCase() && x.id !== oldId)){
+      setState({ phaseEditError: "Tato zkratka už existuje." }); return;
+    }
+    b.disabled = true;
+    phase.name = newName;
+    if(newId !== oldId){
+      phase.id = newId;
+      await renamePhaseEverywhere(oldId, newId);
+    }
+    await saveConfig();
+    state.editingPhaseId = null;
+    state.phaseEditError = "";
+    showStamp();
+    render();
+  });
+  document.querySelectorAll("[data-phase-edit-row] input").forEach(el => el.addEventListener("keydown", e => {
+    if(e.key !== "Enter") return;
+    e.preventDefault();
+    const sb = el.closest("[data-phase-edit-row]").querySelector('[data-action="save-phase-edit"]');
+    if(sb) sb.click();
+  }));
+  document.querySelectorAll('[data-action="move-phase"]').forEach(b => b.onclick = async () => {
+    const phases = state.config.phases;
+    const i = phases.findIndex(ph => ph.id === b.getAttribute("data-id"));
+    const j = b.getAttribute("data-dir") === "up" ? i - 1 : i + 1;
+    if(i === -1 || j < 0 || j >= phases.length) return;
+    [phases[i], phases[j]] = [phases[j], phases[i]];
+    await saveConfig();
+    showStamp();
+    render();
+  });
   document.querySelectorAll('[data-action="delete-phase"]').forEach(b => b.onclick = async () => {
     if(!confirm("Smazat tuto fázi?")) return;
     state.config.phases = state.config.phases.filter(x => x.id !== b.getAttribute("data-id"));
