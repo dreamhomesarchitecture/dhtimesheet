@@ -931,6 +931,7 @@ let state = {
   editingRecordId: null,
   editingPhaseId: null,
   phaseEditError: "",
+  phaseEditDraft: null,
   editingSupplierId: null,
   recordEditError: "",
   bulkSel: {},
@@ -1065,7 +1066,30 @@ const PHASE_ROLE_DEFAULTS = { dsp: "DSP", inz: "I", ad: "AD" };
 function phaseRoleId(role){
   return (state.config && state.config.phaseRoles && state.config.phaseRoles[role]) || PHASE_ROLE_DEFAULTS[role];
 }
+async function withRetry(fn){
+  let last;
+  for(let attempt = 0; attempt < 3; attempt++){
+    try{ return await fn(); }
+    catch(e){ last = e; await new Promise(r => setTimeout(r, 800 * (attempt + 1))); }
+  }
+  throw last;
+}
+// Přejmenování zkratky fáze: nejdřív se postupně (po jednom zaměstnanci, s opakováním při chybě) přepíšou
+// hodiny a náklady, teprve potom konfigurace. Celé je opakovatelné – po chybě stačí kliknout na ✓ znovu.
 async function renamePhaseEverywhere(oldId, newId){
+  for(const emp of state.config.employees){
+    const res = await withRetry(() => storageGet(`entries:${emp.id}`));
+    if(!res) continue;
+    const entries = JSON.parse(res.value);
+    let changed = false;
+    entries.forEach(e => { if(e.phaseId === oldId){ e.phaseId = newId; changed = true; } });
+    if(changed) await withRetry(() => storageSet(`entries:${emp.id}`, JSON.stringify(entries)));
+  }
+  const resCosts = await withRetry(() => storageGet("costs"));
+  const costs = resCosts ? JSON.parse(resCosts.value) : [];
+  let costsChanged = false;
+  costs.forEach(c => { if(c.phaseId === oldId){ c.phaseId = newId; costsChanged = true; } });
+  if(costsChanged){ await withRetry(() => storageSet("costs", JSON.stringify(costs))); state.costs = costs; }
   Object.keys(PHASE_ROLE_DEFAULTS).forEach(role => {
     if(phaseRoleId(role) === oldId){
       if(!state.config.phaseRoles) state.config.phaseRoles = {};
@@ -1078,16 +1102,6 @@ async function renamePhaseEverywhere(oldId, newId){
       if(p[k] && Object.prototype.hasOwnProperty.call(p[k], oldId)){ p[k][newId] = p[k][oldId]; delete p[k][oldId]; }
     });
   });
-  const costs = state.costs || await loadCosts();
-  let costsChanged = false;
-  costs.forEach(c => { if(c.phaseId === oldId){ c.phaseId = newId; costsChanged = true; } });
-  if(costsChanged){ state.costs = costs; await saveCosts(); }
-  await Promise.all(state.config.employees.map(async emp => {
-    const entries = await loadEntries(emp.id);
-    let changed = false;
-    entries.forEach(e => { if(e.phaseId === oldId){ e.phaseId = newId; changed = true; } });
-    if(changed) await saveEntries(emp.id, emp.name, entries);
-  }));
   state.adminEntriesFlat = null;
   state.allEntriesFlat = null;
   state.projectTotals = null;
@@ -5673,8 +5687,8 @@ function adminTemplate(){
   const phaseRows = state.config.phases.map((p, i, arr) => state.editingPhaseId === p.id ? `
     <div class="resp-item phase-edit-row" data-phase-edit-row="${esc(p.id)}" style="flex-wrap:wrap;">
       <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
-        <input type="text" class="phase-edit-id" value="${esc(p.id)}" ${PHASE_IDS_LOCKED.includes(p.id) ? `disabled title="Tuto zkratku používá aplikace pro pevné fáze projektu 000, nelze ji změnit."` : ""} style="width:100px;padding:6px 8px;font-size:13px;" aria-label="Zkratka">
-        <input type="text" class="phase-edit-name" value="${esc(p.name)}" style="flex:1;min-width:200px;padding:6px 8px;font-size:13px;" aria-label="Popis fáze">
+        <input type="text" class="phase-edit-id" value="${esc(state.phaseEditDraft ? state.phaseEditDraft.id : p.id)}" ${PHASE_IDS_LOCKED.includes(p.id) ? `disabled title="Tuto zkratku používá aplikace pro pevné fáze projektu 000, nelze ji změnit."` : ""} style="width:100px;padding:6px 8px;font-size:13px;" aria-label="Zkratka">
+        <input type="text" class="phase-edit-name" value="${esc(state.phaseEditDraft ? state.phaseEditDraft.name : p.name)}" style="flex:1;min-width:200px;padding:6px 8px;font-size:13px;" aria-label="Popis fáze">
       </div>
       <div style="display:flex;gap:4px;">
         <button type="button" class="icon-btn" data-action="save-phase-edit" title="Uložit">✓</button>
@@ -7085,30 +7099,42 @@ function bindAdmin(){
     await saveConfig();
     render();
   }));
-  document.querySelectorAll('[data-action="edit-phase"]').forEach(b => b.onclick = () => setState({ editingPhaseId: b.getAttribute("data-id"), phaseEditError: "" }));
-  document.querySelectorAll('[data-action="cancel-phase-edit"]').forEach(b => b.onclick = () => setState({ editingPhaseId: null, phaseEditError: "" }));
+  document.querySelectorAll('[data-action="edit-phase"]').forEach(b => b.onclick = () => setState({ editingPhaseId: b.getAttribute("data-id"), phaseEditError: "", phaseEditDraft: null }));
+  document.querySelectorAll('[data-action="cancel-phase-edit"]').forEach(b => b.onclick = () => setState({ editingPhaseId: null, phaseEditError: "", phaseEditDraft: null }));
   document.querySelectorAll('[data-action="save-phase-edit"]').forEach(b => b.onclick = async () => {
     const row = b.closest("[data-phase-edit-row]");
-    if(!row) return;
+    if(!row || b.disabled) return;
     const oldId = row.getAttribute("data-phase-edit-row");
     const phase = state.config.phases.find(x => x.id === oldId);
     if(!phase) return;
     const idInput = row.querySelector(".phase-edit-id");
     const newId = idInput.disabled ? oldId : idInput.value.trim();
     const newName = row.querySelector(".phase-edit-name").value.trim();
-    if(!newId || !newName){ setState({ phaseEditError: "Vyplňte zkratku i popis fáze." }); return; }
+    const draft = { id: newId, name: newName };
+    if(!newId || !newName){ setState({ phaseEditError: "Vyplňte zkratku i popis fáze.", phaseEditDraft: draft }); return; }
     if(newId !== oldId && state.config.phases.some(x => x.id.toLowerCase() === newId.toLowerCase() && x.id !== oldId)){
-      setState({ phaseEditError: "Tato zkratka už existuje." }); return;
+      setState({ phaseEditError: "Tato zkratka už existuje.", phaseEditDraft: draft }); return;
     }
+    const backup = JSON.stringify(state.config);
+    const origText = b.textContent;
     b.disabled = true;
-    phase.name = newName;
-    if(newId !== oldId){
+    b.textContent = "…";
+    row.querySelectorAll("input").forEach(el => { el.disabled = true; });
+    try{
+      if(newId !== oldId) await renamePhaseEverywhere(oldId, newId);
+      phase.name = newName;
       phase.id = newId;
-      await renamePhaseEverywhere(oldId, newId);
+      sortProjectPhasesByMaster(state.config);
+      await withRetry(() => storageSet("config", JSON.stringify(state.config)));
+    } catch(err){
+      console.error("phase rename failed", err);
+      state.config = JSON.parse(backup);
+      setState({ phaseEditError: `Změnu se nepodařilo dokončit (${err && err.message ? err.message : err}). Zkuste kliknout na ✓ znovu – dokončí se tam, kde skončila.`, phaseEditDraft: draft });
+      return;
     }
-    await saveConfig();
     state.editingPhaseId = null;
     state.phaseEditError = "";
+    state.phaseEditDraft = null;
     showStamp();
     render();
   });
@@ -7998,6 +8024,33 @@ document.addEventListener("keydown", e => {
     || visible[0].querySelector(".project-row");
   if(target) target.click();
 });
+// Kontrola nové verze: aplikace otevřená na ploše telefonu nebo ve dlouho otevřené záložce se sama neobnoví.
+// Po návratu do okna se porovná obsah stránky na serveru s tím, co je načtené, a při změně nabídne obnovení.
+let appHtmlSignature = null;
+let lastVersionCheck = 0;
+async function fetchAppSignature(){
+  try{
+    const r = await fetch("/", { cache: "no-store" });
+    if(!r.ok) return null;
+    const t = await r.text();
+    let h = 5381;
+    for(let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+    return `${h}:${t.length}`;
+  }catch(e){ return null; }
+}
+async function checkNewVersion(){
+  const now = Date.now();
+  if(!appHtmlSignature || now - lastVersionCheck < 120000) return;
+  lastVersionCheck = now;
+  const sig = await fetchAppSignature();
+  if(sig && sig !== appHtmlSignature){
+    appHtmlSignature = sig;
+    showActionToast("Je dostupná nová verze aplikace.", { actionLabel: "Obnovit", duration: 60000, onAction: () => location.reload() });
+  }
+}
+fetchAppSignature().then(sig => { appHtmlSignature = sig; });
+document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") checkNewVersion(); });
+window.addEventListener("focus", checkNewVersion);
 bindDateInputGuard();
 init();
 if("serviceWorker" in navigator && location.protocol === "https:"){ window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {})); }
