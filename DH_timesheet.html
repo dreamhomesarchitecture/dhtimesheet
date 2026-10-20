@@ -2680,6 +2680,23 @@ async function buildDspInzenyringContractPdf(project, customer, opts){
   return doc;
 }
 
+// Název souboru faktury: 2026000049_ONDREJ-TROJANEK  (číslo faktury, podtržítko, odběratel velkými písmeny
+// bez diakritiky a bez „s.r.o.“; slova oddělená pomlčkou). Proforma má na začátku „proforma_“.
+function invoiceCustomerSlug(name){
+  let t = stripDiacritics(String(name || "")).toUpperCase();
+  t = t.replace(/&/g, " ");
+  t = t.replace(/[,;]/g, " ");
+  const suffix = /\s(SPOL\.?\s*S\s*R\.?\s*O\.?|S\.?\s*R\.?\s*O\.?|A\.?\s*S\.?|V\.?\s*O\.?\s*S\.?|K\.\s*S\.?|Z\.\s*S\.?|O\.\s*P\.\s*S\.?|S\.\s*P\.?)\s*$/;
+  t = (" " + t.trim()).replace(suffix, "").trim();
+  t = t.replace(/\b(ING|MGR|BC|BCA|DR|MUDR|JUDR|PHDR|ARCH|DOC|PROF|DIS|PH\.?D)\.?(?=\s|$)/g, " ");
+  return t.replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function invoiceFileName(kind, invoiceNumber, customer){
+  const num = String(invoiceNumber || "").trim().replace(/[^\w.-]+/g, "_");
+  const slug = invoiceCustomerSlug(customer && customer.name);
+  const base = slug ? `${num}_${slug}` : num;
+  return `${kind === "invoice" ? "" : "proforma_"}${base}.pdf`;
+}
 async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   opts = opts || {};
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
@@ -4074,6 +4091,10 @@ function buildPaymentCalendarDetail(projectId){
             ${projectBillingProfiles(p).map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
           </select>
           ` : ``}
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Použije se na faktuře i jako variabilní symbol. Když nic nenapíšete, doplní se číslo projektu a číslo platby.">
+            Číslo faktury
+            <input type="text" id="payment-calendar-proforma-number" placeholder="automaticky" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
+          </label>
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
             Splatnost
             <input type="date" id="payment-calendar-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
@@ -4448,6 +4469,10 @@ function adminClientExportTemplate(){
           ${projectBillingProfiles(selectedProject).map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
         </select>
         ` : ``}
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Použije se na faktuře i jako variabilní symbol. Když nic nenapíšete, doplní se číslo projektu.">
+          Číslo faktury
+          <input type="text" id="client-export-proforma-number" placeholder="automaticky" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
+        </label>
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
           Splatnost
           <input type="date" id="client-export-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
@@ -6586,7 +6611,8 @@ function bindAdmin(){
     const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(todayStr(), 7);
     const itemLabelInput = document.getElementById("payment-calendar-proforma-item-label");
     const itemLabel = (itemLabelInput && itemLabelInput.value.trim()) || "Projektová činnost ve výstavbě";
-    const invoiceNumber = `${project.id}${numbers[0] || ""}`;
+    const typedNumber = ((document.getElementById("payment-calendar-proforma-number") || {}).value || "").trim();
+    const invoiceNumber = typedNumber || `${project.id}${numbers[0] || ""}`;
     const totalAmount = rows.reduce((s,r) => s + r.payments.reduce((s2,pay) => s2 + (Number(pay.amount)||0), 0), 0);
     const invoiceRows = [{ phaseId: "", label: itemLabel, amount: totalAmount, payments: [{ amount: totalAmount, number: numbers[0] || "", date: "", note: "" }] }];
     btn.disabled = true;
@@ -6594,7 +6620,7 @@ function bindAdmin(){
     btn.textContent = "Generuji…";
     try{
       const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate, kind, taxDate: (document.getElementById("payment-calendar-proforma-tax-date") || {}).value || todayStr() });
-      doc.save(`${kind === "invoice" ? "faktura" : "proforma-faktura"}_${invoiceNumber}_${todayStr()}.pdf`);
+      doc.save(invoiceFileName(kind, invoiceNumber, customer));
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
@@ -7832,7 +7858,8 @@ function bindAdmin(){
     const subtotal = totalBillable + totalEntryCosts + totalExtra;
     if(!subtotal) return;
 
-    const invoiceNumber = project.id;
+    const typedNumber = ((document.getElementById("client-export-proforma-number") || {}).value || "").trim();
+    const invoiceNumber = typedNumber || project.id;
     const itemLabelInput = document.getElementById("client-export-proforma-item-label");
     const itemLabel = (itemLabelInput && itemLabelInput.value.trim()) || "Autorský dozor na stavbě";
     const rows = [{ phaseId: "", label: itemLabel, amount: subtotal, payments: [{ amount: subtotal, number: "", date: "", note: "" }] }];
@@ -7842,7 +7869,7 @@ function bindAdmin(){
     btn.textContent = "Generuji…";
     try{
       const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate, kind, taxDate: (document.getElementById("client-export-proforma-tax-date") || {}).value || todayStr() });
-      doc.save(`${kind === "invoice" ? "faktura" : "proforma-faktura"}_${invoiceNumber}_${todayStr()}.pdf`);
+      doc.save(invoiceFileName(kind, invoiceNumber, customer));
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
