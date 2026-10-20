@@ -2682,6 +2682,15 @@ async function buildDspInzenyringContractPdf(project, customer, opts){
 
 // Název souboru faktury: 2026000049_ONDREJ-TROJANEK  (číslo faktury, podtržítko, odběratel velkými písmeny
 // bez diakritiky a bez „s.r.o.“; slova oddělená pomlčkou). Proforma má na začátku „proforma_“.
+// Fyzická osoba podnikající = jméno bez právní formy (s.r.o., a.s. …). U profilu jde přepsat zaškrtávátkem.
+function nameHasLegalForm(name){
+  const t = " " + stripDiacritics(String(name || "")).toUpperCase().replace(/[,;]/g, " ").trim();
+  return /\s(SPOL\.?\s*S\s*R\.?\s*O\.?|S\.?\s*R\.?\s*O\.?|A\.?\s*S\.?|V\.?\s*O\.?\s*S\.?|K\.\s*S\.?|Z\.\s*S\.?|O\.\s*P\.\s*S\.?|S\.\s*P\.?|SE)\s*$/.test(t);
+}
+function supplierIsSoleTrader(profile){
+  if(profile && typeof profile.soleTrader === "boolean") return profile.soleTrader;
+  return !!(profile && profile.name && !nameHasLegalForm(profile.name));
+}
 function invoiceCustomerSlug(name){
   let t = stripDiacritics(String(name || "")).toUpperCase();
   t = t.replace(/&/g, " ");
@@ -2712,9 +2721,14 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
 
   const isInvoice = opts.kind === "invoice";
   const supplierIsVatPayer = (Number(supplier && supplier.vatRate) || 0) > 0;
+  const titleNumber = String(opts.invoiceNumber || "").trim();
+  const titleBase = isInvoice ? (supplierIsVatPayer ? "faktura – daňový doklad" : "faktura") : "proforma faktura";
+  const titleText = titleNumber ? `${titleBase} č. ${titleNumber}` : titleBase;
   doc.setFont("Lato", "bold");
-  doc.setFontSize(19);
-  doc.text(isInvoice ? (supplierIsVatPayer ? "faktura – daňový doklad" : "faktura") : "proforma faktura", pageWidth/2, 46, { align: "center" });
+  let titleSize = 19;
+  doc.setFontSize(titleSize);
+  while(titleSize > 11 && doc.getTextWidth(titleText) > pageWidth - marginX * 2){ titleSize -= 1; doc.setFontSize(titleSize); }
+  doc.text(titleText, pageWidth/2, 46, { align: "center" });
 
   if(!isInvoice){
     doc.setFont("Lato", "bold");
@@ -2734,6 +2748,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
     ["datum vystavení", fmtDateDotsPadded(issueDate)]
   ];
   if(isInvoice && supplierIsVatPayer) infoRows.push(["datum uskutečnění zdanitelného plnění", fmtDateDotsPadded(opts.taxDate || issueDate)]);
+  else if(isInvoice && opts.taxDate && opts.taxDate !== issueDate) infoRows.push(["datum poskytnutí služby", fmtDateDotsPadded(opts.taxDate)]);
   infoRows.push(["datum splatnosti", fmtDateDotsPadded(dueDate)]);
   if(isInvoice) infoRows.push(["forma úhrady", "bankovním převodem"]);
   infoRows.push(["stavba", `${project.id}${jobNumberSuffix(project.name)} - ${project.name || ""}`]);
@@ -2748,7 +2763,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
 
   y += 6;
   const colWidth = (pageWidth - marginX * 2 - 10) / 2;
-  const partyBlock = (title, party, x) => {
+  const partyBlock = (title, party, x, isSupplier) => {
     let py = y;
     doc.setFont("Lato", "bold");
     doc.setFontSize(10.5);
@@ -2759,7 +2774,8 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
       party.name || "",
       party.address || "",
       party.ico ? `IČ: ${party.ico}` : "",
-      party.dic ? `DIČ: ${party.dic}` : "",
+      party.dic && !/nepl[aá]tce/i.test(party.dic) ? `DIČ: ${party.dic}` : "",
+      isSupplier && !supplierIsVatPayer ? "Nejsem plátce DPH" : "",
       party.bankAccount ? `Č. účtu: ${party.bankAccount}` : "",
       party.email || "",
       party.phone || ""
@@ -2771,7 +2787,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
     });
     return py;
   };
-  const dodavatelBottom = partyBlock("DODAVATEL", supplier || {}, marginX);
+  const dodavatelBottom = partyBlock("DODAVATEL", supplier || {}, marginX, true);
   const odberatelBottom = partyBlock("ODBĚRATEL", customer || {}, marginX + colWidth + 10);
   y = Math.max(dodavatelBottom, odberatelBottom) + 6;
 
@@ -2785,7 +2801,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
 
   doc.autoTable({
     startY: y,
-    head: [["FÁZE", "POLOŽKA ROZPOČTU", "Č. PLATBY", "ČÁSTKA BEZ DPH"]],
+    head: [["FÁZE", "POLOŽKA ROZPOČTU", "Č. PLATBY", supplierIsVatPayer ? "ČÁSTKA BEZ DPH" : "ČÁSTKA"]],
     body: bodyRows,
     styles: { font: "Lato", fontSize: 9, cellPadding: 2.2, valign: "middle" },
     headStyles: { fillColor: [164,172,127], textColor: [255,255,255], fontStyle: "bold", fontSize: 8 },
@@ -2829,9 +2845,16 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   doc.setTextColor(255,255,255);
   doc.setFont("Lato", "bold");
   doc.setFontSize(9.5);
-  doc.text(vatRate > 0 ? "CELKEM K ÚHRADĚ" : "CELKEM K ÚHRADĚ BEZ DPH", boxLeft, ty);
+  doc.text("CELKEM K ÚHRADĚ", boxLeft, ty);
   doc.text(fmtKc(amountDue), pageWidth - marginX - 2, ty, { align: "right" });
   doc.setTextColor(0,0,0);
+  if(!supplierIsVatPayer){
+    doc.setFont("Lato", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(80,80,80);
+    doc.text("Dodavatel není plátcem DPH.", pageWidth - marginX - 2, ty + 7, { align: "right" });
+    doc.setTextColor(0,0,0);
+  }
 
   const iban = resolveIban(supplier && supplier.bankAccount);
   const vsSource = invoiceNumber && !invoiceNumber.includes(",") ? invoiceNumber : "";
@@ -2853,13 +2876,18 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
   }
 
   const pageCount = doc.internal.getNumberOfPages();
-  const footerParts = [supplier && supplier.name, supplier && supplier.ico ? `IČ: ${supplier.ico}` : "", supplier && supplier.address].filter(Boolean);
-  const footerText = footerParts.join("  |  ");
+  const soleTrader = supplierIsSoleTrader(supplier);
+  const footerParts = soleTrader
+    ? [supplier && supplier.name, supplier && supplier.ico ? `IČO: ${supplier.ico}` : "", supplier && supplier.address ? `sídlo: ${supplier.address}` : "", "fyzická osoba zapsaná v živnostenském rejstříku"]
+    : [supplier && supplier.name, supplier && supplier.ico ? `IČ: ${supplier.ico}` : "", supplier && supplier.address];
+  const footerText = footerParts.filter(Boolean).join(soleTrader ? " | " : "  |  ");
   for(let i = 1; i <= pageCount; i++){
     doc.setPage(i);
+    doc.setFont("Lato", "normal");
     doc.setFontSize(8);
     doc.setTextColor(120,120,120);
-    doc.text(footerText, pageWidth/2, pageHeight - 12, { align: "center" });
+    const footerLines = doc.splitTextToSize(footerText, pageWidth - marginX * 2);
+    footerLines.forEach((line, idx) => doc.text(line, pageWidth/2, pageHeight - 12 - (footerLines.length - 1 - idx) * 3.6, { align: "center" }));
   }
 
   return doc;
@@ -5603,6 +5631,7 @@ function billingProfileCardHtml(profile, opts){
         <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
         ${opts.showVatRate ? `<div class="field-row"><label class="field-label">DPH (%)</label><input type="number" min="0" max="100" step="0.1" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="vatRate" value="${esc(profile.vatRate || 0)}"></div>` : ``}
       </div>
+      ${opts.showVatRate ? `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;" title="U fyzické osoby podnikající se do patičky faktury doplní „fyzická osoba zapsaná v živnostenském rejstříku“. Bez zaškrtnutí se pozná podle názvu bez s.r.o., a.s. a podobně."><input type="checkbox" class="billing-profile-flag" data-id="${esc(profile.id)}" data-flag="soleTrader" ${supplierIsSoleTrader(profile) ? "checked" : ""}> Fyzická osoba podnikající (OSVČ) – doplní se věta do patičky faktury</label>` : ``}
       <div style="margin-top:10px;"><button type="button" class="btn btn-danger btn-small btn-with-icon" data-action="${deleteAction}" ${extraAttrs} data-id="${esc(profile.id)}" title="Smazat profil">${ICON_TRASH}Smazat profil</button></div>
     </div>`;
 }
@@ -7576,6 +7605,13 @@ function bindAdmin(){
     const profile = (state.config.billingProfiles || []).find(p => p.id === id);
     if(!profile) return;
     profile[field] = el.value.trim();
+    await saveConfig();
+    showStamp();
+  }));
+  document.querySelectorAll(".billing-profile-flag").forEach(cb => cb.addEventListener("change", async () => {
+    const profile = (state.config.billingProfiles || []).find(p => p.id === cb.getAttribute("data-id"));
+    if(!profile) return;
+    profile[cb.getAttribute("data-flag")] = cb.checked;
     await saveConfig();
     showStamp();
   }));
