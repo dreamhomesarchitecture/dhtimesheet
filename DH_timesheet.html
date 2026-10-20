@@ -2738,7 +2738,7 @@ async function buildProformaInvoicePdf(project, rows, supplier, customer, opts){
     doc.setTextColor(0,0,0);
   }
 
-  const issueDate = todayStr();
+  const issueDate = opts.issueDate || todayStr();
   const dueDate = opts.dueDate || addDaysToDateStr(issueDate, 7);
   const invoiceNumber = opts.invoiceNumber || "";
 
@@ -4123,6 +4123,10 @@ function buildPaymentCalendarDetail(projectId){
             Číslo faktury
             <input type="text" id="payment-calendar-proforma-number" placeholder="automaticky" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
           </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Výchozí je dnešní datum, můžete ho změnit.">
+            Datum vystavení
+            <input type="date" id="payment-calendar-proforma-issue-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+          </label>
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
             Splatnost
             <input type="date" id="payment-calendar-proforma-due-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(addDaysToDateStr(todayStr(), 7))}">
@@ -4500,6 +4504,10 @@ function adminClientExportTemplate(){
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Použije se na faktuře i jako variabilní symbol. Když nic nenapíšete, doplní se číslo projektu.">
           Číslo faktury
           <input type="text" id="client-export-proforma-number" placeholder="automaticky" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Výchozí je dnešní datum, můžete ho změnit.">
+          Datum vystavení
+          <input type="date" id="client-export-proforma-issue-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
         </label>
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
           Splatnost
@@ -6637,7 +6645,8 @@ function bindAdmin(){
     const customerProfiles = projectBillingProfiles(project);
     const customer = (customerSelect && customerProfiles.find(bp => bp.id === customerSelect.value)) || customerProfiles[0] || {};
     const dueDateInput = document.getElementById("payment-calendar-proforma-due-date");
-    const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(todayStr(), 7);
+    const issueDate = ((document.getElementById("payment-calendar-proforma-issue-date") || {}).value) || todayStr();
+    const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(issueDate, 7);
     const itemLabelInput = document.getElementById("payment-calendar-proforma-item-label");
     const itemLabel = (itemLabelInput && itemLabelInput.value.trim()) || "Projektová činnost ve výstavbě";
     const typedNumber = ((document.getElementById("payment-calendar-proforma-number") || {}).value || "").trim();
@@ -6648,13 +6657,25 @@ function bindAdmin(){
     const origText = btn.textContent;
     btn.textContent = "Generuji…";
     try{
-      const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate, kind, taxDate: (document.getElementById("payment-calendar-proforma-tax-date") || {}).value || todayStr() });
+      const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate, issueDate, kind, taxDate: (document.getElementById("payment-calendar-proforma-tax-date") || {}).value || todayStr() });
       doc.save(invoiceFileName(kind, invoiceNumber, customer));
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
     }
   };
+  const wireIssueDate = (issueId, dueId) => {
+    const issue = document.getElementById(issueId), due = document.getElementById(dueId);
+    if(!issue || !due) return;
+    let prevAuto = addDaysToDateStr(issue.value, 7);
+    issue.addEventListener("change", () => {
+      if(!issue.value) return;
+      if(due.value === prevAuto) due.value = addDaysToDateStr(issue.value, 7);
+      prevAuto = addDaysToDateStr(issue.value, 7);
+    });
+  };
+  wireIssueDate("payment-calendar-proforma-issue-date", "payment-calendar-proforma-due-date");
+  wireIssueDate("client-export-proforma-issue-date", "client-export-proforma-due-date");
   [["payment-calendar-proforma-btn", "proforma"], ["payment-calendar-invoice-btn", "invoice"]].forEach(([id, kind]) => {
     const b = document.getElementById(id);
     if(b) b.onclick = () => runPaymentCalendarInvoice(b, kind);
@@ -7878,7 +7899,8 @@ function bindAdmin(){
     const customerProfiles = projectBillingProfiles(project);
     const customer = (customerSelect && customerProfiles.find(bp => bp.id === customerSelect.value)) || customerProfiles[0] || {};
     const dueDateInput = document.getElementById("client-export-proforma-due-date");
-    const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(todayStr(), 7);
+    const issueDate = ((document.getElementById("client-export-proforma-issue-date") || {}).value) || todayStr();
+    const dueDate = (dueDateInput && dueDateInput.value) || addDaysToDateStr(issueDate, 7);
 
     const entries = state.adminEntriesFlat || [];
     const filtered = entries.filter(e =>
@@ -7904,7 +7926,7 @@ function bindAdmin(){
     const origText = btn.textContent;
     btn.textContent = "Generuji…";
     try{
-      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate, kind, taxDate: (document.getElementById("client-export-proforma-tax-date") || {}).value || todayStr() });
+      const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate, issueDate, kind, taxDate: (document.getElementById("client-export-proforma-tax-date") || {}).value || todayStr() });
       doc.save(invoiceFileName(kind, invoiceNumber, customer));
     } finally {
       btn.disabled = false;
