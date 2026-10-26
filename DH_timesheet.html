@@ -5539,10 +5539,18 @@ function parseInvoiceRows(rows, opts){
   let supplierLines = [];
   if(iDod !== -1){
     const dodItem = rows[iDod].items.find(i => labelRx.test(i.str));
-    let xMax = Infinity, endRow = Math.min(rows.length, iDod + 10);
-    const custItemSameRow = rows[iDod].items.find(i => i.x > dodItem.x + 20 && custRx.test(i.str));
-    if(custItemSameRow) xMax = custItemSameRow.x - 3;
-    else { const iCust = rows.findIndex((r, idx) => idx > iDod && r.items.some(i => custRx.test(i.str))); if(iCust !== -1) endRow = Math.min(endRow, iCust); }
+    let xMax = Infinity, endRow = Math.min(rows.length, iDod + 25);
+    // Odběratel je buď vedle dodavatele (dva sloupce – blok dodavatele je jen levý sloupec, ale pokračuje níž),
+    // nebo pod ním (blok dodavatele končí řádkem s odběratelem).
+    let custItem = null, custRow = -1;
+    for(let r = iDod; r < rows.length && !custItem; r++){
+      const it = rows[r].items.find(i => custRx.test(i.str) && (r > iDod || i.x > dodItem.x + 20));
+      if(it){ custItem = it; custRow = r; }
+    }
+    if(custItem){
+      if(custItem.x > dodItem.x + 60) xMax = custItem.x - 3;
+      else endRow = Math.min(endRow, custRow);
+    }
     const stopRx = /^(datum|číslo faktury|variabiln|konstantn|forma|způsob|splatnost|označení|fakturujeme|položka|popis|množství|fáze|stavba)/i;
     for(let r = iDod; r < endRow; r++){
       const items = rows[r].items.filter(i => i.x >= dodItem.x - 4 && i.x < xMax);
@@ -5569,12 +5577,25 @@ function parseInvoiceRows(rows, opts){
   const mailM = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(block);
   out.supplier.email = mailM ? mailM[0] : "";
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
-  const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l));
+  const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l) && !/^(variabiln|konstantn|symbol|datum|číslo|faktura|odb[ěe]ratel|objedn)/i.test(l));
   out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
   const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).filter(l => !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
   out.supplier.address = addr.slice(0, 2).join(", ");
-  const accM = /(?:číslo účtu|č\.\s?ú\.|bankovní spojení|účet|iban)[^0-9A-Z]{0,25}((?:[A-Z]{2}\d{2}[\d\s]{14,30})|(?:\d{0,6}-?\d{2,10}\s?\/\s?\d{4}))/i.exec(full) || /\b(\d{0,6}-?\d{2,10}\/\d{4})\b/.exec(full);
-  out.supplier.account = accM ? accM[1].replace(/\s+/g, "").trim() : "";
+  const BANK_CODES = new Set(["0100","0300","0600","0710","0800","2010","2060","2070","2100","2200","2220","2240","2250","2260","2275","2600","2700","3030","3050","3060","3500","4000","4300","5500","5800","6000","6100","6200","6210","6300","6363","6700","6800","7910","7940","7950","7960","7970","7980","7990","8030","8040","8060","8090","8150","8200","8215","8225","8230","8240","8250","8255","8265","8280","8291","8292","8293"]);
+  const acctLabel = "(?:číslo\\s+účtu|č\\.\\s*účtu|č\\.\\s?ú\\.|bankovní\\s+spojení|bankovní\\s+účet|účtu|účet|iban)";
+  let acc = "";
+  const ibanM = /\b(CZ\d{2}(?:\s?\d{4}){5})\b/.exec(full);
+  const labM = new RegExp(`${acctLabel}\\D{0,12}((?:\\d{1,6}-)?\\d{2,10})\\s*\\/?\\s*(\\d{4})\\b`, "i").exec(block + "\n" + full);
+  if(ibanM) acc = ibanM[1].replace(/\s+/g, "");
+  else if(labM){ acc = `${labM[1]}/${labM[2]}`; if(!BANK_CODES.has(labM[2])) check.account = "Kód banky u čísla účtu nevypadá obvykle – zkontrolujte číslo účtu."; }
+  else {
+    for(const l of lines){
+      if(!/účet|účtu|ucet|iban|bank/i.test(l)) continue;
+      const g = /\b((?:\d{1,6}-)?\d{2,10})\s?\/\s?(\d{4})\b/.exec(l);
+      if(g && BANK_CODES.has(g[2])){ acc = `${g[1]}/${g[2]}`; break; }
+    }
+  }
+  out.supplier.account = acc;
 
   // ---- číslo faktury, data ----
   let num = "";
@@ -5585,11 +5606,17 @@ function parseInvoiceRows(rows, opts){
   out.number = num;
   out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury") || "";
   out.dueDate = labeledDate(lines, "datum\\s+splatnosti|splatnost") || "";
-  out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
+  out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+(?:zdaniteln[ée]ho\\s+)?pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
   if(!out.date && out.taxDate){ out.date = out.taxDate; check.date = "Datum vystavení nenalezeno, použil jsem datum plnění – zkontrolujte."; }
 
   // ---- částky ----
   const nonPayer = /nen[íi]\s+pl[áa]tce\s+dph|nepl[áa]tce\s+dph|nejsem\s+pl[áa]tce\s+dph/i.test(full);
+  // rekapitulace DPH: řádek „základ  sazba %  DPH  celkem“ (bere se jediný nenulový řádek)
+  const recapRx = /(\d[\d\s]*[.,]\d{2})\s+(\d{1,2})\s*%\s+(\d[\d\s]*[.,]\d{2})\s+(\d[\d\s]*[.,]\d{2})/;
+  const recapStart = lines.findIndex(l => /rekapitulace/i.test(l));
+  const recap = (recapStart === -1 ? [] : lines.slice(recapStart + 1)).map(l => recapRx.exec(l)).filter(Boolean).map(m => ({ net: parseCzNumber(m[1]), rate: Number(m[2]), vat: parseCzNumber(m[3]), gross: parseCzNumber(m[4]) })).filter(x => x.net > 0);
+  const recapUse = recap.length === 1 ? recap[0] : null;
+  if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
   let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]");
   if(gross === null) gross = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad");
   let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|cena\\s+bez\\s+dph|z[áa]klad");
@@ -5602,6 +5629,7 @@ function parseInvoiceRows(rows, opts){
     if(nums.length) vat = nums[nums.length - 1].val;
   }
   if(rate === null){ const rm = /(\d{1,2})\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
+  if(recapUse){ net = recapUse.net; rate = recapUse.rate; vat = recapUse.vat; if(gross === null) gross = recapUse.gross; }
   if(nonPayer){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
   if(net === null && gross !== null && rate !== null) net = r2(gross / (1 + rate / 100));
   if(net === null && gross !== null && vat !== null) net = r2(gross - vat);
