@@ -509,6 +509,14 @@
   .cost-card:hover .cc-act, .cost-card:focus-within .cc-act{ opacity:1; }
   @media (hover:none){ .cc-act{ opacity:1; } }
   @media (max-width:640px){ .cost-card{ gap:10px; padding:12px; } .cost-card.has-cb{ grid-template-columns:22px 1fr auto; } .cost-card:not(.has-cb){ grid-template-columns:1fr auto; } .cc-act{ grid-column:1 / -1; justify-content:flex-end; } }
+  .ii-panel{ border:1px solid var(--sage); background:var(--sage-tint); border-radius:var(--radius-md); padding:16px 18px; margin-bottom:16px; }
+  .ii-pick{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .ii-head{ margin-bottom:10px; }
+  .ii-alert{ font-size:13px; margin:0 0 8px; padding:8px 12px; border-radius:var(--radius-sm); background:var(--tan-tint); }
+  .ii-alert.bad{ background:rgba(179,56,44,.12); color:var(--danger); font-weight:600; }
+  .ii-needs input, .ii-needs select{ border-color:var(--danger) !important; background:rgba(179,56,44,.06); }
+  .ii-check input{ border-color:var(--tan) !important; }
+  .ii-amount-flag .pf-net{ border-color:var(--danger) !important; }
   .price-group{ display:contents; }
   .cost-edit-price{ grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:10px; padding-top:6px; }
   .cost-edit-price .field-row{ flex:1 1 130px; }
@@ -929,6 +937,7 @@ let state = {
   editingEntryId: null,
   editingLaborEntryId: null,
   editingRecordId: null,
+  invoiceImport: null,
   editingPhaseId: null,
   phaseEditError: "",
   phaseEditDraft: null,
@@ -1332,7 +1341,7 @@ function costPriceFieldsHtml(o){
   const netAttrs = `${o.netId ? `id="${o.netId}"` : ""} class="pf-net ${o.netClass || ""}"`;
   return `
         <div class="price-group" data-anchor="${c && has(c.amountGross) && c.priceAnchor === "gross" ? "gross" : "net"}">
-          <div class="field-row"><label class="field-label">Dodavatel</label><select class="pf-supplier" name="supplierId">${supplierSelectOptionsHtml(c)}</select></div>
+          ${o.noSupplier ? `` : `<div class="field-row"><label class="field-label">Dodavatel</label><select class="pf-supplier" name="supplierId">${supplierSelectOptionsHtml(c)}</select></div>`}
           <div class="field-row"><label class="field-label">Cena bez DPH (Kč)</label><input type="number" ${netAttrs} name="amount" min="0" step="0.01" value="${esc(net)}" ${o.required ? "required" : ""}></div>
           <div class="field-row"><label class="field-label">DPH (%)</label><input type="number" class="pf-rate" name="vatRate" min="0" max="100" step="0.01" list="vat-rate-list" value="${esc(rate)}"></div>
           <div class="field-row"><label class="field-label">DPH (Kč)</label><input type="number" class="pf-vat" name="vatAmount" min="0" step="0.01" value="${esc(vat)}"></div>
@@ -1348,7 +1357,8 @@ function readPriceGroup(scope){
   let gross = numOrNull(q(".pf-gross").value);
   if(vat === null) vat = r2(net * (rate || 0) / 100);
   if(gross === null) gross = r2(net + vat);
-  const supVal = q(".pf-supplier").value;
+  const supEl = q(".pf-supplier");
+  const supVal = supEl ? supEl.value : "";
   const out = { amount: r2(net), vatAmount: r2(vat), amountGross: r2(gross), supplier: "", supplierId: undefined };
   if(supVal.startsWith("text:")) out.supplier = supVal.slice(5);
   else if(supVal){
@@ -1391,6 +1401,7 @@ function costCardHtml(c, o){
   if(phase) meta.push(`<span class="entry-phase">${esc(phase.id)}</span>`);
   meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
   if(empName && proj) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
+  if(c.invoiceNumber) meta.push(`<span>faktura č. ${esc(c.invoiceNumber)}</span>`);
   const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
   return `
     <div class="cost-card ${cb ? "has-cb" : ""}">
@@ -2690,6 +2701,12 @@ function nameHasLegalForm(name){
 function supplierIsSoleTrader(profile){
   if(profile && typeof profile.soleTrader === "boolean") return profile.soleTrader;
   return !!(profile && profile.name && !nameHasLegalForm(profile.name));
+}
+// U ostré faktury se zapamatuje naposledy ručně vepsané číslo a příště se předvyplní (stačí přepsat poslední číslice).
+async function rememberInvoiceNumber(kind, typedNumber){
+  if(kind !== "invoice" || !typedNumber || state.config.lastInvoiceNumber === typedNumber) return;
+  state.config.lastInvoiceNumber = typedNumber;
+  await saveConfig();
 }
 function invoiceCustomerSlug(name){
   let t = stripDiacritics(String(name || "")).toUpperCase();
@@ -4121,7 +4138,7 @@ function buildPaymentCalendarDetail(projectId){
           ` : ``}
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Použije se na faktuře i jako variabilní symbol. Když nic nenapíšete, doplní se číslo projektu a číslo platby.">
             Číslo faktury
-            <input type="text" id="payment-calendar-proforma-number" placeholder="automaticky" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
+            <input type="text" id="payment-calendar-proforma-number" placeholder="automaticky" value="${esc(state.config.lastInvoiceNumber || "")}" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
           </label>
           <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Výchozí je dnešní datum, můžete ho změnit.">
             Datum vystavení
@@ -4255,6 +4272,8 @@ function adminCostsTemplate(){
 
   return `
     <p class="q-hint" style="margin:0 0 14px;">${filtersActive ? "Náklady dle filtru" : "Celkové náklady"} (bez DPH): <b style="color:var(--ink);">${fmtKc(totalAmount)}</b> · všechny součty a výpočty v aplikaci počítají s cenou bez DPH.</p>
+
+    ${invoiceImportPanelHtml("global")}
 
     <form id="add-cost-form">
       ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
@@ -4503,7 +4522,7 @@ function adminClientExportTemplate(){
         ` : ``}
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Použije se na faktuře i jako variabilní symbol. Když nic nenapíšete, doplní se číslo projektu.">
           Číslo faktury
-          <input type="text" id="client-export-proforma-number" placeholder="automaticky" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
+          <input type="text" id="client-export-proforma-number" placeholder="automaticky" value="${esc(state.config.lastInvoiceNumber || "")}" autocomplete="off" style="width:140px;padding:6px 8px;font-size:13px;">
         </label>
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);" title="Výchozí je dnešní datum, můžete ho změnit.">
           Datum vystavení
@@ -5002,6 +5021,7 @@ function projectDetailPageHtml(){
             </div>
             <div class="phase-block" style="margin-bottom:14px;">
               <div class="field-label" style="margin-bottom:10px;">+ Přidat náklad</div>
+              ${invoiceImportPanelHtml(p.id)}
               <div class="form-grid">
                 <div class="field-row"><label class="field-label">Datum</label><input type="date" id="project-cost-add-date" value="${esc(todayStr())}"></div>
                 <div class="field-row"><label class="field-label">Fáze</label><select id="project-cost-add-phase">
@@ -5330,6 +5350,413 @@ function adminBillingPaymentsTemplate(){
   return `
     <p class="q-hint" style="margin:0 0 14px;">Platby, které mají číslo, ale ještě nemají vyplněné datum úhrady. Datum doplníte přímo tady, platba se pak z přehledu ztratí. Celkem čeká <b style="color:var(--ink);">${billingPaymentCount(list)}</b> ${billingPaymentCount(list) === 1 ? "platba" : billingPaymentCount(list) < 5 ? "platby" : "plateb"} na <b style="color:var(--ink);">${fmtKc(total)}</b>.</p>
     ${groups}`;
+}
+
+/* ---------------- načtení nákladu z faktury (PDF) ---------------- */
+// PDF se nikam neukládá. Přečte se jen text přímo v prohlížeči, údaje se předvyplní do formuláře
+// a po kontrole se z nich uloží náklad. Funguje u PDF s textem (ne u naskenovaných obrázků).
+async function ensurePdfJs(){
+  if(window.pdfjsLib && window.pdfjsLib.__dhReady) return;
+  if(!window.pdfjsLib){
+    await new Promise((res, rej) => {
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      sc.onload = res;
+      sc.onerror = () => rej(new Error("Nepodařilo se načíst čtečku PDF. Zkontrolujte připojení k internetu."));
+      document.head.appendChild(sc);
+    });
+  }
+  const workerText = await fetch("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js").then(r => r.text());
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([workerText], { type: "text/javascript" }));
+  window.pdfjsLib.__dhReady = true;
+}
+async function extractPdfRows(file){
+  await ensurePdfJs();
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const rows = [];
+  for(let pn = 1; pn <= Math.min(pdf.numPages, 3); pn++){
+    const content = await (await pdf.getPage(pn)).getTextContent();
+    const pageRows = [];
+    content.items.forEach(it => {
+      if(!it.str || !it.str.trim()) return;
+      const x = it.transform[4], y = it.transform[5];
+      let row = pageRows.find(r => Math.abs(r.y - y) < 2.5);
+      if(!row){ row = { y, items: [] }; pageRows.push(row); }
+      row.items.push({ x, str: it.str.trim() });
+    });
+    pageRows.sort((a, b) => b.y - a.y);
+    pageRows.forEach(r => { r.items.sort((a, b) => a.x - b.x); r.text = r.items.map(i => i.str).join(" "); rows.push(r); });
+  }
+  return rows;
+}
+function parseCzNumber(str){
+  let t = String(str || "").replace(/[\s ]/g, "").replace(/[^\d.,-]/g, "");
+  if(!/\d/.test(t)) return null;
+  const lc = t.lastIndexOf(","), ld = t.lastIndexOf(".");
+  if(lc !== -1 && ld !== -1) t = lc > ld ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+  else if(lc !== -1) t = (t.match(/,/g) || []).length > 1 ? t.replace(/,/g, "") : t.replace(",", ".");
+  else if(ld !== -1 && /^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  const n = Number(t);
+  return isFinite(n) ? n : null;
+}
+function parseCzDate(str){
+  const s = String(str || "");
+  let m = /(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{4})/.exec(s) || /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  if(m) return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+  m = /(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? m[0] : null;
+}
+const INVOICE_DATE_RX = "(\\d{1,2}\\s*\\.\\s*\\d{1,2}\\s*\\.\\s*\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})";
+function labeledDate(lines, labelRx){
+  const rx = new RegExp(`(?:${labelRx})[^0-9]{0,40}${INVOICE_DATE_RX}`, "i");
+  for(const l of lines){ const m = rx.exec(l); if(m) return parseCzDate(m[1]); }
+  return null;
+}
+function numbersIn(text){
+  return [...String(text).matchAll(/-?\d[\d\s ]*(?:[.,]\d{1,2})?/g)].map(m => ({ raw: m[0], idx: m.index, val: parseCzNumber(m[0]) })).filter(n => n.val !== null);
+}
+function amountOnLine(lines, labelRx, exclude){
+  const rx = new RegExp(labelRx, "i");
+  for(const l of lines){
+    if(exclude && new RegExp(exclude, "i").test(l)) continue;
+    const m = rx.exec(l);
+    if(!m) continue;
+    const nums = numbersIn(l.slice(m.index + m[0].length)).filter(n => Math.abs(n.val) >= 0);
+    if(nums.length) return nums[nums.length - 1].val;
+  }
+  return null;
+}
+// ---- OCR pro naskenované faktury a fotky (Tesseract.js, česky; běží v prohlížeči) ----
+let ocrWorkerPromise = null;
+let ocrProgressCb = null;
+async function getOcrWorker(){
+  if(ocrWorkerPromise) return ocrWorkerPromise;
+  ocrWorkerPromise = (async () => {
+    if(!window.Tesseract){
+      await new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+        sc.onload = res;
+        sc.onerror = () => rej(new Error("Nepodařilo se načíst rozpoznávání textu. Zkontrolujte připojení k internetu."));
+        document.head.appendChild(sc);
+      });
+    }
+    return window.Tesseract.createWorker("ces", 1, {
+      langPath: "https://cdn.jsdelivr.net/npm/@tesseract.js-data/ces/4.0.0_best_int",
+      logger: m => { if(ocrProgressCb) ocrProgressCb(m); }
+    });
+  })();
+  ocrWorkerPromise.catch(() => { ocrWorkerPromise = null; });
+  return ocrWorkerPromise;
+}
+async function pdfPagesToCanvases(file, maxPages){
+  await ensurePdfJs();
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const out = [];
+  for(let pn = 1; pn <= Math.min(pdf.numPages, maxPages); pn++){
+    const page = await pdf.getPage(pn);
+    const viewport = page.getViewport({ scale: 2.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    out.push(canvas);
+  }
+  return out;
+}
+async function imageFileToCanvas(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("Obrázek se nepodařilo otevřít.")); im.src = url; });
+    const scale = Math.min(1, 2600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } finally { URL.revokeObjectURL(url); }
+}
+// V číselných slovech opraví typické omyly rozpoznávání (O→0, l/I/|→1, S→5, B→8).
+function fixOcrDigits(str){
+  return String(str).replace(/[A-Za-z0-9|.,\-\/]{5,}/g, tok => {
+    const digits = (tok.match(/\d/g) || []).length;
+    if(digits / tok.length < 0.6) return tok;
+    return tok.replace(/[Oo]/g, "0").replace(/[lI|]/g, "1").replace(/S/g, "5").replace(/B/g, "8");
+  });
+}
+async function ocrCanvasesToRows(canvases){
+  const worker = await getOcrWorker();
+  const rows = [];
+  let pageIndex = 0;
+  for(const canvas of canvases){
+    pageIndex++;
+    ocrProgressCb = m => {
+      const el = document.getElementById("ii-progress");
+      if(el && m && m.status){
+        const pct = m.progress ? ` ${Math.round(m.progress * 100)} %` : "";
+        el.textContent = (/recogniz/i.test(m.status) ? `Rozpoznávám text, strana ${pageIndex}/${canvases.length}` : "Připravuji rozpoznávání textu (poprvé se stahují jazyková data)") + pct;
+      }
+    };
+    const { data } = await worker.recognize(canvas);
+    const words = (data.words || []).filter(w => w.text && w.text.trim() && w.bbox);
+    if(!words.length) continue;
+    const heights = words.map(w => w.bbox.y1 - w.bbox.y0).sort((a, b) => a - b);
+    const tol = Math.max(4, heights[Math.floor(heights.length / 2)] * 0.6);
+    const pageRows = [];
+    words.forEach(w => {
+      const cy = (w.bbox.y0 + w.bbox.y1) / 2;
+      let row = pageRows.find(r => Math.abs(r.cy - cy) < tol);
+      if(!row){ row = { cy, y: -cy - (pageIndex - 1) * 100000, items: [] }; pageRows.push(row); }
+      row.items.push({ x: w.bbox.x0, str: fixOcrDigits(w.text.trim()) });
+    });
+    pageRows.sort((a, b) => a.cy - b.cy);
+    pageRows.forEach(r => { r.items.sort((a, b) => a.x - b.x); r.text = r.items.map(i => i.str).join(" "); rows.push(r); });
+  }
+  ocrProgressCb = null;
+  return rows;
+}
+async function extractInvoiceRows(file){
+  const isImage = /^image\//.test(file.type) || /\.(jpe?g|png|webp|bmp)$/i.test(file.name);
+  if(isImage) return { rows: await ocrCanvasesToRows([await imageFileToCanvas(file)]), ocr: true };
+  const rows = await extractPdfRows(file);
+  const textLength = rows.reduce((a, r) => a + r.text.length, 0);
+  if(textLength >= 60) return { rows, ocr: false };
+  return { rows: await ocrCanvasesToRows(await pdfPagesToCanvases(file, 2)), ocr: true };
+}
+function parseInvoiceRows(rows, opts){
+  const lines = rows.map(r => r.text);
+  const full = lines.join("\n");
+  const check = {};    // údaj nalezen, ale je potřeba ho zkontrolovat
+  const out = { supplier: { name: "", ico: "", dic: "", address: "", account: "", email: "" }, number: "", date: "", dueDate: "", taxDate: "", net: null, rate: null, vat: null, gross: null, paymentMethod: "ucet", warnings: [] };
+  if(lines.length < 3){ out.warnings.push("Ve faktuře se nepodařilo najít žádný čitelný text. Zkuste ostřejší sken nebo údaje zadejte ručně."); return { ...out, check, empty: true }; }
+  const ownIcos = (state.config.billingProfiles || []).map(b => String(b.ico || "").replace(/\D/g, "")).filter(Boolean);
+
+  // ---- dodavatel: blok pod štítkem „Dodavatel“ (dvousloupcové i pod sebou uspořádané faktury) ----
+  const labelRx = /dodavatel|poskytovatel|vystavil/i, custRx = /odb[ěe]ratel|p[řr]íjemce|z[áa]kazn[ií]k|objednatel|fakturov[áa]no/i;
+  const iDod = rows.findIndex(r => r.items.some(i => labelRx.test(i.str)));
+  let supplierLines = [];
+  if(iDod !== -1){
+    const dodItem = rows[iDod].items.find(i => labelRx.test(i.str));
+    let xMax = Infinity, endRow = Math.min(rows.length, iDod + 10);
+    const custItemSameRow = rows[iDod].items.find(i => i.x > dodItem.x + 20 && custRx.test(i.str));
+    if(custItemSameRow) xMax = custItemSameRow.x - 3;
+    else { const iCust = rows.findIndex((r, idx) => idx > iDod && r.items.some(i => custRx.test(i.str))); if(iCust !== -1) endRow = Math.min(endRow, iCust); }
+    const stopRx = /^(datum|číslo faktury|variabiln|konstantn|forma|způsob|splatnost|označení|fakturujeme|položka|popis|množství|fáze|stavba)/i;
+    for(let r = iDod; r < endRow; r++){
+      const items = rows[r].items.filter(i => i.x >= dodItem.x - 4 && i.x < xMax);
+      let t = items.map(i => i.str).join(" ").replace(labelRx, "").replace(/^[\s:–-]+/, "").trim();
+      if(r > iDod && stopRx.test(t)) break;
+      if(t) supplierLines.push(t);
+    }
+  } else {
+    check.supplier = "Štítek „Dodavatel“ ve faktuře nenalezen – zkontrolujte údaje o dodavateli.";
+    const iIc = lines.findIndex(l => { const m = /\bI[ČC]O?\s*[:.]?\s*(\d{8})/i.exec(l); return m && !ownIcos.includes(m[1]); });
+    if(iIc !== -1) supplierLines = lines.slice(Math.max(0, iIc - 3), iIc + 3);
+  }
+  const block = supplierLines.join("\n");
+  const icM = /\bI[ČC]O?\s*[:.]?\s*(\d{8})/i.exec(block) || null;
+  let ico = icM ? icM[1] : "";
+  if(!ico){
+    const all = [...full.matchAll(/\bI[ČC]O?\s*[:.]?\s*(\d{8})/gi)].map(m => m[1]).filter(x => !ownIcos.includes(x));
+    if(all.length){ ico = all[0]; check.ico = "IČ dodavatele je převzaté z jiného místa faktury – zkontrolujte."; }
+  }
+  if(ico && ownIcos.includes(ico)) check.ico = "IČ dodavatele je stejné jako vaše firma – zkontrolujte, zda není dodavatel a odběratel zaměněn.";
+  out.supplier.ico = ico;
+  const dicM = /\bDI[ČC]\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(block);
+  out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : "";
+  const mailM = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(block);
+  out.supplier.email = mailM ? mailM[0] : "";
+  const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
+  const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l));
+  out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
+  const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).filter(l => !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
+  out.supplier.address = addr.slice(0, 2).join(", ");
+  const accM = /(?:číslo účtu|č\.\s?ú\.|bankovní spojení|účet|iban)[^0-9A-Z]{0,25}((?:[A-Z]{2}\d{2}[\d\s]{14,30})|(?:\d{0,6}-?\d{2,10}\s?\/\s?\d{4}))/i.exec(full) || /\b(\d{0,6}-?\d{2,10}\/\d{4})\b/.exec(full);
+  out.supplier.account = accM ? accM[1].replace(/\s+/g, "").trim() : "";
+
+  // ---- číslo faktury, data ----
+  let num = "";
+  let m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full);
+  if(m && /\d/.test(m[1])) num = m[1];
+  if(!num){ m = /číslo\s+(?:faktury|dokladu)[^\n]{0,30}?\s([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full); if(m && /\d/.test(m[1])) num = m[1]; }
+  if(!num){ m = /variabiln[íi]\s+symbol[:\s]*(\d{1,10})/i.exec(full); if(m){ num = m[1]; check.number = "Číslo faktury není ve faktuře jasně uvedené, vzal jsem variabilní symbol – zkontrolujte."; } }
+  out.number = num;
+  out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury") || "";
+  out.dueDate = labeledDate(lines, "datum\\s+splatnosti|splatnost") || "";
+  out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
+  if(!out.date && out.taxDate){ out.date = out.taxDate; check.date = "Datum vystavení nenalezeno, použil jsem datum plnění – zkontrolujte."; }
+
+  // ---- částky ----
+  const nonPayer = /nen[íi]\s+pl[áa]tce\s+dph|nepl[áa]tce\s+dph|nejsem\s+pl[áa]tce\s+dph/i.test(full);
+  let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]");
+  if(gross === null) gross = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad");
+  let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|cena\\s+bez\\s+dph|z[áa]klad");
+  let rate = null, vat = null;
+  const vatLine = lines.find(l => /dph\s*\d{1,2}\s*%/i.test(l));
+  if(vatLine){
+    const mm = /dph\s*(\d{1,2})\s*%\s*(.*)$/i.exec(vatLine);
+    rate = Number(mm[1]);
+    const nums = numbersIn(mm[2]);
+    if(nums.length) vat = nums[nums.length - 1].val;
+  }
+  if(rate === null){ const rm = /(\d{1,2})\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
+  if(nonPayer){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
+  if(net === null && gross !== null && rate !== null) net = r2(gross / (1 + rate / 100));
+  if(net === null && gross !== null && vat !== null) net = r2(gross - vat);
+  if(gross === null && net !== null && vat !== null) gross = r2(net + vat);
+  if(gross === null && net !== null && rate !== null) gross = r2(net * (1 + rate / 100));
+  if(vat === null && net !== null && gross !== null) vat = r2(gross - net);
+  if(rate === null && net && vat !== null) rate = r2(vat / net * 100);
+  if(net !== null && gross !== null && vat !== null && Math.abs(net + vat - gross) > 1) check.amount = "Částky ve faktuře nesedí k sobě (základ + DPH ≠ celkem) – zkontrolujte.";
+  out.net = net; out.gross = gross; out.vat = vat; out.rate = rate;
+  if(/\b(EUR|€)\b/.test(full) && !/\b(CZK|Kč)\b/.test(full)) out.warnings.push("Faktura je pravděpodobně v eurech. Do nákladů je potřeba zadat částku v Kč – přepočtěte ji.");
+  if(/v\s+hotovosti|hotov[ěe]|platba\s+hotově/i.test(full)) out.paymentMethod = "hotove";
+  if(opts && opts.ocr){
+    out.warnings.unshift("Faktura byla přečtena rozpoznáním textu z obrázku, takže se mohla některá čísla přečíst špatně. Zkontrolujte pečlivě hlavně částky, IČ, číslo účtu a číslo faktury.");
+    ["supplier", "ico", "number", "date", "amount", "account"].forEach(k => { if(!check[k]) check[k] = ""; });
+  }
+  out.check = check;
+  return out;
+}
+function invoiceImportMissing(parsed, draft){
+  const miss = {};
+  const v = (k, fallback) => (draft && draft[k] !== undefined ? draft[k] : fallback);
+  if(!String(v("ii-sup-name", parsed.supplier.name)).trim()) miss.supplierName = true;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v("ii-date", parsed.date)))) miss.date = true;
+  if(numOrNull(v("pf-net", parsed.net)) === null) miss.net = true;
+  return miss;
+}
+function matchSupplierForInvoice(sup){
+  const ico = String(sup.ico || "").replace(/\D/g, "");
+  return suppliersList().find(s => ico && String(s.ico || "").replace(/\D/g, "") === ico) || supplierByName(sup.name) || null;
+}
+function invoiceImportPanelHtml(origin){
+  const imp = state.invoiceImport;
+  const picker = `
+    <div class="ii-pick">
+      <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-pick">Načíst z faktury (PDF nebo foto)</button>
+      <span class="q-hint" style="margin:0;">Faktura se nikam neukládá, jen se z ní přečtou údaje do nákladu. Čte i naskenované faktury a fotky (pomaleji).</span>
+      <input type="file" id="invoice-import-file" data-origin="${esc(origin)}" accept="application/pdf,.pdf,image/*" style="display:none;">
+    </div>`;
+  if(!imp || imp.origin !== origin) return picker;
+  if(imp.busy) return `<div class="ii-panel"><div class="empty-state" style="margin:0;"><span id="ii-progress">Čtu fakturu…</span><div class="q-hint" style="margin:6px 0 0;">U naskenované faktury nebo fotky to může trvat až půl minuty.</div></div></div>`;
+  if(imp.error) return `<div class="ii-panel"><div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(imp.error)}</div>${picker}</div>`;
+  const p = imp.parsed;
+  const miss = invoiceImportMissing(p, imp.draft);
+  const chk = p.check || {};
+  const cls = (k, ...ks) => (ks.some(x => miss[x]) ? "ii-needs" : (ks.some(x => Object.prototype.hasOwnProperty.call(chk, x)) ? "ii-check" : ""));
+  const existing = matchSupplierForInvoice(p.supplier);
+  const projectOptions = `<option value="">— vyberte projekt —</option>` + sortedProjects().map(pr => `<option value="${esc(pr.id)}" ${origin === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
+  const proj = origin !== "global" ? state.config.projects.find(x => x.id === origin) : null;
+  const phaseOptions = `<option value="">—</option>` + (proj ? phasesForProject(proj).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
+  const notes = [...Object.values(chk).filter(Boolean), ...(p.warnings || [])];
+  const missNames = [miss.supplierName ? "název dodavatele" : "", miss.date ? "datum vystavení" : "", miss.net ? "cenu bez DPH" : ""].filter(Boolean);
+  return `
+    <div class="ii-panel" id="invoice-import-panel" data-origin="${esc(origin)}">
+      <div class="ii-head"><b>Náklad z faktury</b> <span class="meta">${esc(imp.fileName || "")}</span></div>
+      ${missNames.length ? `<div class="ii-alert bad">Nepodařilo se přečíst: ${esc(missNames.join(", "))}. Doplňte prosím označená pole.</div>` : ``}
+      ${notes.map(n => `<div class="ii-alert">${esc(n)}</div>`).join("")}
+      <div class="form-grid">
+        <div class="field-row ${cls("n", "supplierName", "supplier")}"><label class="field-label">Dodavatel – název</label><input type="text" data-k="ii-sup-name" value="${esc(p.supplier.name)}"></div>
+        <div class="field-row ${cls("i", "ico")}"><label class="field-label">IČ</label><input type="text" data-k="ii-sup-ico" value="${esc(p.supplier.ico)}"></div>
+        <div class="field-row"><label class="field-label">DIČ</label><input type="text" data-k="ii-sup-dic" value="${esc(p.supplier.dic)}"></div>
+        <div class="field-row grow"><label class="field-label">Adresa</label><input type="text" data-k="ii-sup-address" value="${esc(p.supplier.address)}"></div>
+        <div class="field-row ${cls("ac", "account")}"><label class="field-label">Číslo účtu / IBAN</label><input type="text" data-k="ii-sup-account" value="${esc(p.supplier.account)}"></div>
+      </div>
+      <div class="q-hint" style="margin:6px 0 14px;">${existing ? `Dodavatel už je v seznamu: <b style="color:var(--ink);">${esc(existing.name)}</b>. Chybějící údaje se mu doplní.` : `Tento dodavatel zatím v seznamu není – po uložení se automaticky založí.`}</div>
+      <div class="form-grid">
+        <div class="field-row ${cls("nu", "number")}"><label class="field-label">Číslo faktury</label><input type="text" data-k="ii-number" value="${esc(p.number)}"></div>
+        <div class="field-row ${cls("d", "date")}"><label class="field-label">Datum vystavení</label><input type="date" data-k="ii-date" value="${esc(p.date)}"></div>
+        <div class="field-row"><label class="field-label">Splatnost</label><input type="date" data-k="ii-due" value="${esc(p.dueDate)}"></div>
+      </div>
+      <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
+        ${costPriceFieldsHtml({ noSupplier: true, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
+      </div>
+      <div class="form-grid" style="margin-top:6px;">
+        <div class="field-row"><label class="field-label">Projekt</label><select data-k="ii-project" id="ii-project">${projectOptions}</select></div>
+        <div class="field-row"><label class="field-label">Fáze</label><select data-k="ii-phase" id="ii-phase">${phaseOptions}</select></div>
+        <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
+        <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc(p.number ? "Faktura č. " + p.number : "")}"></div>
+      </div>
+      ${imp.formError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(imp.formError)}</div>` : ``}
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button type="button" class="btn btn-tan btn-small" data-action="invoice-import-save">Uložit náklad</button>
+        <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel">Zrušit</button>
+      </div>
+    </div>`;
+}
+function restoreInvoiceImportDraft(){
+  const panel = document.getElementById("invoice-import-panel");
+  if(!panel || !state.invoiceImport || !state.invoiceImport.draft) return;
+  const d = state.invoiceImport.draft;
+  panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
+    const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
+    if(k && d[k] !== undefined) el.value = d[k];
+  });
+  const wantedPhase = d["ii-phase"];
+  const projSel = document.getElementById("ii-project");
+  if(projSel) projSel.dispatchEvent(new Event("change"));
+  const phaseSel = document.getElementById("ii-phase");
+  if(phaseSel && wantedPhase !== undefined){ phaseSel.value = wantedPhase; d["ii-phase"] = phaseSel.value; }
+}
+document.addEventListener("input", e => captureInvoiceImportDraft(e));
+document.addEventListener("change", e => captureInvoiceImportDraft(e));
+function captureInvoiceImportDraft(e){
+  const panel = e.target && e.target.closest && e.target.closest("#invoice-import-panel");
+  if(!panel || !state.invoiceImport) return;
+  const d = state.invoiceImport.draft = state.invoiceImport.draft || {};
+  panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
+    const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
+    if(k) d[k] = el.value;
+  });
+}
+async function saveInvoiceImport(panel){
+  const imp = state.invoiceImport;
+  const val = k => { const el = panel.querySelector(`[data-k="${k}"]`); return el ? el.value.trim() : ""; };
+  const price = readPriceGroup(panel);
+  const date = val("ii-date");
+  const projectId = val("ii-project");
+  const sup = { name: val("ii-sup-name"), ico: val("ii-sup-ico"), dic: val("ii-sup-dic"), address: val("ii-sup-address"), account: val("ii-sup-account") };
+  const problems = [];
+  if(!sup.name) problems.push("název dodavatele");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) problems.push("datum vystavení");
+  if(!price) problems.push("cenu bez DPH");
+  if(!projectId) problems.push("projekt");
+  if(problems.length){
+    imp.draft = imp.draft || {};
+    imp.formError = `Doplňte prosím: ${problems.join(", ")}.`;
+    captureInvoiceImportDraft({ target: panel.querySelector("input") });
+    render();
+    return;
+  }
+  const number = val("ii-number");
+  let supplier = matchSupplierForInvoice(sup);
+  if(number && (state.costs || []).some(c => c.invoiceNumber === number && (supplier ? c.supplierId === supplier.id : costSupplierName(c).toLowerCase() === sup.name.toLowerCase()))){
+    if(!confirm(`Faktura č. ${number} od tohoto dodavatele už je mezi náklady zadaná. Přesto ji uložit znovu?`)) return;
+  }
+  if(supplier){
+    if(!supplier.ico && sup.ico) supplier.ico = sup.ico;
+    if(!supplier.dic && sup.dic) supplier.dic = sup.dic;
+    if(!supplier.address && sup.address) supplier.address = sup.address;
+    if(!supplier.bankAccount && sup.account) supplier.bankAccount = sup.account;
+    if(!supplier.email && imp.parsed.supplier.email) supplier.email = imp.parsed.supplier.email;
+  } else {
+    supplier = { id: uid("sup"), name: sup.name, ico: sup.ico, dic: sup.dic, address: sup.address, bankAccount: sup.account, email: imp.parsed.supplier.email || "", phone: "" };
+    if(!state.config.suppliers) state.config.suppliers = [];
+    state.config.suppliers.push(supplier);
+  }
+  await saveConfig();
+  if(state.costs === null) state.costs = await loadCosts();
+  const cost = { id: uid("cost"), date, projectId, phaseId: val("ii-phase"), ...price, supplier: supplier.name, supplierId: supplier.id, paymentMethod: val("ii-payment") || "ucet", note: val("ii-note") };
+  if(number) cost.invoiceNumber = number;
+  if(val("ii-due")) cost.dueDate = val("ii-due");
+  state.costs.push(cost);
+  await saveCosts();
+  state.invoiceImport = null;
+  showStamp();
+  render();
 }
 
 /* ---------------- uzavírání měsíců ---------------- */
@@ -6659,6 +7086,7 @@ function bindAdmin(){
     try{
       const doc = await buildProformaInvoicePdf(project, invoiceRows, supplier, customer, { invoiceNumber, totalAmount, dueDate, issueDate, kind, taxDate: (document.getElementById("payment-calendar-proforma-tax-date") || {}).value || todayStr() });
       doc.save(invoiceFileName(kind, invoiceNumber, customer));
+      await rememberInvoiceNumber(kind, typedNumber);
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
@@ -6754,6 +7182,40 @@ function bindAdmin(){
     showStamp();
     render();
   });
+  document.querySelectorAll('[data-action="invoice-import-pick"]').forEach(b => b.onclick = () => { const f = document.getElementById("invoice-import-file"); if(f) f.click(); });
+  const iiFile = document.getElementById("invoice-import-file");
+  if(iiFile) iiFile.addEventListener("change", async () => {
+    const file = iiFile.files[0];
+    if(!file) return;
+    const origin = iiFile.getAttribute("data-origin");
+    setState({ invoiceImport: { origin, busy: true } });
+    try{
+      const extracted = await extractInvoiceRows(file);
+      const parsed = parseInvoiceRows(extracted.rows, { ocr: extracted.ocr });
+      setState({ invoiceImport: { origin, parsed, fileName: file.name } });
+    } catch(err){
+      console.error("invoice read failed", err);
+      setState({ invoiceImport: { origin, error: `Fakturu se nepodařilo přečíst (${err && err.message ? err.message : err}). Zkuste jiný soubor, nebo údaje zadejte ručně.` } });
+    }
+  });
+  document.querySelectorAll('[data-action="invoice-import-cancel"]').forEach(b => b.onclick = () => setState({ invoiceImport: null }));
+  document.querySelectorAll('[data-action="invoice-import-save"]').forEach(b => b.onclick = async () => {
+    const panel = document.getElementById("invoice-import-panel");
+    if(!panel || b.disabled) return;
+    b.disabled = true;
+    try{ await saveInvoiceImport(panel); } finally { b.disabled = false; }
+  });
+  const iiProject = document.getElementById("ii-project");
+  if(iiProject) iiProject.addEventListener("change", () => {
+    const pr = state.config.projects.find(x => x.id === iiProject.value);
+    const phSel = document.getElementById("ii-phase");
+    if(!phSel) return;
+    const prev = phSel.value;
+    phSel.innerHTML = `<option value="">—</option>` + (pr ? phasesForProject(pr).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
+    phSel.value = prev;
+    if(phSel.value !== prev) phSel.value = "";
+  });
+  restoreInvoiceImportDraft();
   const projectCostAddBtn = document.getElementById("project-cost-add-btn");
   if(projectCostAddBtn) projectCostAddBtn.onclick = async () => {
     const projectId = projectCostAddBtn.getAttribute("data-project-id");
@@ -7928,6 +8390,7 @@ function bindAdmin(){
     try{
       const doc = await buildProformaInvoicePdf(project, rows, supplier, customer, { invoiceNumber, totalAmount: subtotal, dueDate, issueDate, kind, taxDate: (document.getElementById("client-export-proforma-tax-date") || {}).value || todayStr() });
       doc.save(invoiceFileName(kind, invoiceNumber, customer));
+      await rememberInvoiceNumber(kind, typedNumber);
     } finally {
       btn.disabled = false;
       btn.textContent = origText;

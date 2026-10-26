@@ -32,6 +32,7 @@ function sanitizeConfig(rawValue) {
   });
   delete config.billingProfiles;
   delete config.suppliers;
+  delete config.lastInvoiceNumber;
   return JSON.stringify(config);
 }
 
