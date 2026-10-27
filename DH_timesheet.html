@@ -234,7 +234,7 @@
   .adm-page .admin-subnav button{ padding:9px 22px; margin:0; border:none; border-radius:999px; font-size:12px; }
   .adm-page .admin-subnav button.active{ background:var(--paper); color:var(--ink); box-shadow:var(--shadow-sm); }
   .adm-page .emp-stats{ margin-bottom:22px; }
-  /* Nadpis záložky je u všech stejně velký – tak, aby se vešel nejdelší („Fakturace a platby“). */
+  /* Nadpis záložky je u všech stejně velký – tak, aby se vešel nejdelší („Hodiny a lidé“). */
   .adm-page{ container-type:inline-size; }
   .adm-page .emp-greet-name{ font-size:min(10.3cqw, 135px); white-space:nowrap; }
   .adm-page .admin-groupnav{ margin-top:-4px; align-self:stretch; display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; }
@@ -595,6 +595,8 @@
   .rate-row:not(.editing) .rate-period{ flex-direction:row; flex-wrap:wrap; align-items:center; gap:4px 10px; font-weight:600; }
   .rate-now{ font-style:normal; font-size:11px; font-weight:700; letter-spacing:.04em; background:var(--sage); color:#fff; border-radius:999px; padding:2px 9px; }
   .rate-none{ color:var(--soft); opacity:.5; }
+  .rate-gap-badge{ border:0; cursor:pointer; font:inherit; font-size:12px; font-weight:700; margin-left:6px; padding:3px 9px; border-radius:999px; background:rgba(179,56,44,.12); color:var(--danger); }
+  .rate-gap-alert ul{ margin:6px 0 6px 18px; padding:0; }
   .rate-sum b{ font-size:15px; }
   .rate-actions{ display:flex; gap:4px; justify-content:flex-end; }
   .rate-row.editing input{ width:100%; padding:6px 8px; font-size:13px; }
@@ -1236,6 +1238,25 @@ function hourlyRateForEmployee(employee, dateStr, projectId){
   if(!match) return 0;
   if(projectId === "000") return ratePartsOf(match).wage;
   return Number(match.amount) || 0;
+}
+// Období, ve kterých má zaměstnanec zapsané hodiny, ale žádná sazba na ně nevychází (hodiny se pak počítají za 0 Kč).
+function rateGapsForEmployee(employee){
+  if(!employee || !state.adminEntriesFlat) return [];
+  const rates = employee.rates || [];
+  const covered = d => rates.some(r => r.from && r.from <= d && (!r.to || d <= r.to));
+  const byDate = {};
+  state.adminEntriesFlat.forEach(e => {
+    if(e.employeeId !== employee.id || !e.date || !(Number(e.hours) > 0)) return;
+    byDate[e.date] = (byDate[e.date] || 0) + Number(e.hours);
+  });
+  const gaps = [];
+  let open = null;
+  Object.keys(byDate).sort().forEach(d => {
+    if(covered(d)){ open = null; return; }
+    if(!open){ open = { from: d, to: d, hours: 0 }; gaps.push(open); }
+    open.to = d; open.hours += byDate[d];
+  });
+  return gaps;
 }
 function isPhaseClosedOnDate(project, phaseId, dateStr){
   if(!project || !project.closedPhases || FIXED_PROJECT_PHASES[project.id]) return false;
@@ -6144,7 +6165,7 @@ const ADMIN_TAB_ICONS = {
   hours: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   settings: '<path d="M4 6h8m4 0h4M4 12h2m4 0h10M4 18h12m4 0h0"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'
 };
-const ADMIN_TAB_LABELS = { projects: "Projekty", billing: "Fakturace a platby", hours: "Hodiny a lidé", settings: "Nastavení" };
+const ADMIN_TAB_LABELS = { projects: "Projekty", billing: "Finance", hours: "Hodiny a lidé", settings: "Nastavení" };
 function adminTabId(){ return state.adminSubTab === "settings" ? "settings" : state.reportsGroup; }
 function adminTabTitle(){ return ADMIN_TAB_LABELS[adminTabId()] || "Nastavení"; }
 function adminTabsNavHtml(){
@@ -6353,6 +6374,12 @@ function adminTemplate(){
     const ratesOpen = state.expandedEmployeeRatesId === e.id;
     const rates = (e.rates || []).slice().sort((a,b) => (b.from||"").localeCompare(a.from||""));
     const todayIso = todayStr();
+    const rateGaps = rateGapsForEmployee(e);
+    const rateGapHours = rateGaps.reduce((a, g) => a + g.hours, 0);
+    const rateGapHtml = rateGaps.length ? `
+      <div class="ii-alert bad rate-gap-alert">Chybí hodinová sazba pro odpracované hodiny (${fmtH(rateGapHours)}), počítají se za 0 Kč:
+        <ul>${rateGaps.map(g => `<li>${g.from === g.to ? esc(fmtDateCz(g.from)) : `${esc(fmtDateCz(g.from))} – ${esc(fmtDateCz(g.to))}`} <span class="meta">(${fmtH(g.hours)})</span></li>`).join("")}</ul>
+        Přidejte sazbu, která tato data pokryje, nebo upravte „Od“ / „Do“ u stávajících.</div>` : "";
     const rateRows = rates.length ? `
       <div class="rate-table">
         <div class="rate-head"><span>Období</span><span>Plat</span><span>Nulové projekty</span><span>Chod kanceláře</span><span>Sazba celkem</span><span></span></div>
@@ -6393,7 +6420,7 @@ function adminTemplate(){
     <div class="admin-project-item">
       <div class="admin-project-head">
         <button class="icon-btn" data-action="toggle-employee-rates" data-id="${esc(e.id)}" title="Hodinové sazby">${ratesOpen ? "▾" : "▸"}</button>
-        <div class="grow">${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span></div>
+        <div class="grow">${esc(e.name)} <span class="meta">· heslo: ${esc(e.password)}</span>${rateGaps.length ? ` <button type="button" class="rate-gap-badge" data-action="toggle-employee-rates" data-id="${esc(e.id)}" title="U odpracovaných hodin chybí hodinová sazba">⚠ chybí sazba</button>` : ""}</div>
         <label class="employee-greeting-wrap" title="Roční nárok dovolené tohoto zaměstnance ve dnech. Prázdné = nárok se nesleduje.">
           <span>dovolená</span>
           <input type="number" min="0" max="365" step="0.5" class="employee-vacation-days" data-id="${esc(e.id)}" value="${e.vacationDays ? esc(e.vacationDays) : ""}" placeholder="dní/rok" style="width:84px;">
@@ -6412,6 +6439,7 @@ function adminTemplate(){
       ${ratesOpen ? `
       <div class="phase-picker-wrap">
         <p class="q-hint" style="margin:0 0 10px;">Hodinová sazba platná v daném období. Jakmile se sazba změní, přidejte nový řádek s novým obdobím — s tím se pak bude počítat podle data odpracovaných hodin.</p>
+        ${rateGapHtml}
         ${rateRows}
 
         <form data-action="add-rate-form" data-id="${esc(e.id)}" style="margin-top:14px;">
