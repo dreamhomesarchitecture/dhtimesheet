@@ -578,6 +578,27 @@
   .hm-sage i{ background:var(--sage); } .hm-tan i{ background:var(--tan); } .hm-gray i{ background:var(--soft); }
   .hm-split .hm-kind{ text-align:left; display:table-cell; padding-left:22px; color:var(--soft); font-size:12.5px; }
   .hm-split .hm-kind i{ margin-right:8px; }
+  .rate-table{ margin:4px 0 6px; }
+  .rate-head, .rate-row{ display:grid; grid-template-columns:minmax(190px,1.5fr) repeat(3, minmax(90px,1fr)) minmax(120px,1.1fr) 84px; gap:10px; align-items:center; padding:10px 14px; }
+  .rate-head{ font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); padding-top:0; padding-bottom:6px; }
+  .rate-head span:not(:first-child):not(:last-child), .rate-row > span:not(.rate-period):not(.rate-actions){ text-align:right; }
+  .rate-row{ border:1px solid var(--line); border-radius:var(--radius-sm); margin-bottom:6px; background:var(--paper); font-variant-numeric:tabular-nums; }
+  .rate-row.current{ border-color:var(--sage); background:var(--sage-tint); }
+  .rate-period{ display:flex; flex-direction:column; gap:4px; }
+  .rate-row:not(.editing) .rate-period{ flex-direction:row; flex-wrap:wrap; align-items:center; gap:4px 10px; font-weight:600; }
+  .rate-now{ font-style:normal; font-size:11px; font-weight:700; letter-spacing:.04em; background:var(--sage); color:#fff; border-radius:999px; padding:2px 9px; }
+  .rate-none{ color:var(--soft); opacity:.5; }
+  .rate-sum b{ font-size:15px; }
+  .rate-actions{ display:flex; gap:4px; justify-content:flex-end; }
+  .rate-row.editing input{ width:100%; padding:6px 8px; font-size:13px; }
+  @media (max-width:760px){
+    .rate-head{ display:none; }
+    .rate-row{ grid-template-columns:1fr auto; }
+    .rate-row > span[data-label]{ grid-column:1 / -1; display:flex; justify-content:space-between; text-align:right; }
+    .rate-row > span[data-label]::before{ content:attr(data-label); color:var(--soft); font-size:12px; }
+    .rate-row.editing > span[data-label]{ gap:12px; align-items:center; }
+    .rate-row.editing > span[data-label] input{ max-width:150px; }
+  }
   .rate-part-wrap{ display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--soft); }
   .rate-part-wrap input{ width:130px; padding:6px 8px; font-size:13px; }
   .rate-total-wrap{ font-size:13px; color:var(--soft); }
@@ -6247,24 +6268,43 @@ function adminTemplate(){
   const empRows = state.config.employees.map(e => {
     const ratesOpen = state.expandedEmployeeRatesId === e.id;
     const rates = (e.rates || []).slice().sort((a,b) => (b.from||"").localeCompare(a.from||""));
-    const rateRows = rates.length ? rates.map(r => {
-      if(state.editingRateId === r.id){
-        return `
-      <div class="admin-project-head" data-rate-edit-row="${esc(r.id)}" data-id="${esc(e.id)}" style="margin-bottom:6px;flex-wrap:wrap;row-gap:6px;">
-        <input type="date" class="rate-edit-from" value="${esc(r.from)}" style="flex:0 0 auto;width:150px;padding:6px 8px;font-size:13px;">
-        <input type="date" class="rate-edit-to" value="${esc(r.to||"")}" style="flex:0 0 auto;width:150px;padding:6px 8px;font-size:13px;">
-        ${rateInputsHtml(ratePartsOf(r), "rate-edit")}
-        <span class="grow"></span>
-        <button type="button" class="icon-btn" data-action="save-rate-edit" title="Uložit">✓</button>
-        <button type="button" class="icon-btn" data-action="cancel-rate-edit" title="Zrušit">×</button>
-      </div>`;
-      }
-      return `
-      <div class="phase-employee-row">
-        <span>${esc(r.from)} – ${r.to ? esc(r.to) : "dosud"}</span>
-        <span>${fmtKc2(r.amount)}/h${ratePartsOf(r).split ? ` <span class="rate-split">plat ${fmtKc2(ratePartsOf(r).wage)} · nulové ${fmtKc2(ratePartsOf(r).zero)} · kancelář ${fmtKc2(ratePartsOf(r).office)}</span>` : ``} <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit" style="margin-left:6px;">✎</button> <button class="icon-btn icon-btn-del" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">${ICON_TRASH}</button></span>
-      </div>`;
-    }).join("") : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
+    const todayIso = todayStr();
+    const rateRows = rates.length ? `
+      <div class="rate-table">
+        <div class="rate-head"><span>Období</span><span>Plat</span><span>Nulové projekty</span><span>Chod kanceláře</span><span>Sazba celkem</span><span></span></div>
+        ${rates.map(r => {
+          const parts = ratePartsOf(r);
+          if(state.editingRateId === r.id){
+            const inp = (key, val) => `<input type="number" min="0" step="0.01" class="rate-part rate-edit-${key}" data-part="${key}" value="${val ? esc(val) : ""}" placeholder="0">`;
+            return `
+        <div class="rate-row editing" data-rate-edit-row="${esc(r.id)}" data-id="${esc(e.id)}">
+          <span class="rate-period"><input type="date" class="rate-edit-from" value="${esc(r.from)}" title="Od"><input type="date" class="rate-edit-to" value="${esc(r.to || "")}" title="Do (nepovinné)"></span>
+          <span data-label="Plat">${inp("wage", parts.wage)}</span>
+          <span data-label="Nulové projekty">${inp("zero", parts.zero)}</span>
+          <span data-label="Chod kanceláře">${inp("office", parts.office)}</span>
+          <span class="rate-sum" data-label="Sazba celkem"><b class="rate-total">${fmtKc2(parts.wage + parts.zero + parts.office)}</b>/h</span>
+          <span class="rate-actions">
+            <button type="button" class="icon-btn" data-action="save-rate-edit" title="Uložit">✓</button>
+            <button type="button" class="icon-btn" data-action="cancel-rate-edit" title="Zrušit">×</button>
+          </span>
+        </div>`;
+          }
+          const isCurrent = r.from <= todayIso && (!r.to || todayIso <= r.to);
+          const part = v => v ? fmtKc2(v) : `<span class="rate-none">–</span>`;
+          return `
+        <div class="rate-row ${isCurrent ? "current" : ""}">
+          <span class="rate-period">${esc(fmtDateCz(r.from))} – ${r.to ? esc(fmtDateCz(r.to)) : "dosud"}${isCurrent ? ` <em class="rate-now">platí nyní</em>` : ``}</span>
+          <span data-label="Plat">${part(parts.wage)}</span>
+          <span data-label="Nulové projekty">${part(parts.zero)}</span>
+          <span data-label="Chod kanceláře">${part(parts.office)}</span>
+          <span class="rate-sum" data-label="Sazba celkem"><b>${fmtKc2(r.amount)}</b>/h</span>
+          <span class="rate-actions">
+            <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit">✎</button>
+            <button class="icon-btn icon-btn-del" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">${ICON_TRASH}</button>
+          </span>
+        </div>`;
+        }).join("")}
+      </div>` : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
     return `
     <div class="admin-project-item">
       <div class="admin-project-head">
@@ -6288,9 +6328,7 @@ function adminTemplate(){
       ${ratesOpen ? `
       <div class="phase-picker-wrap">
         <p class="q-hint" style="margin:0 0 10px;">Hodinová sazba platná v daném období. Jakmile se sazba změní, přidejte nový řádek s novým obdobím — s tím se pak bude počítat podle data odpracovaných hodin.</p>
-        <div class="phase-employees" style="margin-top:0;padding-top:0;border-top:none;">
-          ${rateRows}
-        </div>
+        ${rateRows}
 
         <form data-action="add-rate-form" data-id="${esc(e.id)}" style="margin-top:14px;">
           <div class="form-grid">
