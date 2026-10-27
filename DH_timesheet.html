@@ -234,7 +234,10 @@
   .adm-page .admin-subnav button{ padding:9px 22px; margin:0; border:none; border-radius:999px; font-size:12px; }
   .adm-page .admin-subnav button.active{ background:var(--paper); color:var(--ink); box-shadow:var(--shadow-sm); }
   .adm-page .emp-stats{ margin-bottom:22px; }
-  .adm-page .admin-groupnav{ margin-top:-4px; }
+  .adm-page .admin-groupnav{ margin-top:-4px; align-self:stretch; display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; }
+  .adm-page .admin-groupnav button{ justify-content:center; padding:13px 10px; white-space:nowrap; }
+  .adm-page .admin-groupnav button svg{ flex:none; }
+  @media (max-width:760px){ .adm-page .admin-groupnav{ grid-template-columns:repeat(2, minmax(0, 1fr)); border-radius:var(--radius-md); } .adm-page .admin-groupnav button{ border-radius:var(--radius-sm); } }
   .adm-page .admin-groupnav button{ display:inline-flex; align-items:center; gap:6px; }
   .adm-page .admin-groupnav .bw-count{ margin-left:2px; }
   .adm-grid[data-group="projects"] > .admin-block:not([data-group="projects"]),
@@ -887,7 +890,7 @@ let state = {
   openProjectView: null,
   projectViewReturnScroll: 0,
   adminOpenSection: null,
-  adminSubTab: "settings",
+  adminSubTab: "reports",
   expandedAdminProjectOverviewId: null,
   expandedPaymentCalendarProjectId: null,
   paymentCalendarExcludedPhases: {},
@@ -942,7 +945,7 @@ let state = {
   entryTimerAccumulated: 0,
   editingEntryId: null,
   editingLaborEntryId: null,
-  reportsGroup: (() => { try{ const g = localStorage.getItem("dh_reports_group"); return ["projects", "billing", "hours"].includes(g) ? g : "projects"; }catch(e){ return "projects"; } })(),
+  reportsGroup: "projects",
   editingRecordId: null,
   invoiceImport: null,
   editingPhaseId: null,
@@ -5948,17 +5951,27 @@ function exportTimesheetCsv(kind){
 }
 
 /* ---------------- skupiny v Přehledech ---------------- */
-function reportsGroupNavHtml(){
+const ADMIN_TAB_ICONS = {
+  projects: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  billing: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  hours: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  settings: '<path d="M4 6h8m4 0h4M4 12h2m4 0h10M4 18h12m4 0h0"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'
+};
+const ADMIN_TAB_LABELS = { projects: "Projekty", billing: "Fakturace a platby", hours: "Hodiny a lidé", settings: "Nastavení" };
+function adminTabId(){ return state.adminSubTab === "settings" ? "settings" : state.reportsGroup; }
+function adminTabTitle(){ return ADMIN_TAB_LABELS[adminTabId()] || "Nastavení"; }
+function adminTabsNavHtml(){
   const bw = budgetWatchRows();
   const rv = reviewIssues();
   const billing = billingPaymentCount(pendingBillingPayments());
-  const badge = (n, over) => n ? ` <span class="bw-count ${over ? "over" : ""}">${n}</span>` : "";
-  const groups = [
-    { id: "projects", label: "Projekty", badge: "" },
-    { id: "billing", label: "Fakturace a platby", badge: (billing ? ` <span class="bw-count" title="Plateb čeká na fakturaci">${billing}</span>` : "") + (bw && bw.length ? ` <span class="bw-count ${bw.some(r => r.pct >= 100) ? "over" : ""}" title="Fází nad 80 % rozpočtu">${bw.length}</span>` : "") },
-    { id: "hours", label: "Hodiny a lidé", badge: badge(rv ? rv.length : 0, rv && rv.some(r => r.reasons.some(x => x.level === "bad"))) }
-  ];
-  return `<div class="admin-subnav admin-groupnav">${groups.map(g => `<button type="button" data-action="switch-reports-group" data-group="${g.id}" class="${state.reportsGroup === g.id ? "active" : ""}">${g.label}${g.badge}</button>`).join("")}</div>`;
+  const badges = {
+    projects: "",
+    billing: (billing ? ` <span class="bw-count" title="Plateb čeká na fakturaci">${billing}</span>` : "") + (bw && bw.length ? ` <span class="bw-count ${bw.some(r => r.pct >= 100) ? "over" : ""}" title="Fází nad 80 % rozpočtu">${bw.length}</span>` : ""),
+    hours: rv && rv.length ? ` <span class="bw-count ${rv.some(r => r.reasons.some(x => x.level === "bad")) ? "over" : ""}" title="Záznamů ke kontrole">${rv.length}</span>` : "",
+    settings: ""
+  };
+  const current = adminTabId();
+  return `<div class="admin-subnav admin-groupnav">${["projects", "billing", "hours", "settings"].map(id => `<button type="button" data-action="switch-admin-tab" data-tab="${id}" class="${current === id ? "active" : ""}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ADMIN_TAB_ICONS[id]}</svg><span>${ADMIN_TAB_LABELS[id]}</span>${badges[id]}</button>`).join("")}</div>`;
 }
 
 /* ---------------- kontrola záznamů ---------------- */
@@ -6247,15 +6260,11 @@ function adminTemplate(){
     <div class="sheet adm-page">
       <div class="emp-hero">
         <div class="eyebrow">Administrativa</div>
-        <h1 class="emp-greet"><span class="emp-greet-small">Správa a data</span><span class="emp-greet-name">${state.adminSubTab === "reports" ? "Přehledy" : "Nastavení"}</span></h1>
+        <h1 class="emp-greet"><span class="emp-greet-small">Správa a data</span><span class="emp-greet-name${adminTabTitle().length > 14 ? " long" : ""}">${adminTabTitle()}</span></h1>
       </div>
-      <div class="admin-subnav">
-        <button type="button" data-action="switch-admin-subtab" data-subtab="settings" class="${state.adminSubTab === "settings" ? "active" : ""}">Nastavení</button>
-        <button type="button" data-action="switch-admin-subtab" data-subtab="reports" class="${state.adminSubTab === "reports" ? "active" : ""}">Přehledy</button>
-      </div>
+      ${adminTabsNavHtml()}
 
       ${state.adminSubTab === "reports" ? `
-      ${reportsGroupNavHtml()}
       <div class="adm-grid" data-group="${state.reportsGroup}">
       <div class="admin-block${state.adminOpenSection === "project-overview" ? " is-open" : ""}" data-group="projects">
         ${adminSectionHeader("project-overview", "Přehled projektů")}
@@ -6307,10 +6316,6 @@ function adminTemplate(){
         ${state.adminOpenSection === "budget-watch" ? adminBudgetWatchTemplate() : ""}
       </div>
 
-      <div class="admin-block${state.adminOpenSection === "timesheet-export" ? " is-open" : ""}" data-group="hours">
-        ${adminSectionHeader("timesheet-export", "Export výkazů do Excelu")}
-        ${state.adminOpenSection === "timesheet-export" ? adminTimesheetExportTemplate() : ""}
-      </div>
 
       <div class="admin-block${state.adminOpenSection === "vacation" ? " is-open" : ""}" data-group="hours">
         ${adminSectionHeader("vacation", "Dovolená")}
@@ -6419,6 +6424,11 @@ function adminTemplate(){
         <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se všemi náklady projektů.</p>
         <button class="btn btn-outline btn-small" id="export-costs-btn">Exportovat náklady (XLSX)</button>
         ` : ``}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "timesheet-export" ? " is-open" : ""}">
+        ${adminSectionHeader("timesheet-export", "Export výkazů do Excelu")}
+        ${state.adminOpenSection === "timesheet-export" ? adminTimesheetExportTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "billing-profiles" ? " is-open" : ""}">
@@ -6857,19 +6867,16 @@ function bindAdmin(){
     return;
   }
 
-  document.querySelectorAll('[data-action="switch-admin-subtab"]').forEach(b => b.onclick = () => {
-    setState({ adminSubTab: b.getAttribute("data-subtab") });
-    if(b.getAttribute("data-subtab") === "reports"){
-      if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
-      if(state.costs === null && !state.costsLoading) loadAdminCosts();
-    }
+  document.querySelectorAll('[data-action="switch-admin-tab"]').forEach(b => b.onclick = () => {
+    const tab = b.getAttribute("data-tab");
+    if(tab === "settings") setState({ adminSubTab: "settings" });
+    else setState({ adminSubTab: "reports", reportsGroup: tab });
+    window.scrollTo(0, 0);
   });
+  // Čísla na záložkách potřebují načtená data, proto se načtou hned po vstupu do administrace.
+  if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
+  if(state.costs === null && !state.costsLoading) loadAdminCosts();
 
-  document.querySelectorAll('[data-action="switch-reports-group"]').forEach(b => b.onclick = () => {
-    const g = b.getAttribute("data-group");
-    try{ localStorage.setItem("dh_reports_group", g); }catch(e){}
-    setState({ reportsGroup: g });
-  });
   document.querySelectorAll('[data-action="lock-month-add"]').forEach(b => b.onclick = async () => {
     const sel = document.getElementById("lock-month-select");
     if(!sel || !sel.value) return;
