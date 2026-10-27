@@ -234,6 +234,9 @@
   .adm-page .admin-subnav button{ padding:9px 22px; margin:0; border:none; border-radius:999px; font-size:12px; }
   .adm-page .admin-subnav button.active{ background:var(--paper); color:var(--ink); box-shadow:var(--shadow-sm); }
   .adm-page .emp-stats{ margin-bottom:22px; }
+  /* Nadpis záložky je u všech stejně velký – tak, aby se vešel nejdelší („Fakturace a platby“). */
+  .adm-page{ container-type:inline-size; }
+  .adm-page .emp-greet-name{ font-size:min(10.3cqw, 135px); white-space:nowrap; }
   .adm-page .admin-groupnav{ margin-top:-4px; align-self:stretch; display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; }
   .adm-page .admin-groupnav button{ justify-content:center; padding:13px 10px; white-space:nowrap; }
   .adm-page .admin-groupnav button svg{ flex:none; }
@@ -549,6 +552,9 @@
   .review-chip{ font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:999px; }
   .review-chip.bad{ background:rgba(179,56,44,.12); color:var(--danger); }
   .review-chip.warn{ background:var(--tan-tint); color:var(--ink); }
+  .export-part{ margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+  .export-part:first-child{ margin-top:0; padding-top:0; border-top:none; }
+  .export-title{ font-weight:700; font-size:15px; margin-bottom:8px; }
   .lock-chips{ display:flex; flex-wrap:wrap; gap:10px; }
   .lock-chip{ display:inline-flex; align-items:center; gap:8px; background:var(--tan-tint); color:var(--ink); border-radius:999px; padding:6px 8px 6px 14px; font-size:13px; font-weight:600; }
   .lock-chip-open{ background:var(--paper); border:1px solid var(--line); border-radius:999px; padding:4px 11px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; color:var(--ink); }
@@ -6260,7 +6266,7 @@ function adminTemplate(){
     <div class="sheet adm-page">
       <div class="emp-hero">
         <div class="eyebrow">Administrativa</div>
-        <h1 class="emp-greet"><span class="emp-greet-small">Správa a data</span><span class="emp-greet-name${adminTabTitle().length > 14 ? " long" : ""}">${adminTabTitle()}</span></h1>
+        <h1 class="emp-greet"><span class="emp-greet-small">Správa a data</span><span class="emp-greet-name">${adminTabTitle()}</span></h1>
       </div>
       ${adminTabsNavHtml()}
 
@@ -6415,21 +6421,28 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "export" ? " is-open" : ""}">
         ${adminSectionHeader("export", "Export")}
         ${state.adminOpenSection === "export" ? `
-        <p class="q-hint" style="margin:0 0 8px;">Stáhne kompletní zálohu všech dat (zaměstnanci, projekty, fáze, všechny výkazy) do jednoho JSON souboru.</p>
-        <button class="btn btn-outline btn-small" id="export-data-btn">Exportovat data (JSON)</button>
-
-        <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se záložkou pro každého zaměstnance a všemi jeho odpracovanými hodinami.</p>
-        <button class="btn btn-outline btn-small" id="export-excel-btn">Exportovat Excel (XLSX)</button>
-
-        <p class="q-hint" style="margin:20px 0 8px;">Stáhne Excel soubor se všemi náklady projektů.</p>
-        <button class="btn btn-outline btn-small" id="export-costs-btn">Exportovat náklady (XLSX)</button>
+        <div class="export-part">
+          <div class="export-title">Výkazy za období (CSV pro Excel)</div>
+          ${adminTimesheetExportTemplate()}
+        </div>
+        <div class="export-part">
+          <div class="export-title">Všechny hodiny po zaměstnancích (XLSX)</div>
+          <p class="q-hint" style="margin:0 0 8px;">Excel soubor se záložkou pro každého zaměstnance a všemi jeho odpracovanými hodinami.</p>
+          <button class="btn btn-outline btn-small" id="export-excel-btn">Stáhnout hodiny (XLSX)</button>
+        </div>
+        <div class="export-part">
+          <div class="export-title">Náklady projektů (XLSX)</div>
+          <p class="q-hint" style="margin:0 0 8px;">Excel soubor se všemi náklady projektů, včetně dodavatele a DPH.</p>
+          <button class="btn btn-outline btn-small" id="export-costs-btn">Stáhnout náklady (XLSX)</button>
+        </div>
+        <div class="export-part">
+          <div class="export-title">Záloha všech dat (JSON)</div>
+          <p class="q-hint" style="margin:0 0 8px;">Kompletní záloha všech dat: zaměstnanci, projekty, fáze a všechny výkazy v jednom souboru.</p>
+          <button class="btn btn-outline btn-small" id="export-data-btn">Stáhnout zálohu (JSON)</button>
+        </div>
         ` : ``}
       </div>
 
-      <div class="admin-block${state.adminOpenSection === "timesheet-export" ? " is-open" : ""}">
-        ${adminSectionHeader("timesheet-export", "Export výkazů do Excelu")}
-        ${state.adminOpenSection === "timesheet-export" ? adminTimesheetExportTemplate() : ""}
-      </div>
 
       <div class="admin-block${state.adminOpenSection === "billing-profiles" ? " is-open" : ""}">
         ${adminSectionHeader("billing-profiles", `Fakturační údaje (${(state.config.billingProfiles || []).length})`)}
