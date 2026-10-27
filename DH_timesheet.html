@@ -554,6 +554,8 @@
   .review-chip.warn{ background:var(--tan-tint); color:var(--ink); }
   .hm-section{ margin-top:26px; padding-top:20px; border-top:1px solid var(--line); }
   .hm-head{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .hm-year-nav{ display:inline-flex; align-items:center; gap:6px; }
+  .hm-year-nav select{ width:auto; padding:6px 28px 6px 12px; font-weight:700; }
   .hm-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius-sm); }
   .hm{ border-collapse:collapse; width:100%; min-width:760px; font-size:13px; font-variant-numeric:tabular-nums; }
   .hm th, .hm td{ padding:7px 9px; text-align:right; white-space:nowrap; }
@@ -5151,7 +5153,7 @@ function hoursMatrixData(yearEntries){
   return Object.values(people).sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
 }
 function hmNum(v){ return v ? (Math.round(v * 10) / 10).toLocaleString("cs-CZ") : "–"; }
-function hoursMatrixHtml(yearEntries){
+function hoursMatrixHtml(yearEntries, years, selectedYear){
   const people = hoursMatrixData(yearEntries);
   const mode = state.hoursMatrixMode || "split";
   const sumCells = list => Array.from({ length: 12 }, (_, i) => list.reduce((a, p) => ({ t: a.t + p.m[i].t, p: a.p + p.m[i].p, z: a.z + p.m[i].z, o: a.o + p.m[i].o }), { t: 0, p: 0, z: 0, o: 0 }));
@@ -5175,6 +5177,11 @@ function hoursMatrixHtml(yearEntries){
   return `
     <div class="hm-head">
       <div class="export-title" style="margin:0;">Zaměstnanci podle měsíců</div>
+      <span class="hm-year-nav">
+        <button type="button" class="icon-btn" data-action="hm-year" data-year="${esc(years[years.indexOf(selectedYear) + 1] || "")}" ${years[years.indexOf(selectedYear) + 1] ? "" : "disabled"} title="Starší rok" aria-label="Starší rok">‹</button>
+        <select id="hm-year-select" aria-label="Rok">${years.map(y => `<option value="${esc(y)}" ${y === selectedYear ? "selected" : ""}>${esc(y)}</option>`).join("")}</select>
+        <button type="button" class="icon-btn" data-action="hm-year" data-year="${esc(years[years.indexOf(selectedYear) - 1] || "")}" ${years.indexOf(selectedYear) > 0 ? "" : "disabled"} title="Novější rok" aria-label="Novější rok">›</button>
+      </span>
       <span class="mchart-seg">${modes.map(([k, l]) => `<button type="button" data-action="set-hours-matrix-mode" data-mode="${k}" class="${mode === k ? "active" : ""}">${l}</button>`).join("")}</span>
       <button type="button" class="btn btn-outline btn-small" data-action="download-hours-matrix">Stáhnout (CSV)</button>
     </div>
@@ -5286,7 +5293,7 @@ function adminHoursOverviewTemplate(){
         <div style="padding:12px 0;font-weight:700;font-size:18px;">${fmtH(project000Hours)}</div>
       </div>
     </div>
-    <div class="hm-section">${hoursMatrixHtml(yearEntries)}</div>`;
+    <div class="hm-section">${hoursMatrixHtml(yearEntries, years, selectedYear)}</div>`;
 }
 
 /* ---------------- dodavatelé ---------------- */
@@ -7002,6 +7009,9 @@ function bindAdmin(){
 
   const hoursOverviewEmployee = document.getElementById("hours-overview-employee");
   if(hoursOverviewEmployee) hoursOverviewEmployee.addEventListener("change", () => setState({ hoursOverviewEmployeeId: hoursOverviewEmployee.value }));
+  document.querySelectorAll('[data-action="hm-year"]').forEach(b => b.onclick = () => { if(b.getAttribute("data-year")) setState({ hoursOverviewYear: b.getAttribute("data-year") }); });
+  const hmYearSelect = document.getElementById("hm-year-select");
+  if(hmYearSelect) hmYearSelect.addEventListener("change", () => setState({ hoursOverviewYear: hmYearSelect.value }));
   document.querySelectorAll('[data-action="set-hours-matrix-mode"]').forEach(b => b.onclick = () => setState({ hoursMatrixMode: b.getAttribute("data-mode") }));
   document.querySelectorAll('[data-action="download-hours-matrix"]').forEach(b => b.onclick = () => {
     const entries = state.adminEntriesFlat || [];
