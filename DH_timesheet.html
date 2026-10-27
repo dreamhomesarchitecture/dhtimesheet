@@ -552,6 +552,20 @@
   .review-chip{ font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:999px; }
   .review-chip.bad{ background:rgba(179,56,44,.12); color:var(--danger); }
   .review-chip.warn{ background:var(--tan-tint); color:var(--ink); }
+  .hm-section{ margin-top:26px; padding-top:20px; border-top:1px solid var(--line); }
+  .hm-head{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .hm-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius-sm); }
+  .hm{ border-collapse:collapse; width:100%; min-width:760px; font-size:13px; font-variant-numeric:tabular-nums; }
+  .hm th, .hm td{ padding:7px 9px; text-align:right; white-space:nowrap; }
+  .hm thead th{ font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); background:var(--sage-tint); }
+  .hm .hm-name{ text-align:left; position:sticky; left:0; background:var(--paper); font-weight:700; min-width:130px; vertical-align:top; }
+  .hm thead .hm-name{ background:var(--sage-tint); }
+  .hm .hm-kind{ text-align:left; color:var(--soft); font-size:12px; }
+  .hm .strong{ font-weight:700; color:var(--ink); }
+  .hm .zero{ color:var(--soft); opacity:.55; }
+  .hm .hm-year{ border-left:1px solid var(--line); font-weight:700; }
+  .hm tbody tr.hm-first td, .hm tbody tr.hm-first th{ border-top:1px solid var(--line); }
+  .hm tbody tr.hm-total td, .hm tbody tr.hm-total th{ background:var(--sage-tint); }
   .export-part{ margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
   .export-part:first-child{ margin-top:0; padding-top:0; border-top:none; }
   .export-title{ font-weight:700; font-size:15px; margin-bottom:8px; }
@@ -5080,54 +5094,7 @@ function projectDetailPageHtml(){
     </div>`;
 }
 
-function adminBudgetsTemplate(){
-  const projects = sortedProjects().filter(p => (p.phaseIds || []).length > 0);
-  if(!projects.length){
-    return `<div class="empty-state">Zatím nejsou žádné projekty s přiřazenými fázemi.</div>`;
-  }
-  const blocks = projects.map(p => {
-    const rows = (p.phaseIds || []).map(pid => {
-      const ph = state.config.phases.find(x => x.id === pid);
-      const label = ph ? esc(ph.name) : esc(pid);
-      const budget = (p.phaseBudgets && p.phaseBudgets[pid] !== undefined) ? p.phaseBudgets[pid] : "";
-      const itemized = phaseBudgetItems(p, pid).length > 0;
-      const closedFrom = (p.closedPhases && p.closedPhases[pid]) || null;
-      return `
-      <div style="margin-bottom:14px;">
-        <div class="admin-project-head" style="margin-bottom:6px;">
-          <span class="entry-phase">${esc(pid)}</span>
-          <span class="grow">${label}</span>
-          ${itemized
-            ? `<span class="meta" style="white-space:nowrap;">${fmtKc(phaseBudgetTotal(p, pid))} (více položek v detailu projektu)</span>`
-            : `<input type="number" min="0" step="1" placeholder="Rozpočet Kč" style="width:140px;padding:6px 8px;font-size:13px;" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}" value="${esc(budget)}">`}
-        </div>
-        <div class="admin-project-head" style="flex-wrap:wrap;row-gap:8px;">
-          ${closedFrom ? `
-            <span class="meta">Uzavřeno od ${esc(closedFrom)}</span>
-            <button class="btn btn-outline btn-small" type="button" data-action="reopen-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Znovu otevřít</button>
-          ` : `
-            <input type="date" id="close-date-${esc(p.id)}-${esc(pid)}" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(lastPhaseActivityDate(p.id, pid) || todayStr())}">
-            <button class="btn btn-danger btn-small" type="button" data-action="close-phase" data-project-id="${esc(p.id)}" data-phase-id="${esc(pid)}">Uzavřít od</button>
-          `}
-        </div>
-      </div>`;
-    }).join("");
-    return `
-    <div class="admin-project-item">
-      <div class="admin-project-head"><span class="grow"><span class="entry-proj" data-project-id="${esc(p.id)}">#${esc(p.id)}</span> ${esc(p.name)}</span></div>
-      <div style="margin-top:8px;">${rows}</div>
-    </div>`;
-  }).join("");
-  return `
-    <p class="q-hint" style="margin:0 0 14px;">Rozpočet jednotlivých fází napříč všemi projekty. Zobrazují se jen fáze, které má daný projekt aktuálně přiřazené (zaškrtnuté).</p>
-    <form id="budgets-form">
-      ${blocks}
-      <div style="margin-top:16px;"><button class="btn btn-tan" type="submit">Uložit rozpočty</button></div>
-    </form>`;
-}
-
 const HOURS_OVERVIEW_MONTH_NAMES = ["Leden","Únor","Březen","Duben","Květen","Červen","Červenec","Srpen","Září","Říjen","Listopad","Prosinec"];
-
 function hoursOverviewGroupRows(entries, keyFn, labelFn, sortFn){
   const groups = {};
   entries.forEach(e => {
@@ -5144,6 +5111,61 @@ function hoursOverviewGroupRows(entries, keyFn, labelFn, sortFn){
   return rows;
 }
 
+// Tabulka zaměstnanci × měsíce. Projektové = bez projektů 000 a 002, nulové = projekt 000 (DH).
+function hoursMatrixData(yearEntries){
+  const people = {};
+  yearEntries.forEach(e => {
+    const mi = Number((e.date || "").slice(5, 7)) - 1;
+    if(mi < 0 || mi > 11) return;
+    const p = people[e.employeeId] = people[e.employeeId] || { name: e.employeeName || e.employeeId, m: Array.from({ length: 12 }, () => ({ t: 0, p: 0, z: 0, o: 0 })) };
+    const h = Number(e.hours || 0);
+    const c = p.m[mi];
+    c.t += h;
+    if(e.projectId === "000") c.z += h; else if(e.projectId === "002") c.o += h; else c.p += h;
+  });
+  return Object.values(people).sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
+}
+function hmNum(v){ return v ? (Math.round(v * 10) / 10).toLocaleString("cs-CZ") : "–"; }
+function hoursMatrixHtml(yearEntries){
+  const people = hoursMatrixData(yearEntries);
+  const mode = state.hoursMatrixMode || "split";
+  const sumCells = list => Array.from({ length: 12 }, (_, i) => list.reduce((a, p) => ({ t: a.t + p.m[i].t, p: a.p + p.m[i].p, z: a.z + p.m[i].z, o: a.o + p.m[i].o }), { t: 0, p: 0, z: 0, o: 0 }));
+  const yearOf = cells => cells.reduce((a, c) => ({ t: a.t + c.t, p: a.p + c.p, z: a.z + c.z, o: a.o + c.o }), { t: 0, p: 0, z: 0, o: 0 });
+  const hasOther = yearEntries.some(e => e.projectId === "002" && Number(e.hours) > 0);
+  const kinds = mode === "split"
+    ? [["t", "Celkem"], ["p", "Projektové"], ["z", "Nulové (000)"]].concat(hasOther ? [["o", "OF (002)"]] : [])
+    : [[mode === "project" ? "p" : mode === "zero" ? "z" : "t", ""]];
+  const header = `<tr><th class="hm-name">Zaměstnanec</th>${mode === "split" ? `<th class="hm-kind"></th>` : ``}${CHART_MONTHS_SHORT.map(m => `<th>${m}</th>`).join("")}<th class="hm-year">Rok</th></tr>`;
+  const rowsFor = (name, cells, isTotal) => kinds.map(([key, label], idx) => {
+    const yr = yearOf(cells)[key];
+    return `<tr class="${isTotal ? "hm-total" : ""} ${idx === 0 ? "hm-first" : ""}">
+      ${idx === 0 ? `<th class="hm-name" ${kinds.length > 1 ? `rowspan="${kinds.length}"` : ""}>${esc(name)}</th>` : ``}
+      ${mode === "split" ? `<td class="hm-kind ${key === "t" ? "strong" : ""}">${label}</td>` : ``}
+      ${cells.map((c, i) => `<td class="${key === "t" ? "strong" : ""} ${c[key] ? "" : "zero"}" title="${esc(`${name} · ${CHART_MONTHS_FULL[i]}: celkem ${hmNum(c.t)} h · projektové ${hmNum(c.p)} h · nulové ${hmNum(c.z)} h${hasOther ? ` · 002 ${hmNum(c.o)} h` : ""}`)}">${hmNum(c[key])}</td>`).join("")}
+      <td class="hm-year ${key === "t" ? "strong" : ""}">${hmNum(yr)}</td>
+    </tr>`;
+  }).join("");
+  const body = people.map(p => rowsFor(p.name, p.m, false)).join("") + rowsFor("Všichni celkem", sumCells(people), true);
+  const modes = [["split", "Vše rozepsané"], ["total", "Celkem"], ["project", "Projektové"], ["zero", "Nulové (000)"]];
+  return `
+    <div class="hm-head">
+      <div class="export-title" style="margin:0;">Zaměstnanci podle měsíců</div>
+      <span class="mchart-seg">${modes.map(([k, l]) => `<button type="button" data-action="set-hours-matrix-mode" data-mode="${k}" class="${mode === k ? "active" : ""}">${l}</button>`).join("")}</span>
+      <button type="button" class="btn btn-outline btn-small" data-action="download-hours-matrix">Stáhnout (CSV)</button>
+    </div>
+    <p class="q-hint" style="margin:6px 0 10px;">Hodiny v jednotlivých měsících vybraného roku. <b style="color:var(--ink);">Projektové</b> jsou hodiny mimo projekty 000 a 002, <b style="color:var(--ink);">nulové</b> jsou na projektu 000 (DH). Najetím myší na číslo se ukáže rozpis.</p>
+    <div class="hm-wrap"><table class="hm"><thead>${header}</thead><tbody>${body}</tbody></table></div>`;
+}
+function hoursMatrixCsv(yearEntries, year){
+  const people = hoursMatrixData(yearEntries);
+  const hasOther = yearEntries.some(e => e.projectId === "002" && Number(e.hours) > 0);
+  const kinds = [["t", "Celkem"], ["p", "Projektové (bez 000 a 002)"], ["z", "Nulové (000)"]].concat(hasOther ? [["o", "OF (002)"]] : []);
+  const rows = [["Zaměstnanec", "Druh hodin", ...CHART_MONTHS_FULL.map(m => `${m} ${year}`), `Rok ${year}`]];
+  const add = (name, cells) => kinds.forEach(([k, label]) => rows.push([name, label, ...cells.map(c => csvNum(c[k])), csvNum(cells.reduce((a, c) => a + c[k], 0))]));
+  people.forEach(p => add(p.name, p.m));
+  add("Všichni celkem", Array.from({ length: 12 }, (_, i) => people.reduce((a, p) => ({ t: a.t + p.m[i].t, p: a.p + p.m[i].p, z: a.z + p.m[i].z, o: a.o + p.m[i].o }), { t: 0, p: 0, z: 0, o: 0 })));
+  return rows;
+}
 function hoursOverviewTable(title, rows){
   if(!rows.length){
     return `<div style="margin-top:22px;"><h4 style="margin:0 0 8px;font-size:14px;">${esc(title)}</h4><div class="q-hint" style="margin:0;">Žádná data.</div></div>`;
@@ -5239,8 +5261,7 @@ function adminHoursOverviewTemplate(){
         <div style="padding:12px 0;font-weight:700;font-size:18px;">${fmtH(project000Hours)}</div>
       </div>
     </div>
-    ${hoursOverviewTable("Podle měsíců", monthRows)}
-    ${hoursOverviewTable("Podle zaměstnanců", employeeRows)}`;
+    <div class="hm-section">${hoursMatrixHtml(yearEntries)}</div>`;
 }
 
 /* ---------------- dodavatelé ---------------- */
@@ -6370,10 +6391,6 @@ function adminTemplate(){
         ` : ``}
       </div>
 
-      <div class="admin-block${state.adminOpenSection === "budgets" ? " is-open" : ""}">
-        ${adminSectionHeader("budgets", "Rozpočty")}
-        ${state.adminOpenSection === "budgets" ? adminBudgetsTemplate() : ``}
-      </div>
 
       <div class="admin-block${state.adminOpenSection === "phases" ? " is-open" : ""}">
         ${adminSectionHeader("phases", `Fáze (${state.config.phases.length})`)}
@@ -6949,7 +6966,7 @@ function bindAdmin(){
     const section = el.getAttribute("data-section");
     const newSection = state.adminOpenSection === section ? null : section;
     setState({ adminOpenSection: newSection });
-    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budgets" || newSection === "budget-watch" || newSection === "review" || newSection === "suppliers" || newSection === "timesheet-export" || newSection === "vacation"){
+    if(newSection === "project-overview" || newSection === "project-costs" || newSection === "records-filter" || newSection === "closed-projects" || newSection === "client-export" || newSection === "hours-overview" || newSection === "budget-watch" || newSection === "review" || newSection === "suppliers" || newSection === "timesheet-export" || newSection === "vacation"){
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
     }
@@ -6957,6 +6974,13 @@ function bindAdmin(){
 
   const hoursOverviewEmployee = document.getElementById("hours-overview-employee");
   if(hoursOverviewEmployee) hoursOverviewEmployee.addEventListener("change", () => setState({ hoursOverviewEmployeeId: hoursOverviewEmployee.value }));
+  document.querySelectorAll('[data-action="set-hours-matrix-mode"]').forEach(b => b.onclick = () => setState({ hoursMatrixMode: b.getAttribute("data-mode") }));
+  document.querySelectorAll('[data-action="download-hours-matrix"]').forEach(b => b.onclick = () => {
+    const entries = state.adminEntriesFlat || [];
+    const years = [...new Set(entries.map(e => (e.date || "").slice(0, 4)).filter(Boolean))].sort((a, c) => c.localeCompare(a));
+    const year = (state.hoursOverviewYear && years.includes(state.hoursOverviewYear)) ? state.hoursOverviewYear : years[0];
+    downloadCsv(hoursMatrixCsv(entries.filter(e => (e.date || "").slice(0, 4) === year), year), `hodiny-zamestnanci-mesice_${year}.csv`);
+  });
   const hoursOverviewYear = document.getElementById("hours-overview-year");
   if(hoursOverviewYear) hoursOverviewYear.addEventListener("change", () => setState({ hoursOverviewYear: hoursOverviewYear.value }));
 
