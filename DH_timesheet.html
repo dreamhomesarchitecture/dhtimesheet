@@ -554,6 +554,13 @@
   .review-chip.warn{ background:var(--tan-tint); color:var(--ink); }
   .hm-section{ margin-top:26px; padding-top:20px; border-top:1px solid var(--line); }
   .hm-head{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .oh-tiles{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin-bottom:12px; }
+  .oh-tile{ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; display:flex; flex-direction:column; gap:4px; }
+  .oh-tile span{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--soft); }
+  .oh-tile b{ font-size:18px; font-variant-numeric:tabular-nums; }
+  .oh-tile.big{ border-color:var(--sage); } .oh-tile.big b{ font-size:24px; }
+  .oh-tile.total{ background:var(--sage-tint); }
+  .oh-diff{ font-size:11.5px; color:var(--soft); } .oh-diff.up{ color:var(--danger); } .oh-diff.down{ color:var(--sage); }
   .hm-year-nav{ display:inline-flex; align-items:center; gap:6px; }
   .hm-year-nav select{ width:auto; padding:6px 28px 6px 12px; font-weight:700; }
   .hm-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius-sm); }
@@ -1222,10 +1229,13 @@ document.addEventListener("input", e => {
   const out = box.querySelector(".rate-total");
   if(out) out.textContent = fmtKc2(sum);
 });
-function hourlyRateForEmployee(employee, dateStr){
+// Náklad hodiny: u nulové hodiny (projekt 000 – Dream Homes) jen plat, u projektové hodiny plat + nulové projekty + chod kanceláře.
+function hourlyRateForEmployee(employee, dateStr, projectId){
   if(!employee || !employee.rates || !employee.rates.length || !dateStr) return 0;
   const match = employee.rates.find(r => r.from && r.from <= dateStr && (!r.to || dateStr <= r.to));
-  return match ? Number(match.amount) || 0 : 0;
+  if(!match) return 0;
+  if(projectId === "000") return ratePartsOf(match).wage;
+  return Number(match.amount) || 0;
 }
 function isPhaseClosedOnDate(project, phaseId, dateStr){
   if(!project || !project.closedPhases || FIXED_PROJECT_PHASES[project.id]) return false;
@@ -1310,7 +1320,7 @@ function phaseFinancials(p, pid){
   const totalCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid).reduce((s,c) => s + Number(c.amount||0), 0);
   const totalLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid).reduce((s,en) => {
     const emp = state.config.employees.find(x => x.id === en.employeeId);
-    return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
+    return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date, en.projectId);
   }, 0);
   return { totalBudget, totalCosts, totalLabor, status: totalBudget - totalCosts - totalLabor };
 }
@@ -3775,7 +3785,7 @@ function bulkToolbarHtml(listId, kind, items, ctxProjectId){
     summary = `součet <b>${fmtKc(picked.reduce((s, c) => s + Number(c.amount || 0), 0))}</b>`;
   } else {
     const hours = picked.reduce((s, e) => s + Number(e.hours || 0), 0);
-    const labor = picked.reduce((s, e) => s + Number(e.hours || 0) * hourlyRateForEmployee(state.config.employees.find(x => x.id === e.employeeId), e.date), 0);
+    const labor = picked.reduce((s, e) => s + Number(e.hours || 0) * hourlyRateForEmployee(state.config.employees.find(x => x.id === e.employeeId), e.date, e.projectId), 0);
     const other = picked.reduce((s, e) => s + Number(e.cost || 0), 0);
     summary = `<b>${fmtH(hours)}</b> · mzdy <b>${fmtKc(labor)}</b>${other ? ` · ostatní náklady <b>${fmtKc(other)}</b>` : ``}`;
   }
@@ -4889,7 +4899,7 @@ function projectDetailPageHtml(){
             const costsSum = phaseCosts.reduce((s,c) => s + Number(c.amount||0), 0);
             const laborSum = phaseEntries.reduce((s,en) => {
               const emp = state.config.employees.find(x => x.id === en.employeeId);
-              return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date);
+              return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date, en.projectId);
             }, 0);
             const budgetNum = phaseBudgetTotal(p, pid);
             const status = budgetNum - costsSum - laborSum;
@@ -5028,7 +5038,7 @@ function projectDetailPageHtml(){
 
           const allProjectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
             const emp = state.config.employees.find(x => x.id === en.employeeId);
-            const rate = hourlyRateForEmployee(emp, en.date);
+            const rate = hourlyRateForEmployee(emp, en.date, en.projectId);
             return { en, rate, amount: Number(en.hours||0) * rate };
           });
           const laborPhaseIdsPresent = [...new Set(allProjectLabor.map(r => r.en.phaseId).filter(Boolean))];
@@ -5938,7 +5948,7 @@ function budgetWatchRows(){
       let labor = 0, extra = 0;
       state.adminEntriesFlat.forEach(e => {
         if(e.projectId !== p.id || e.phaseId !== pid) return;
-        labor += Number(e.hours || 0) * hourlyRateForEmployee(state.config.employees.find(x => x.id === e.employeeId), e.date);
+        labor += Number(e.hours || 0) * hourlyRateForEmployee(state.config.employees.find(x => x.id === e.employeeId), e.date, e.projectId);
         extra += Number(e.cost || 0);
       });
       const costs = state.costs.filter(c => c.projectId === p.id && c.phaseId === pid).reduce((a, c) => a + Number(c.amount || 0), 0);
@@ -6051,6 +6061,80 @@ function exportTimesheetCsv(kind){
   });
   rows.push(["Celkem", "", "", "", "", csvNum(th), csvNum(tc), ""]);
   downloadCsv(rows, `${base}.csv`);
+}
+
+/* ---------------- režie: nulové hodiny a chod kanceláře ---------------- */
+// Nulové hodiny = hodiny na projektu 000 (náklad = jen plat). Chod kanceláře = náklady zadané u projektu 000.
+// Obojí se rozpočítá na projektové hodiny (bez projektů 000 a 002) ve stejném období.
+function overheadStats(entries, costs, prefix){
+  const st = { projH: 0, zeroH: 0, otherH: 0, zeroCost: 0, officeCost: 0, setZeroSum: 0, setOfficeSum: 0, missingRate: 0 };
+  entries.forEach(e => {
+    if(!(e.date || "").startsWith(prefix)) return;
+    const h = Number(e.hours || 0);
+    const emp = state.config.employees.find(x => x.id === e.employeeId);
+    if(e.projectId === "000"){
+      st.zeroH += h;
+      const r = hourlyRateForEmployee(emp, e.date, "000");
+      if(!r) st.missingRate += h;
+      st.zeroCost += h * r;
+    } else if(e.projectId === "002"){
+      st.otherH += h;
+    } else {
+      st.projH += h;
+      const match = emp && emp.rates ? emp.rates.find(r => r.from && r.from <= e.date && (!r.to || e.date <= r.to)) : null;
+      if(match){ const parts = ratePartsOf(match); st.setZeroSum += h * parts.zero; st.setOfficeSum += h * parts.office; }
+    }
+  });
+  (costs || []).forEach(c => { if(c.projectId === "000" && (c.date || "").startsWith(prefix)) st.officeCost += Number(c.amount || 0); });
+  st.zeroPerH = st.projH ? st.zeroCost / st.projH : null;
+  st.officePerH = st.projH ? st.officeCost / st.projH : null;
+  st.setZeroPerH = st.projH ? st.setZeroSum / st.projH : null;
+  st.setOfficePerH = st.projH ? st.setOfficeSum / st.projH : null;
+  return st;
+}
+function adminOverheadTemplate(){
+  if(state.adminEntriesFlat === null || state.costs === null) return `<div class="empty-state">Načítání…</div>`;
+  const entries = state.adminEntriesFlat;
+  const years = [...new Set([...entries.map(e => (e.date || "").slice(0, 4)), ...state.costs.filter(c => c.projectId === "000").map(c => (c.date || "").slice(0, 4))].filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  if(!years.length) return `<div class="empty-state">Zatím nejsou zadané žádné hodiny.</div>`;
+  const year = years.includes(state.overheadYear) ? state.overheadYear : years[0];
+  const yr = overheadStats(entries, state.costs, year);
+  const kc = v => v === null ? "–" : fmtKc2(Math.round(v * 100) / 100);
+  const kch = v => v === null ? "–" : `${fmtKc2(Math.round(v * 100) / 100)}/h`;
+  const total = yr.projH ? yr.zeroPerH + yr.officePerH : null;
+  const setTotal = yr.projH ? yr.setZeroPerH + yr.setOfficePerH : null;
+  const diff = (real, set) => (real === null || set === null) ? "" : `<small class="oh-diff ${real - set > 0.5 ? "up" : real - set < -0.5 ? "down" : ""}">nastaveno ${fmtKc2(Math.round(set * 100) / 100)}/h</small>`;
+  const monthRows = Array.from({ length: 12 }, (_, i) => {
+    const m = overheadStats(entries, state.costs, `${year}-${String(i + 1).padStart(2, "0")}`);
+    if(!m.projH && !m.zeroH && !m.officeCost) return "";
+    const kz = v => (v === null || !v) ? "–" : kc(v);
+    return `<tr><th class="hm-name">${CHART_MONTHS_FULL[i]}</th><td>${hmNum(m.projH)}</td><td>${hmNum(m.zeroH)}</td><td>${m.zeroCost ? fmtKc(m.zeroCost) : "–"}</td><td>${m.officeCost ? fmtKc(m.officeCost) : "–"}</td><td>${kz(m.zeroPerH)}</td><td>${kz(m.officePerH)}</td><td class="strong">${m.projH ? kz(m.zeroPerH + m.officePerH) : "–"}</td></tr>`;
+  }).join("");
+  return `
+    <div class="hm-head" style="margin-bottom:6px;">
+      <span class="hm-year-nav">
+        <button type="button" class="icon-btn" data-action="oh-year" data-year="${esc(years[years.indexOf(year) + 1] || "")}" ${years[years.indexOf(year) + 1] ? "" : "disabled"} aria-label="Starší rok">‹</button>
+        <select id="oh-year-select" aria-label="Rok">${years.map(y => `<option value="${esc(y)}" ${y === year ? "selected" : ""}>${esc(y)}</option>`).join("")}</select>
+        <button type="button" class="icon-btn" data-action="oh-year" data-year="${esc(years[years.indexOf(year) - 1] || "")}" ${years.indexOf(year) > 0 ? "" : "disabled"} aria-label="Novější rok">›</button>
+      </span>
+    </div>
+    <p class="q-hint" style="margin:6px 0 16px;">Kolik stojí nulové hodiny a chod kanceláře na jednu projektovou hodinu. <b style="color:var(--ink);">Nulová hodina</b> (projekt 000) stojí firmu jen plat zaměstnance. Tyto mzdy a <b style="color:var(--ink);">náklady chodu kanceláře</b> (náklady zadané u projektu 000) se rozpočítají na všechny <b style="color:var(--ink);">projektové hodiny</b> (mimo projekty 000 a 002). Projektová hodina pak stojí plat + nulové hodiny + chod kanceláře.</p>
+    <div class="oh-tiles">
+      <div class="oh-tile big"><span>Nulové hodiny na 1 projektovou hodinu</span><b>${kch(yr.zeroPerH)}</b>${diff(yr.zeroPerH, yr.setZeroPerH)}</div>
+      <div class="oh-tile big"><span>Chod kanceláře na 1 projektovou hodinu</span><b>${kch(yr.officePerH)}</b>${diff(yr.officePerH, yr.setOfficePerH)}</div>
+      <div class="oh-tile big total"><span>Režie celkem na 1 projektovou hodinu</span><b>${kch(total)}</b>${diff(total, setTotal)}</div>
+    </div>
+    <div class="oh-tiles small">
+      <div class="oh-tile"><span>Projektové hodiny</span><b>${fmtH(yr.projH)}</b></div>
+      <div class="oh-tile"><span>Nulové hodiny (000)</span><b>${fmtH(yr.zeroH)}</b></div>
+      <div class="oh-tile"><span>Mzdy za nulové hodiny</span><b>${fmtKc(yr.zeroCost)}</b></div>
+      <div class="oh-tile"><span>Náklady chodu kanceláře</span><b>${fmtKc(yr.officeCost)}</b></div>
+    </div>
+    ${yr.missingRate ? `<div class="ii-alert">U ${fmtH(yr.missingRate)} nulových hodin chybí hodinová sazba zaměstnance, takže se počítají za 0 Kč. Doplňte sazbu v Nastavení → Zaměstnanci.</div>` : ``}
+    ${yr.setZeroPerH !== null ? `<p class="q-hint" style="margin:10px 0 14px;">Řádek „nastaveno“ ukazuje průměr sazeb zadaných u zaměstnanců (nulové projekty, chod kanceláře) vážený projektovými hodinami. Podle rozdílu vidíte, jestli je potřeba sazby upravit.</p>` : ``}
+    <div class="hm-wrap"><table class="hm" style="min-width:760px;"><thead><tr><th class="hm-name">Měsíc ${esc(year)}</th><th>Projektové h</th><th>Nulové h</th><th>Mzdy nulové h</th><th>Náklady kanceláře</th><th>Nulové Kč/h</th><th>Kancelář Kč/h</th><th>Režie Kč/h</th></tr></thead>
+      <tbody>${monthRows || `<tr><td colspan="8" style="text-align:center;color:var(--soft);">Žádná data</td></tr>`}
+      <tr class="hm-total"><th class="hm-name">Celý rok</th><td class="strong">${hmNum(yr.projH)}</td><td class="strong">${hmNum(yr.zeroH)}</td><td class="strong">${fmtKc(yr.zeroCost)}</td><td class="strong">${fmtKc(yr.officeCost)}</td><td class="strong">${kc(yr.zeroPerH)}</td><td class="strong">${kc(yr.officePerH)}</td><td class="strong">${total === null ? "–" : kc(total)}</td></tr></tbody></table></div>`;
 }
 
 /* ---------------- skupiny v Přehledech ---------------- */
@@ -6417,6 +6501,11 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "records-filter" ? " is-open" : ""}" data-group="hours">
         ${adminSectionHeader("records-filter", "Filtr záznamů")}
         ${state.adminOpenSection === "records-filter" ? adminRecordsTemplate() : ""}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "overhead" ? " is-open" : ""}" data-group="projects">
+        ${adminSectionHeader("overhead", "Režie – nulové hodiny a chod kanceláře")}
+        ${state.adminOpenSection === "overhead" ? adminOverheadTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "closed-projects" ? " is-open" : ""}" data-group="projects">
@@ -7070,6 +7159,9 @@ function bindAdmin(){
 
   const hoursOverviewEmployee = document.getElementById("hours-overview-employee");
   if(hoursOverviewEmployee) hoursOverviewEmployee.addEventListener("change", () => setState({ hoursOverviewEmployeeId: hoursOverviewEmployee.value }));
+  document.querySelectorAll('[data-action="oh-year"]').forEach(b => b.onclick = () => { if(b.getAttribute("data-year")) setState({ overheadYear: b.getAttribute("data-year") }); });
+  const ohYearSelect = document.getElementById("oh-year-select");
+  if(ohYearSelect) ohYearSelect.addEventListener("change", () => setState({ overheadYear: ohYearSelect.value }));
   document.querySelectorAll('[data-action="hm-year"]').forEach(b => b.onclick = () => { if(b.getAttribute("data-year")) setState({ hoursOverviewYear: b.getAttribute("data-year") }); });
   const hmYearSelect = document.getElementById("hm-year-select");
   if(hmYearSelect) hmYearSelect.addEventListener("change", () => setState({ hoursOverviewYear: hmYearSelect.value }));
