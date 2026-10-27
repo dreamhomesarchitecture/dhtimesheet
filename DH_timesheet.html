@@ -557,17 +557,27 @@
   .hm-year-nav{ display:inline-flex; align-items:center; gap:6px; }
   .hm-year-nav select{ width:auto; padding:6px 28px 6px 12px; font-weight:700; }
   .hm-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius-sm); }
-  .hm{ border-collapse:collapse; width:100%; min-width:760px; font-size:13px; font-variant-numeric:tabular-nums; }
-  .hm th, .hm td{ padding:7px 9px; text-align:right; white-space:nowrap; }
-  .hm thead th{ font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); background:var(--sage-tint); }
-  .hm .hm-name{ text-align:left; position:sticky; left:0; background:var(--paper); font-weight:700; min-width:130px; vertical-align:top; }
-  .hm thead .hm-name{ background:var(--sage-tint); }
-  .hm .hm-kind{ text-align:left; color:var(--soft); font-size:12px; }
+  .hm{ border-collapse:separate; border-spacing:0; width:100%; min-width:820px; font-size:13px; font-variant-numeric:tabular-nums; }
+  .hm th, .hm td{ padding:8px 10px; text-align:right; white-space:nowrap; }
+  .hm thead th{ font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); background:var(--sage-tint); padding:10px; position:sticky; top:0; }
+  .hm .hm-name{ text-align:left; font-weight:700; min-width:140px; }
+  .hm tbody tr:not(.hm-emp) td, .hm tbody tr:not(.hm-emp) th{ border-top:1px solid var(--line); }
   .hm .strong{ font-weight:700; color:var(--ink); }
-  .hm .zero{ color:var(--soft); opacity:.55; }
+  .hm .zero{ color:color-mix(in srgb, var(--soft) 50%, transparent); }
   .hm .hm-year{ border-left:1px solid var(--line); font-weight:700; }
-  .hm tbody tr.hm-first td, .hm tbody tr.hm-first th{ border-top:1px solid var(--line); }
   .hm tbody tr.hm-total td, .hm tbody tr.hm-total th{ background:var(--sage-tint); }
+  .hm-split .hm-kindhead{ min-width:140px; }
+  .hm-split tr.hm-emp th{ text-align:left; padding:14px 12px 8px; background:var(--paper); border-top:2px solid var(--line); }
+  .hm-split tbody tr.hm-emp:first-child th{ border-top:none; }
+  .hm-split tr.hm-emp.hm-total th{ background:var(--sage-tint); }
+  .hm-empname{ font-size:15px; font-weight:800; margin-right:14px; }
+  .hm-chips{ display:inline-flex; gap:8px; flex-wrap:wrap; vertical-align:middle; }
+  .hm-chip{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--soft); background:var(--sage-tint); border-radius:999px; padding:3px 10px; }
+  .hm-chip b{ color:var(--ink); }
+  .hm-chip i, .hm-kind i{ width:8px; height:8px; border-radius:50%; display:inline-block; background:var(--ink); flex:none; }
+  .hm-sage i{ background:var(--sage); } .hm-tan i{ background:var(--tan); } .hm-gray i{ background:var(--soft); }
+  .hm-split .hm-kind{ text-align:left; display:table-cell; padding-left:22px; color:var(--soft); font-size:12.5px; }
+  .hm-split .hm-kind i{ margin-right:8px; }
   .rate-part-wrap{ display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--soft); }
   .rate-part-wrap input{ width:130px; padding:6px 8px; font-size:13px; }
   .rate-total-wrap{ font-size:13px; color:var(--soft); }
@@ -5156,24 +5166,37 @@ function hmNum(v){ return v ? (Math.round(v * 10) / 10).toLocaleString("cs-CZ") 
 function hoursMatrixHtml(yearEntries, years, selectedYear){
   const people = hoursMatrixData(yearEntries);
   const mode = state.hoursMatrixMode || "split";
-  const sumCells = list => Array.from({ length: 12 }, (_, i) => list.reduce((a, p) => ({ t: a.t + p.m[i].t, p: a.p + p.m[i].p, z: a.z + p.m[i].z, o: a.o + p.m[i].o }), { t: 0, p: 0, z: 0, o: 0 }));
-  const yearOf = cells => cells.reduce((a, c) => ({ t: a.t + c.t, p: a.p + c.p, z: a.z + c.z, o: a.o + c.o }), { t: 0, p: 0, z: 0, o: 0 });
+  const zeroCell = () => ({ t: 0, p: 0, z: 0, o: 0 });
+  const sumCells = list => Array.from({ length: 12 }, (_, i) => list.reduce((a, p) => ({ t: a.t + p.m[i].t, p: a.p + p.m[i].p, z: a.z + p.m[i].z, o: a.o + p.m[i].o }), zeroCell()));
+  const yearOf = cells => cells.reduce((a, c) => ({ t: a.t + c.t, p: a.p + c.p, z: a.z + c.z, o: a.o + c.o }), zeroCell());
   const hasOther = yearEntries.some(e => e.projectId === "002" && Number(e.hours) > 0);
-  const kinds = mode === "split"
-    ? [["t", "Celkem"], ["p", "Projektové"], ["z", "Nulové (000)"]].concat(hasOther ? [["o", "OF (002)"]] : [])
-    : [[mode === "project" ? "p" : mode === "zero" ? "z" : "t", ""]];
-  const header = `<tr><th class="hm-name">Zaměstnanec</th>${mode === "split" ? `<th class="hm-kind"></th>` : ``}${CHART_MONTHS_SHORT.map(m => `<th>${m}</th>`).join("")}<th class="hm-year">Rok</th></tr>`;
-  const rowsFor = (name, cells, isTotal) => kinds.map(([key, label], idx) => {
-    const yr = yearOf(cells)[key];
-    return `<tr class="${isTotal ? "hm-total" : ""} ${idx === 0 ? "hm-first" : ""}">
-      ${idx === 0 ? `<th class="hm-name" ${kinds.length > 1 ? `rowspan="${kinds.length}"` : ""}>${esc(name)}</th>` : ``}
-      ${mode === "split" ? `<td class="hm-kind ${key === "t" ? "strong" : ""}">${label}</td>` : ``}
-      ${cells.map((c, i) => `<td class="${key === "t" ? "strong" : ""} ${c[key] ? "" : "zero"}" title="${esc(`${name} · ${CHART_MONTHS_FULL[i]}: celkem ${hmNum(c.t)} h · projektové ${hmNum(c.p)} h · nulové ${hmNum(c.z)} h${hasOther ? ` · 002 ${hmNum(c.o)} h` : ""}`)}">${hmNum(c[key])}</td>`).join("")}
-      <td class="hm-year ${key === "t" ? "strong" : ""}">${hmNum(yr)}</td>
-    </tr>`;
-  }).join("");
-  const body = people.map(p => rowsFor(p.name, p.m, false)).join("") + rowsFor("Všichni celkem", sumCells(people), true);
-  const modes = [["split", "Vše rozepsané"], ["total", "Celkem"], ["project", "Projektové"], ["zero", "Nulové (000)"]];
+  const KINDS = { t: ["Celkem", "ink"], p: ["Projektové", "sage"], z: ["Nulové (000)", "tan"], o: ["OF (002)", "gray"] };
+  const tip = (name, c, i) => esc(`${name} · ${CHART_MONTHS_FULL[i]}: celkem ${hmNum(c.t)} h · projektové ${hmNum(c.p)} h · nulové ${hmNum(c.z)} h${hasOther ? ` · 002 ${hmNum(c.o)} h` : ""}`);
+  const monthHead = CHART_MONTHS_SHORT.map(m => `<th>${m}</th>`).join("");
+  let html;
+  if(mode === "split"){
+    const keys = ["t", "p", "z"].concat(hasOther ? ["o"] : []);
+    const block = (name, cells, isTotal) => {
+      const y = yearOf(cells);
+      const chips = keys.map(k => `<span class="hm-chip hm-${KINDS[k][1]}"><i></i>${KINDS[k][0]} <b>${hmNum(y[k])}</b></span>`).join("");
+      return `<tr class="hm-emp ${isTotal ? "hm-total" : ""}"><th colspan="14"><span class="hm-empname">${esc(name)}</span><span class="hm-chips">${chips}</span></th></tr>`
+        + keys.map(k => `<tr class="hm-sub ${isTotal ? "hm-total" : ""}">
+            <td class="hm-kind hm-${KINDS[k][1]}"><i></i>${KINDS[k][0]}</td>
+            ${cells.map((c, i) => `<td class="${k === "t" ? "strong" : ""} ${c[k] ? "" : "zero"}" title="${tip(name, c, i)}">${hmNum(c[k])}</td>`).join("")}
+            <td class="hm-year ${k === "t" ? "strong" : ""}">${hmNum(y[k])}</td>
+          </tr>`).join("");
+    };
+    html = `<table class="hm hm-split"><thead><tr><th class="hm-kindhead"></th>${monthHead}<th class="hm-year">Rok</th></tr></thead><tbody>${people.map(p => block(p.name, p.m, false)).join("")}${block("Všichni celkem", sumCells(people), true)}</tbody></table>`;
+  } else {
+    const key = mode === "project" ? "p" : mode === "zero" ? "z" : "t";
+    const row = (name, cells, isTotal) => `<tr class="${isTotal ? "hm-total" : ""}">
+        <th class="hm-name">${esc(name)}</th>
+        ${cells.map((c, i) => `<td class="${key === "t" ? "strong" : ""} ${c[key] ? "" : "zero"}" title="${tip(name, c, i)}">${hmNum(c[key])}</td>`).join("")}
+        <td class="hm-year strong">${hmNum(yearOf(cells)[key])}</td>
+      </tr>`;
+    html = `<table class="hm"><thead><tr><th class="hm-name">Zaměstnanec</th>${monthHead}<th class="hm-year">Rok</th></tr></thead><tbody>${people.map(p => row(p.name, p.m, false)).join("")}${row("Všichni celkem", sumCells(people), true)}</tbody></table>`;
+  }
+  const modes = [["split", "Rozepsané"], ["total", "Celkem"], ["project", "Projektové"], ["zero", "Nulové (000)"]];
   return `
     <div class="hm-head">
       <div class="export-title" style="margin:0;">Zaměstnanci podle měsíců</div>
@@ -5185,8 +5208,8 @@ function hoursMatrixHtml(yearEntries, years, selectedYear){
       <span class="mchart-seg">${modes.map(([k, l]) => `<button type="button" data-action="set-hours-matrix-mode" data-mode="${k}" class="${mode === k ? "active" : ""}">${l}</button>`).join("")}</span>
       <button type="button" class="btn btn-outline btn-small" data-action="download-hours-matrix">Stáhnout (CSV)</button>
     </div>
-    <p class="q-hint" style="margin:6px 0 10px;">Hodiny v jednotlivých měsících vybraného roku. <b style="color:var(--ink);">Projektové</b> jsou hodiny mimo projekty 000 a 002, <b style="color:var(--ink);">nulové</b> jsou na projektu 000 (DH). Najetím myší na číslo se ukáže rozpis.</p>
-    <div class="hm-wrap"><table class="hm"><thead>${header}</thead><tbody>${body}</tbody></table></div>`;
+    <p class="q-hint" style="margin:8px 0 14px;">Hodiny v jednotlivých měsících roku. <b style="color:var(--ink);">Projektové</b> jsou mimo projekty 000 a 002, <b style="color:var(--ink);">nulové</b> jsou na projektu 000 (DH).</p>
+    <div class="hm-wrap">${html}</div>`;
 }
 function hoursMatrixCsv(yearEntries, year){
   const people = hoursMatrixData(yearEntries);
