@@ -566,6 +566,11 @@
   .hm .hm-year{ border-left:1px solid var(--line); font-weight:700; }
   .hm tbody tr.hm-first td, .hm tbody tr.hm-first th{ border-top:1px solid var(--line); }
   .hm tbody tr.hm-total td, .hm tbody tr.hm-total th{ background:var(--sage-tint); }
+  .rate-part-wrap{ display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--soft); }
+  .rate-part-wrap input{ width:130px; padding:6px 8px; font-size:13px; }
+  .rate-total-wrap{ font-size:13px; color:var(--soft); }
+  .rate-total-wrap b{ color:var(--ink); }
+  .rate-split{ display:block; font-size:11.5px; color:var(--soft); text-align:right; }
   .export-part{ margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
   .export-part:first-child{ margin-top:0; padding-top:0; border-top:none; }
   .export-title{ font-weight:700; font-size:15px; margin-bottom:8px; }
@@ -1164,6 +1169,26 @@ function phasesForProject(project){
   if(!project || !project.phaseIds || project.phaseIds.length === 0) return [];
   return state.config.phases.filter(ph => project.phaseIds.includes(ph.id));
 }
+// Hodinová sazba se zadává ze tří částí (Kč/h): plat, nulové projekty a chod kanceláře. Součet je sazba, se kterou se počítá.
+function ratePartsOf(r){
+  const has = v => v !== undefined && v !== null && v !== "";
+  if(has(r.wage) || has(r.zero) || has(r.office)) return { wage: Number(r.wage) || 0, zero: Number(r.zero) || 0, office: Number(r.office) || 0, split: true };
+  return { wage: Number(r.amount) || 0, zero: 0, office: 0, split: false };
+}
+function rateInputsHtml(parts, cls){
+  const f = (key, label, val) => `<label class="rate-part-wrap"><span>${label}</span><input type="number" min="0" step="0.01" class="rate-part ${cls}-${key}" data-part="${key}" value="${val ? esc(val) : ""}" placeholder="0"></label>`;
+  return f("wage", "Plat (Kč/h)", parts.wage) + f("zero", "Nulové projekty (Kč/h)", parts.zero) + f("office", "Chod kanceláře (Kč/h)", parts.office)
+    + `<span class="rate-total-wrap">Celkem <b class="rate-total">${fmtKc2(parts.wage + parts.zero + parts.office)}</b>/h</span>`;
+}
+document.addEventListener("input", e => {
+  const t = e.target;
+  if(!t || !t.classList || !t.classList.contains("rate-part")) return;
+  const box = t.closest("[data-rate-edit-row], form[data-action='add-rate-form']");
+  if(!box) return;
+  const sum = [...box.querySelectorAll(".rate-part")].reduce((a, el) => a + (numOrNull(el.value) || 0), 0);
+  const out = box.querySelector(".rate-total");
+  if(out) out.textContent = fmtKc2(sum);
+});
 function hourlyRateForEmployee(employee, dateStr){
   if(!employee || !employee.rates || !employee.rates.length || !dateStr) return 0;
   const match = employee.rates.find(r => r.from && r.from <= dateStr && (!r.to || dateStr <= r.to));
@@ -6198,7 +6223,7 @@ function adminTemplate(){
       <div class="admin-project-head" data-rate-edit-row="${esc(r.id)}" data-id="${esc(e.id)}" style="margin-bottom:6px;flex-wrap:wrap;row-gap:6px;">
         <input type="date" class="rate-edit-from" value="${esc(r.from)}" style="flex:0 0 auto;width:150px;padding:6px 8px;font-size:13px;">
         <input type="date" class="rate-edit-to" value="${esc(r.to||"")}" style="flex:0 0 auto;width:150px;padding:6px 8px;font-size:13px;">
-        <input type="number" min="0" step="1" class="rate-edit-amount" value="${esc(r.amount)}" style="flex:0 0 auto;width:100px;padding:6px 8px;font-size:13px;">
+        ${rateInputsHtml(ratePartsOf(r), "rate-edit")}
         <span class="grow"></span>
         <button type="button" class="icon-btn" data-action="save-rate-edit" title="Uložit">✓</button>
         <button type="button" class="icon-btn" data-action="cancel-rate-edit" title="Zrušit">×</button>
@@ -6207,7 +6232,7 @@ function adminTemplate(){
       return `
       <div class="phase-employee-row">
         <span>${esc(r.from)} – ${r.to ? esc(r.to) : "dosud"}</span>
-        <span>${fmtKc(r.amount)}/h <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit" style="margin-left:6px;">✎</button> <button class="icon-btn icon-btn-del" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">${ICON_TRASH}</button></span>
+        <span>${fmtKc2(r.amount)}/h${ratePartsOf(r).split ? ` <span class="rate-split">plat ${fmtKc2(ratePartsOf(r).wage)} · nulové ${fmtKc2(ratePartsOf(r).zero)} · kancelář ${fmtKc2(ratePartsOf(r).office)}</span>` : ``} <button class="icon-btn" data-action="edit-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Upravit" style="margin-left:6px;">✎</button> <button class="icon-btn icon-btn-del" data-action="delete-rate" data-id="${esc(e.id)}" data-rate-id="${esc(r.id)}" title="Smazat">${ICON_TRASH}</button></span>
       </div>`;
     }).join("") : `<div class="q-hint" style="margin:0;">Zatím žádná hodinovka nastavena.</div>`;
     return `
@@ -6241,7 +6266,10 @@ function adminTemplate(){
           <div class="form-grid">
             <div class="field-row"><label class="field-label">Od</label><input type="date" name="from" required></div>
             <div class="field-row"><label class="field-label">Do (nepovinné)</label><input type="date" name="to"></div>
-            <div class="field-row"><label class="field-label">Kč/h</label><input type="number" name="amount" min="0" step="1" required></div>
+            <div class="field-row"><label class="field-label">Plat (Kč/h)</label><input type="number" class="rate-part rate-add-wage" data-part="wage" min="0" step="0.01" placeholder="0" required></div>
+            <div class="field-row"><label class="field-label">Nulové projekty (Kč/h)</label><input type="number" class="rate-part rate-add-zero" data-part="zero" min="0" step="0.01" placeholder="0"></div>
+            <div class="field-row"><label class="field-label">Chod kanceláře (Kč/h)</label><input type="number" class="rate-part rate-add-office" data-part="office" min="0" step="0.01" placeholder="0"></div>
+            <div class="field-row"><label class="field-label">Sazba celkem</label><div style="padding:12px 0;font-weight:700;"><span class="rate-total">0 Kč</span>/h</div></div>
             <div class="field-row"><button class="btn btn-tan btn-small" type="submit">+ Přidat sazbu</button></div>
           </div>
           ${state.rateError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.rateError)}</div>` : ``}
@@ -7393,11 +7421,13 @@ function bindAdmin(){
     const emp = state.config.employees.find(x => x.id === id);
     if(!emp) return;
     const data = Object.fromEntries(new FormData(form).entries());
-    const from = data.from, to = (data.to || "").trim(), amount = Number(data.amount);
+    const from = data.from, to = (data.to || "").trim();
+    const wage = numOrNull(form.querySelector(".rate-add-wage").value) || 0, zero = numOrNull(form.querySelector(".rate-add-zero").value) || 0, office = numOrNull(form.querySelector(".rate-add-office").value) || 0;
+    const amount = r2(wage + zero + office);
     if(!from || !(amount >= 0)) return;
     if(to && to < from){ setState({ rateError: "Datum 'do' nemůže být dříve než 'od'." }); return; }
     if(!emp.rates) emp.rates = [];
-    emp.rates.push({ id: uid("rate"), from, to, amount });
+    emp.rates.push({ id: uid("rate"), from, to, amount, wage, zero, office });
     state.rateError = "";
     await saveConfig();
     render();
@@ -7419,12 +7449,14 @@ function bindAdmin(){
     if(!rate) return;
     const from = row.querySelector(".rate-edit-from").value;
     const to = row.querySelector(".rate-edit-to").value;
-    const amount = Number(row.querySelector(".rate-edit-amount").value);
+    const wage = numOrNull(row.querySelector(".rate-edit-wage").value) || 0, zero = numOrNull(row.querySelector(".rate-edit-zero").value) || 0, office = numOrNull(row.querySelector(".rate-edit-office").value) || 0;
+    const amount = r2(wage + zero + office);
     if(!from || !(amount >= 0)) return;
     if(to && to < from){ setState({ rateError: "Datum 'do' nemůže být dříve než 'od'." }); return; }
     rate.from = from;
     rate.to = to;
     rate.amount = amount;
+    rate.wage = wage; rate.zero = zero; rate.office = office;
     state.editingRateId = null;
     state.rateError = "";
     await saveConfig();
