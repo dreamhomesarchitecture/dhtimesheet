@@ -1391,6 +1391,7 @@ function readRememberedLogin(){
 }
 function initials(name){ return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
 const ICON_TRASH = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6l1 14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-14M10 11v6M14 11v6"/></svg>`;
+const ICON_COPY = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>`;
 const ICON_LOCK = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
 function lockedMonthsList(){ return (state.config && Array.isArray(state.config.lockedMonths)) ? state.config.lockedMonths : []; }
 function isDateLocked(dateStr){ return !!dateStr && lockedMonthsList().includes(String(dateStr).slice(0, 7)); }
@@ -4386,7 +4387,7 @@ function adminCostsTemplate(){
 
   const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const rows = sorted.length ? sorted.map(c => {
-    return costCardHtml(c, { cbList: "gcosts", actionsHtml: `<button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
+    return costCardHtml(c, { cbList: "gcosts", actionsHtml: `<button class="icon-btn" data-action="copy-cost" data-scope="global" data-id="${esc(c.id)}" title="Kopírovat (stejný náklad s novým datem)">${ICON_COPY}</button><button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
   }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
   return `
@@ -5054,7 +5055,7 @@ function projectDetailPageHtml(){
                 <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
               </div>`;
             }
-            return costCardHtml(c, { cbList: "pcosts", showProject: false, actionsHtml: `<button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button type="button" class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
+            return costCardHtml(c, { cbList: "pcosts", showProject: false, actionsHtml: `<button type="button" class="icon-btn" data-action="copy-cost" data-scope="project" data-id="${esc(c.id)}" title="Kopírovat (stejný náklad s novým datem)">${ICON_COPY}</button><button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button type="button" class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
           }).join("") : `<div class="empty-state">${allProjectCosts.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
           const allProjectLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id).map(en => {
@@ -8219,6 +8220,25 @@ function bindAdmin(){
 
   document.querySelectorAll('[data-action="edit-cost"]').forEach(b => b.onclick = () => {
     setState({ editingCostId: b.getAttribute("data-id") });
+  });
+  // Kopie nákladu: stejný náklad s dnešním datem, rovnou otevřený k úpravě data. Číslo faktury a splatnost se nekopírují.
+  document.querySelectorAll('[data-action="copy-cost"]').forEach(b => b.onclick = async () => {
+    const src = (state.costs || []).find(c => c.id === b.getAttribute("data-id"));
+    if(!src) return;
+    const copy = { ...src, id: uid("cost"), date: todayStr() };
+    delete copy.invoiceNumber; delete copy.dueDate;
+    state.costs = [...state.costs, copy];
+    if(b.getAttribute("data-scope") === "project") state.editingProjectCostId = copy.id;
+    else state.editingCostId = copy.id;
+    await saveCosts();
+    render();
+    showActionToast("Náklad zkopírován – upravte datum", { actionLabel: "Vrátit zpět", onAction: async () => {
+      state.costs = (state.costs || []).filter(c => c.id !== copy.id);
+      if(state.editingCostId === copy.id) state.editingCostId = null;
+      if(state.editingProjectCostId === copy.id) state.editingProjectCostId = null;
+      await saveCosts();
+      render();
+    }});
   });
   document.querySelectorAll('[data-action="delete-cost"]').forEach(b => b.onclick = async () => {
     const removed = (state.costs || []).find(c => c.id === b.getAttribute("data-id"));
