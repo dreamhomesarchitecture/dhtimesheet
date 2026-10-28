@@ -6121,9 +6121,9 @@ async function saveInvoiceImport(panel){
   if(val("ii-due")) baseCost.dueDate = val("ii-due");
   if(it.split){
     const gid = uid("split");
-    split.parts.forEach(pt => state.costs.push({ id: uid("cost"), ...baseCost, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, employeeId: pt.employeeId, splitId: gid }));
+    split.parts.forEach(pt => state.costs.push({ id: uid("cost"), projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, ...baseCost, employeeId: pt.employeeId, splitId: gid }));
   } else {
-    state.costs.push({ id: uid("cost"), ...baseCost, projectId, phaseId: val("ii-phase"), ...price });
+    state.costs.push({ id: uid("cost"), projectId, phaseId: val("ii-phase"), ...price, ...baseCost });
   }
   await saveCosts();
   imp.items = imp.items.filter(x => x !== it);
