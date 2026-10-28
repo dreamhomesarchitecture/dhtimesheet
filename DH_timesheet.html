@@ -5561,12 +5561,18 @@ function numbersIn(text){
 }
 function amountOnLine(lines, labelRx, exclude){
   const rx = new RegExp(labelRx, "i");
-  for(const l of lines){
+  for(let i = 0; i < lines.length; i++){
+    const l = lines[i];
     if(exclude && new RegExp(exclude, "i").test(l)) continue;
     const m = rx.exec(l);
     if(!m) continue;
     const nums = numbersIn(l.slice(m.index + m[0].length)).filter(n => Math.abs(n.val) >= 0);
     if(nums.length) return nums[nums.length - 1].val;
+    // Popisek je v záhlaví tabulky a částka je až na dalším řádku (např. „3 448,50 CZK“).
+    for(let j = i + 1; j <= i + 2 && j < lines.length; j++){
+      const only = /^\s*(-?\d[\d\s ]*(?:[.,]\d{1,2})?)\s*(?:Kč|CZK|EUR|€)?\s*$/i.exec(lines[j]);
+      if(only){ const v = parseCzNumber(only[1]); if(v !== null) return v; }
+    }
   }
   return null;
 }
@@ -5723,7 +5729,8 @@ function parseInvoiceRows(rows, opts){
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
   const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l) && !/^(variabiln|konstantn|symbol|datum|číslo|faktura|odb[ěe]ratel|objedn)/i.test(l));
   out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
-  const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).filter(l => !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
+  // Adresa může být na jednom řádku s IČO/DIČ („Havlíčkova 5, Jihlava, 586 01, CZ, IČO: …“) – vezme se část před IČO.
+  const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).map(l => l.replace(/[,;\s]*(?:I[ČC]O?|DI[ČC])\s*[:.]?\s*[A-Z]{0,2}\s?\d.*$/, "").trim()).filter(l => l && !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
   out.supplier.address = addr.slice(0, 2).join(", ");
   const BANK_CODES = new Set(["0100","0300","0600","0710","0800","2010","2060","2070","2100","2200","2220","2240","2250","2260","2275","2600","2700","3030","3050","3060","3500","4000","4300","5500","5800","6000","6100","6200","6210","6300","6363","6700","6800","7910","7940","7950","7960","7970","7980","7990","8030","8040","8060","8090","8150","8200","8215","8225","8230","8240","8250","8255","8265","8280","8291","8292","8293"]);
   const acctLabel = "(?:číslo\\s+účtu|č\\.\\s*účtu|č\\.\\s?ú\\.|bankovní\\s+spojení|bankovní\\s+účet|účtu|účet|iban)";
@@ -5746,9 +5753,10 @@ function parseInvoiceRows(rows, opts){
   let m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full);
   if(m && /\d/.test(m[1])) num = m[1];
   if(!num){ m = /číslo\s+(?:faktury|dokladu)[^\n]{0,30}?\s([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full); if(m && /\d/.test(m[1])) num = m[1]; }
+  if(!num){ m = /^\s*(?:faktura|da[ňn]ov[ýy] doklad)[^\n\d]{0,30}?(\d{5,})\s*$/im.exec(full); if(m) num = m[1]; }
   if(!num){ m = /variabiln[íi]\s+symbol[:\s]*(\d{1,10})/i.exec(full); if(m){ num = m[1]; check.number = "Číslo faktury není ve faktuře jasně uvedené, vzal jsem variabilní symbol – zkontrolujte."; } }
   out.number = num;
-  out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury") || "";
+  out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury") || "";
   out.dueDate = labeledDate(lines, "datum\\s+splatnosti|splatnost") || "";
   out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+(?:zdaniteln[ée]ho\\s+)?pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
   if(!out.date && out.taxDate){ out.date = out.taxDate; check.date = "Datum vystavení nenalezeno, použil jsem datum plnění – zkontrolujte."; }
@@ -5759,6 +5767,16 @@ function parseInvoiceRows(rows, opts){
   const recapRx = /(\d[\d\s]*[.,]\d{2})\s+(\d{1,2})\s*%\s+(\d[\d\s]*[.,]\d{2})\s+(\d[\d\s]*[.,]\d{2})/;
   const recapStart = lines.findIndex(l => /rekapitulace/i.test(l));
   const recap = (recapStart === -1 ? [] : lines.slice(recapStart + 1)).map(l => recapRx.exec(l)).filter(Boolean).map(m => ({ net: parseCzNumber(m[1]), rate: Number(m[2]), vat: parseCzNumber(m[3]), gross: parseCzNumber(m[4]) })).filter(x => x.net > 0);
+  // Rekapitulace bez nadpisu a bez sloupce „celkem“: řádek „21 % základ DPH“ pod záhlavím se „Základ daně“.
+  if(!recap.length){
+    const hdr = lines.findIndex(l => /z[áa]klad\s+dan[ěe]|z[áa]klad\s+dph/i.test(l));
+    if(hdr !== -1) lines.slice(hdr + 1).forEach(l => {
+      const m3 = /^\s*(\d{1,2})\s*%\s+(\d[\d\s]*[.,]\d{2})\s+(\d[\d\s]*[.,]\d{2})\s*(?:Kč|CZK)?\s*$/i.exec(l);
+      if(!m3) return;
+      const rt = Number(m3[1]), nt = parseCzNumber(m3[2]), vt = parseCzNumber(m3[3]);
+      if(nt > 0 && vt !== null && Math.abs(nt * rt / 100 - vt) <= 1) recap.push({ net: nt, rate: rt, vat: vt, gross: r2(nt + vt) });
+    });
+  }
   const recapUse = recap.length === 1 ? recap[0] : null;
   if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
   let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]");
