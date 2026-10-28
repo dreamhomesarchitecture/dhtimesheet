@@ -990,6 +990,7 @@ let state = {
   costFilterProjectId: "",
   costFilterPhaseId: "",
   costFilterPayment: "",
+  costFilterSupplier: "",
   costFilterText: "",
   recordsFilterFrom: currentMonthRange().from,
   recordsFilterTo: currentMonthRange().to,
@@ -1040,6 +1041,7 @@ let state = {
   projectCostAddError: "",
   projectCostsFilterPhase: "",
   projectCostsFilterPayment: "",
+  projectCostsFilterSupplier: "",
   projectCostsFilterText: "",
   projectCostsSort: "date",
   projectLaborFilterPhase: "",
@@ -1507,6 +1509,20 @@ function fmtDateCz(iso){
 }
 // Řádek nákladu – dvouřádková karta: nahoře dodavatel (tučně) + poznámka, pod tím malým písmem
 // datum, projekt, fáze a platba; vpravo cena bez DPH (s DPH menším písmem) a tlačítka.
+// Filtr podle dodavatele: "" = všichni, "none" = bez dodavatele, jinak id dodavatele ("text:Název" u starších nákladů bez záznamu v seznamu).
+function costSupplierKey(c){
+  if(c.supplierId && suppliersList().some(sp => sp.id === c.supplierId)) return c.supplierId;
+  const name = String(c.supplier || "").trim();
+  return name ? "text:" + name : "none";
+}
+function costMatchesSupplierFilter(c, f){ return !f || costSupplierKey(c) === f; }
+function costSupplierFilterOptionsHtml(costs, selected){
+  const seen = new Map();
+  costs.forEach(c => { const k = costSupplierKey(c); if(k !== "none" && !seen.has(k)) seen.set(k, costSupplierName(c) || k.slice(5)); });
+  const hasNone = costs.some(c => costSupplierKey(c) === "none");
+  return `<option value="">Všichni dodavatelé</option>` + (hasNone ? `<option value="none" ${selected === "none" ? "selected" : ""}>Bez dodavatele</option>` : "")
+    + [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1], "cs")).map(([k, n]) => `<option value="${esc(k)}" ${selected === k ? "selected" : ""}>${esc(n)}</option>`).join("");
+}
 function employeeSelectOptionsHtml(selectedId){
   const list = state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
   return `<option value="">— bez zaměstnance —</option>` + list.map(e => `<option value="${esc(e.id)}" ${e.id === selectedId ? "selected" : ""}>${esc(e.name)}</option>`).join("");
@@ -3256,7 +3272,7 @@ function bindProjectLinks(){
     el.onclick = e => {
       e.stopPropagation();
       const id = el.getAttribute("data-project-id");
-      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
+      setState({ tab: "admin", editingProjectId: id, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterSupplier: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
       if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
       if(state.costs === null && !state.costsLoading) loadAdminCosts();
       window.scrollTo(0, 0);
@@ -4393,10 +4409,11 @@ function adminCostsTemplate(){
     (!state.costFilterProjectId || (String(state.costFilterProjectId).startsWith("emp:") ? (!c.projectId && c.employeeId === String(state.costFilterProjectId).slice(4)) : c.projectId === state.costFilterProjectId)) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
     (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
+    costMatchesSupplierFilter(c, state.costFilterSupplier) &&
     noteMatches(`${costSupplierName(c)} ${costEmployeeName(c)} ${c.note || ""}`, state.costFilterText)
   );
   const totalAmount = filtered.reduce((s,c) => s + Number(c.amount||0), 0);
-  const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment || state.costFilterText;
+  const filtersActive = state.costFilterProjectId || state.costFilterPhaseId || state.costFilterPayment || state.costFilterSupplier || state.costFilterText;
 
   const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const rows = sorted.length ? sorted.map(c => {
@@ -4443,6 +4460,7 @@ function adminCostsTemplate(){
             <option value="ucet" ${state.costFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
           </select>
         </div>
+        <div class="field-row"><label class="field-label">Dodavatel</label><select id="cost-filter-supplier">${costSupplierFilterOptionsHtml(costs, state.costFilterSupplier)}</select></div>
         ${noteSearchFieldHtml("cost-filter-text", state.costFilterText)}
         ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
@@ -5011,10 +5029,12 @@ function projectDetailPageHtml(){
           const costsFilterPhase = state.projectCostsFilterPhase || "";
           const costsFilterPayment = state.projectCostsFilterPayment || "";
           const costsFilterText = state.projectCostsFilterText || "";
-          const costsFiltersActive = !!(costsFilterPhase || costsFilterPayment || costsFilterText);
+          const costsFilterSupplier = state.projectCostsFilterSupplier || "";
+          const costsFiltersActive = !!(costsFilterPhase || costsFilterPayment || costsFilterSupplier || costsFilterText);
           let projectCosts = allProjectCosts.filter(c =>
             (!costsFilterPhase || c.phaseId === costsFilterPhase) &&
             (!costsFilterPayment || c.paymentMethod === costsFilterPayment) &&
+            costMatchesSupplierFilter(c, costsFilterSupplier) &&
             noteMatches(`${costSupplierName(c)} ${costEmployeeName(c)} ${c.note || ""}`, costsFilterText)
           );
           const costsSort = state.projectCostsSort || "date";
@@ -5035,6 +5055,7 @@ function projectDetailPageHtml(){
                 <option value="hotove" ${costsFilterPayment === "hotove" ? "selected" : ""}>Hotově</option>
                 <option value="ucet" ${costsFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
               </select></div>
+              <div class="field-row"><label class="field-label">Dodavatel</label><select id="project-costs-filter-supplier">${costSupplierFilterOptionsHtml(allProjectCosts, costsFilterSupplier)}</select></div>
               ${noteSearchFieldHtml("project-costs-filter-text", costsFilterText)}
               <div class="field-row"><label class="field-label">Seřadit podle</label><select id="project-costs-sort">
                 <option value="date" ${costsSort === "date" ? "selected" : ""}>Data (nejnovější)</option>
@@ -7807,10 +7828,12 @@ function bindAdmin(){
   bindNoteSearch("project-costs-filter-text", "projectCostsFilterText");
   const projectCostsFilterPayment = document.getElementById("project-costs-filter-payment");
   if(projectCostsFilterPayment) projectCostsFilterPayment.addEventListener("change", () => setState({ projectCostsFilterPayment: projectCostsFilterPayment.value }));
+  const projectCostsFilterSupplier = document.getElementById("project-costs-filter-supplier");
+  if(projectCostsFilterSupplier) projectCostsFilterSupplier.addEventListener("change", () => setState({ projectCostsFilterSupplier: projectCostsFilterSupplier.value }));
   const projectCostsSortSelect = document.getElementById("project-costs-sort");
   if(projectCostsSortSelect) projectCostsSortSelect.addEventListener("change", () => setState({ projectCostsSort: projectCostsSortSelect.value }));
   const projectCostsFilterResetBtn = document.getElementById("project-costs-filter-reset-btn");
-  if(projectCostsFilterResetBtn) projectCostsFilterResetBtn.onclick = () => setState({ projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "" });
+  if(projectCostsFilterResetBtn) projectCostsFilterResetBtn.onclick = () => setState({ projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterSupplier: "", projectCostsFilterText: "" });
   const projectLaborFilterPhase = document.getElementById("project-labor-filter-phase");
   if(projectLaborFilterPhase) projectLaborFilterPhase.addEventListener("change", () => setState({ projectLaborFilterPhase: projectLaborFilterPhase.value }));
   const projectLaborFilterEmployee = document.getElementById("project-labor-filter-employee");
@@ -7911,13 +7934,13 @@ function bindAdmin(){
     render();
   });
   document.querySelectorAll('[data-action="open-project-page"]').forEach(el => el.onclick = () => {
-    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
+    setState({ editingProjectId: el.getAttribute("data-id"), editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterSupplier: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
     if(state.adminEntriesFlat === null && !state.adminHoursLoading) loadAdminHours();
     if(state.costs === null && !state.costsLoading) loadAdminCosts();
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="back-to-projects"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
+    setState({ editingProjectId: null, editProjError: "", editingLaborEntryId: null, editingProjectCostId: null, projectCostsFilterPhase: "", projectCostsFilterPayment: "", projectCostsFilterSupplier: "", projectCostsFilterText: "", projectCostsSort: "date", projectLaborFilterPhase: "", projectLaborFilterEmployee: "", projectLaborSort: "date", bulkSel: {}, bulkTarget: {}, bulkError: {} });
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="open-payment-calendar-from-project"]').forEach(b => b.onclick = () => {
@@ -8737,8 +8760,10 @@ function bindAdmin(){
   bindNoteSearch("cost-filter-text", "costFilterText");
   const costFilterPayment = document.getElementById("cost-filter-payment");
   if(costFilterPayment) costFilterPayment.addEventListener("change", () => setState({ costFilterPayment: costFilterPayment.value }));
+  const costFilterSupplier = document.getElementById("cost-filter-supplier");
+  if(costFilterSupplier) costFilterSupplier.addEventListener("change", () => setState({ costFilterSupplier: costFilterSupplier.value }));
   const costFilterResetBtn = document.getElementById("cost-filter-reset-btn");
-  if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "", costFilterText: "" });
+  if(costFilterResetBtn) costFilterResetBtn.onclick = () => setState({ costFilterProjectId: "", costFilterPhaseId: "", costFilterPayment: "", costFilterSupplier: "", costFilterText: "" });
 
   const recordsFilterFromMonthPrevBtn = document.getElementById("records-filter-from-month-prev");
   if(recordsFilterFromMonthPrevBtn) recordsFilterFromMonthPrevBtn.onclick = () => setState({ recordsFilterFrom: shiftDateByMonths(state.recordsFilterFrom || todayStr(), -1) });
