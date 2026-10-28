@@ -524,6 +524,7 @@
   .ii-panel{ border:1px solid var(--sage); background:var(--sage-tint); border-radius:var(--radius-md); padding:16px 18px; margin-bottom:16px; }
   .ii-pick{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
   .ii-head{ margin-bottom:10px; }
+  .ii-queue-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
   .ii-alert{ font-size:13px; margin:0 0 8px; padding:8px 12px; border-radius:var(--radius-sm); background:var(--tan-tint); }
   .ii-alert.bad{ background:rgba(179,56,44,.12); color:var(--danger); font-weight:600; }
   .ii-needs input, .ii-needs select{ border-color:var(--danger) !important; background:rgba(179,56,44,.06); }
@@ -5822,19 +5823,12 @@ function matchSupplierForInvoice(sup){
   const ico = String(sup.ico || "").replace(/\D/g, "");
   return suppliersList().find(s => ico && String(s.ico || "").replace(/\D/g, "") === ico) || supplierByName(sup.name) || null;
 }
-function invoiceImportPanelHtml(origin){
-  const imp = state.invoiceImport;
-  const picker = `
-    <div class="ii-pick">
-      <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-pick">Načíst z faktury (PDF nebo foto)</button>
-      <span class="q-hint" style="margin:0;">Faktura se nikam neukládá, jen se z ní přečtou údaje do nákladu. Čte i naskenované faktury a fotky (pomaleji).</span>
-      <input type="file" id="invoice-import-file" data-origin="${esc(origin)}" accept="application/pdf,.pdf,image/*" style="display:none;">
-    </div>`;
-  if(!imp || imp.origin !== origin) return picker;
-  if(imp.busy) return `<div class="ii-panel"><div class="empty-state" style="margin:0;"><span id="ii-progress">Čtu fakturu…</span><div class="q-hint" style="margin:6px 0 0;">U naskenované faktury nebo fotky to může trvat až půl minuty.</div></div></div>`;
-  if(imp.error) return `<div class="ii-panel"><div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(imp.error)}</div>${picker}</div>`;
-  const p = imp.parsed;
-  const miss = invoiceImportMissing(p, imp.draft);
+// Import faktur je fronta: state.invoiceImport = { origin, items: [{ key, fileName, file, busy, parsed, error, draft, formError }] }.
+function invoiceImportItemHtml(origin, it){
+  if(it.error) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="ii-head"><b>${esc(it.fileName || "Faktura")}</b></div><div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(it.error)}</div><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel" data-key="${esc(it.key)}">Zavřít</button></div>`;
+  if(!it.parsed) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="empty-state" style="margin:0;">${it.busy ? `<span id="ii-progress">Čtu fakturu ${esc(it.fileName || "")}…</span><div class="q-hint" style="margin:6px 0 0;">U naskenované faktury nebo fotky to může trvat až půl minuty.</div>` : `Čeká ve frontě: ${esc(it.fileName || "")}`}</div></div>`;
+  const p = it.parsed;
+  const miss = invoiceImportMissing(p, it.draft);
   const chk = p.check || {};
   const cls = (k, ...ks) => (ks.some(x => miss[x]) ? "ii-needs" : (ks.some(x => Object.prototype.hasOwnProperty.call(chk, x)) ? "ii-check" : ""));
   const existing = matchSupplierForInvoice(p.supplier);
@@ -5844,8 +5838,8 @@ function invoiceImportPanelHtml(origin){
   const notes = [...Object.values(chk).filter(Boolean), ...(p.warnings || [])];
   const missNames = [miss.supplierName ? "název dodavatele" : "", miss.date ? "datum vystavení" : "", miss.net ? "cenu bez DPH" : ""].filter(Boolean);
   return `
-    <div class="ii-panel" id="invoice-import-panel" data-origin="${esc(origin)}">
-      <div class="ii-head"><b>Náklad z faktury</b> <span class="meta">${esc(imp.fileName || "")}</span></div>
+    <div class="ii-panel" data-key="${esc(it.key)}" data-origin="${esc(origin)}">
+      <div class="ii-head"><b>Náklad z faktury</b> <span class="meta">${esc(it.fileName || "")}</span></div>
       ${missNames.length ? `<div class="ii-alert bad">Nepodařilo se přečíst: ${esc(missNames.join(", "))}. Doplňte prosím označená pole.</div>` : ``}
       ${notes.map(n => `<div class="ii-alert">${esc(n)}</div>`).join("")}
       <div class="form-grid">
@@ -5865,45 +5859,76 @@ function invoiceImportPanelHtml(origin){
         ${costPriceFieldsHtml({ noSupplier: true, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
       <div class="form-grid" style="margin-top:6px;">
-        <div class="field-row"><label class="field-label">Projekt</label><select data-k="ii-project" id="ii-project">${projectOptions}</select></div>
-        <div class="field-row"><label class="field-label">Fáze</label><select data-k="ii-phase" id="ii-phase">${phaseOptions}</select></div>
+        <div class="field-row"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
+        <div class="field-row"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
         <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
         <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc(p.number ? "Faktura č. " + p.number : "")}"></div>
       </div>
-      ${imp.formError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(imp.formError)}</div>` : ``}
+      ${it.formError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(it.formError)}</div>` : ``}
       <div style="display:flex;gap:8px;margin-top:14px;">
-        <button type="button" class="btn btn-tan btn-small" data-action="invoice-import-save">Uložit náklad</button>
-        <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel">Zrušit</button>
+        <button type="button" class="btn btn-tan btn-small" data-action="invoice-import-save" data-key="${esc(it.key)}">Uložit náklad</button>
+        <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel" data-key="${esc(it.key)}">${(state.invoiceImport && state.invoiceImport.items.length > 1) ? "Přeskočit" : "Zrušit"}</button>
       </div>
     </div>`;
 }
+function invoiceImportPanelHtml(origin){
+  const imp = state.invoiceImport;
+  const picker = `
+    <div class="ii-pick">
+      <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-pick">Načíst z faktury (PDF nebo foto)</button>
+      <span class="q-hint" style="margin:0;">Můžete vybrat i víc souborů najednou – načtou se jeden po druhém a pod sebou je jen doplníte a potvrdíte. Faktura se nikam neukládá, jen se z ní přečtou údaje do nákladu. Čte i naskenované faktury a fotky (pomaleji).</span>
+      <input type="file" id="invoice-import-file" data-origin="${esc(origin)}" accept="application/pdf,.pdf,image/*" multiple style="display:none;">
+    </div>`;
+  if(!imp || imp.origin !== origin || !imp.items || !imp.items.length) return picker;
+  const ready = imp.items.filter(i => i.parsed).length;
+  const head = imp.items.length > 1 ? `
+    <div class="ii-queue-head"><b>Faktury ke kontrole: ${imp.items.length}</b>
+      <span style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${ready > 1 ? `<button type="button" class="btn btn-tan btn-small" data-action="invoice-import-save-all">Uložit všechny přečtené</button>` : ``}
+        <button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel-all">Zrušit vše</button>
+      </span>
+    </div>` : ``;
+  return head + imp.items.map(it => invoiceImportItemHtml(origin, it)).join("");
+}
+function invoiceImportItemOf(el){
+  const panel = el && el.closest ? el.closest(".ii-panel[data-key]") : null;
+  const imp = state.invoiceImport;
+  if(!panel || !imp || !imp.items) return null;
+  return imp.items.find(x => x.key === panel.getAttribute("data-key")) || null;
+}
 function restoreInvoiceImportDraft(){
-  const panel = document.getElementById("invoice-import-panel");
-  if(!panel || !state.invoiceImport || !state.invoiceImport.draft) return;
-  const d = state.invoiceImport.draft;
-  panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
-    const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
-    if(k && d[k] !== undefined) el.value = d[k];
+  document.querySelectorAll(".ii-panel[data-key]").forEach(panel => {
+    const it = invoiceImportItemOf(panel);
+    if(!it || !it.draft) return;
+    const d = it.draft;
+    panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
+      const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
+      if(k && d[k] !== undefined) el.value = d[k];
+    });
+    const wantedPhase = d["ii-phase"];
+    const projSel = panel.querySelector('[data-k="ii-project"]');
+    if(projSel) projSel.dispatchEvent(new Event("change"));
+    const phaseSel = panel.querySelector('[data-k="ii-phase"]');
+    if(phaseSel && wantedPhase !== undefined){ phaseSel.value = wantedPhase; d["ii-phase"] = phaseSel.value; }
   });
-  const wantedPhase = d["ii-phase"];
-  const projSel = document.getElementById("ii-project");
-  if(projSel) projSel.dispatchEvent(new Event("change"));
-  const phaseSel = document.getElementById("ii-phase");
-  if(phaseSel && wantedPhase !== undefined){ phaseSel.value = wantedPhase; d["ii-phase"] = phaseSel.value; }
 }
 document.addEventListener("input", e => captureInvoiceImportDraft(e));
 document.addEventListener("change", e => captureInvoiceImportDraft(e));
 function captureInvoiceImportDraft(e){
-  const panel = e.target && e.target.closest && e.target.closest("#invoice-import-panel");
-  if(!panel || !state.invoiceImport) return;
-  const d = state.invoiceImport.draft = state.invoiceImport.draft || {};
+  const it = invoiceImportItemOf(e.target);
+  if(!it) return;
+  const panel = e.target.closest(".ii-panel[data-key]");
+  const d = it.draft = it.draft || {};
   panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
     const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
     if(k) d[k] = el.value;
   });
 }
+// Vrací true, když se náklad uložil (jinak zůstává karta s vysvětlením).
 async function saveInvoiceImport(panel){
   const imp = state.invoiceImport;
+  const it = invoiceImportItemOf(panel);
+  if(!imp || !it || !it.parsed) return false;
   const val = k => { const el = panel.querySelector(`[data-k="${k}"]`); return el ? el.value.trim() : ""; };
   const price = readPriceGroup(panel);
   const date = val("ii-date");
@@ -5915,25 +5940,24 @@ async function saveInvoiceImport(panel){
   if(!price) problems.push("cenu bez DPH");
   if(!projectId) problems.push("projekt");
   if(problems.length){
-    imp.draft = imp.draft || {};
-    imp.formError = `Doplňte prosím: ${problems.join(", ")}.`;
     captureInvoiceImportDraft({ target: panel.querySelector("input") });
+    it.formError = `Doplňte prosím: ${problems.join(", ")}.`;
     render();
-    return;
+    return false;
   }
   const number = val("ii-number");
   let supplier = matchSupplierForInvoice(sup);
   if(number && (state.costs || []).some(c => c.invoiceNumber === number && (supplier ? c.supplierId === supplier.id : costSupplierName(c).toLowerCase() === sup.name.toLowerCase()))){
-    if(!confirm(`Faktura č. ${number} od tohoto dodavatele už je mezi náklady zadaná. Přesto ji uložit znovu?`)) return;
+    if(!confirm(`Faktura č. ${number} od tohoto dodavatele už je mezi náklady zadaná. Přesto ji uložit znovu?`)) return false;
   }
   if(supplier){
     if(!supplier.ico && sup.ico) supplier.ico = sup.ico;
     if(!supplier.dic && sup.dic) supplier.dic = sup.dic;
     if(!supplier.address && sup.address) supplier.address = sup.address;
     if(!supplier.bankAccount && sup.account) supplier.bankAccount = sup.account;
-    if(!supplier.email && imp.parsed.supplier.email) supplier.email = imp.parsed.supplier.email;
+    if(!supplier.email && it.parsed.supplier.email) supplier.email = it.parsed.supplier.email;
   } else {
-    supplier = { id: uid("sup"), name: sup.name, ico: sup.ico, dic: sup.dic, address: sup.address, bankAccount: sup.account, email: imp.parsed.supplier.email || "", phone: "" };
+    supplier = { id: uid("sup"), name: sup.name, ico: sup.ico, dic: sup.dic, address: sup.address, bankAccount: sup.account, email: it.parsed.supplier.email || "", phone: "" };
     if(!state.config.suppliers) state.config.suppliers = [];
     state.config.suppliers.push(supplier);
   }
@@ -5944,9 +5968,11 @@ async function saveInvoiceImport(panel){
   if(val("ii-due")) cost.dueDate = val("ii-due");
   state.costs.push(cost);
   await saveCosts();
-  state.invoiceImport = null;
+  imp.items = imp.items.filter(x => x !== it);
+  if(!imp.items.length) state.invoiceImport = null;
   showStamp();
   render();
+  return true;
 }
 
 /* ---------------- uzavírání měsíců ---------------- */
@@ -7503,36 +7529,63 @@ function bindAdmin(){
   document.querySelectorAll('[data-action="invoice-import-pick"]').forEach(b => b.onclick = () => { const f = document.getElementById("invoice-import-file"); if(f) f.click(); });
   const iiFile = document.getElementById("invoice-import-file");
   if(iiFile) iiFile.addEventListener("change", async () => {
-    const file = iiFile.files[0];
-    if(!file) return;
+    const files = [...iiFile.files];
+    if(!files.length) return;
     const origin = iiFile.getAttribute("data-origin");
-    setState({ invoiceImport: { origin, busy: true } });
-    try{
-      const extracted = await extractInvoiceRows(file);
-      const parsed = parseInvoiceRows(extracted.rows, { ocr: extracted.ocr });
-      setState({ invoiceImport: { origin, parsed, fileName: file.name } });
-    } catch(err){
-      console.error("invoice read failed", err);
-      setState({ invoiceImport: { origin, error: `Fakturu se nepodařilo přečíst (${err && err.message ? err.message : err}). Zkuste jiný soubor, nebo údaje zadejte ručně.` } });
+    const prev = state.invoiceImport && state.invoiceImport.origin === origin ? state.invoiceImport.items : [];
+    const items = files.map(f => ({ key: uid("ii"), fileName: f.name, file: f }));
+    const imp = { origin, items: [...prev, ...items] };
+    state.invoiceImport = imp;
+    render();
+    // Faktury se čtou postupně (rozpoznávání textu je náročné), hotové se hned objevují pod sebou.
+    for(const it of items){
+      if(state.invoiceImport !== imp || !imp.items.includes(it)) continue;
+      it.busy = true; render();
+      try{
+        const extracted = await extractInvoiceRows(it.file);
+        it.parsed = parseInvoiceRows(extracted.rows, { ocr: extracted.ocr });
+      } catch(err){
+        console.error("invoice read failed", err);
+        it.error = `Fakturu se nepodařilo přečíst (${err && err.message ? err.message : err}). Zkuste jiný soubor, nebo údaje zadejte ručně.`;
+      }
+      it.busy = false; delete it.file;
+      if(state.invoiceImport === imp) render();
     }
   });
-  document.querySelectorAll('[data-action="invoice-import-cancel"]').forEach(b => b.onclick = () => setState({ invoiceImport: null }));
+  document.querySelectorAll('[data-action="invoice-import-cancel"]').forEach(b => b.onclick = () => {
+    const imp = state.invoiceImport;
+    if(!imp) return;
+    imp.items = imp.items.filter(x => x.key !== b.getAttribute("data-key"));
+    if(!imp.items.length) state.invoiceImport = null;
+    render();
+  });
+  document.querySelectorAll('[data-action="invoice-import-cancel-all"]').forEach(b => b.onclick = () => setState({ invoiceImport: null }));
   document.querySelectorAll('[data-action="invoice-import-save"]').forEach(b => b.onclick = async () => {
-    const panel = document.getElementById("invoice-import-panel");
+    const panel = b.closest(".ii-panel");
     if(!panel || b.disabled) return;
     b.disabled = true;
     try{ await saveInvoiceImport(panel); } finally { b.disabled = false; }
   });
-  const iiProject = document.getElementById("ii-project");
-  if(iiProject) iiProject.addEventListener("change", () => {
-    const pr = state.config.projects.find(x => x.id === iiProject.value);
-    const phSel = document.getElementById("ii-phase");
+  document.querySelectorAll('[data-action="invoice-import-save-all"]').forEach(b => b.onclick = async () => {
+    if(b.disabled || !state.invoiceImport) return;
+    b.disabled = true;
+    try{
+      for(const it of state.invoiceImport.items.filter(x => x.parsed)){
+        if(!state.invoiceImport) break;
+        const panel = document.querySelector(`.ii-panel[data-key="${it.key}"]`);
+        if(panel) await saveInvoiceImport(panel);
+      }
+    } finally { b.disabled = false; }
+  });
+  document.querySelectorAll('.ii-panel [data-k="ii-project"]').forEach(sel => sel.addEventListener("change", () => {
+    const pr = state.config.projects.find(x => x.id === sel.value);
+    const phSel = sel.closest(".ii-panel").querySelector('[data-k="ii-phase"]');
     if(!phSel) return;
     const prev = phSel.value;
     phSel.innerHTML = `<option value="">—</option>` + (pr ? phasesForProject(pr).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
     phSel.value = prev;
     if(phSel.value !== prev) phSel.value = "";
-  });
+  }));
   restoreInvoiceImportDraft();
   const projectCostAddBtn = document.getElementById("project-cost-add-btn");
   if(projectCostAddBtn) projectCostAddBtn.onclick = async () => {
