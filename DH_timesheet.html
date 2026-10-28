@@ -5831,7 +5831,8 @@ function invoiceImportItemHtml(origin, it){
   const miss = invoiceImportMissing(p, it.draft);
   const chk = p.check || {};
   const cls = (k, ...ks) => (ks.some(x => miss[x]) ? "ii-needs" : (ks.some(x => Object.prototype.hasOwnProperty.call(chk, x)) ? "ii-check" : ""));
-  const existing = matchSupplierForInvoice(p.supplier);
+  const dr = it.draft || {};
+  const existing = matchSupplierForInvoice({ name: dr["ii-sup-name"] !== undefined ? dr["ii-sup-name"] : p.supplier.name, ico: dr["ii-sup-ico"] !== undefined ? dr["ii-sup-ico"] : p.supplier.ico });
   const projectOptions = `<option value="">— vyberte projekt —</option>` + sortedProjects().map(pr => `<option value="${esc(pr.id)}" ${origin === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
   const proj = origin !== "global" ? state.config.projects.find(x => x.id === origin) : null;
   const phaseOptions = `<option value="">—</option>` + (proj ? phasesForProject(proj).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
@@ -5842,6 +5843,7 @@ function invoiceImportItemHtml(origin, it){
       <div class="ii-head"><b>Náklad z faktury</b> <span class="meta">${esc(it.fileName || "")}</span></div>
       ${missNames.length ? `<div class="ii-alert bad">Nepodařilo se přečíst: ${esc(missNames.join(", "))}. Doplňte prosím označená pole.</div>` : ``}
       ${notes.map(n => `<div class="ii-alert">${esc(n)}</div>`).join("")}
+      ${suppliersList().length ? `<div class="form-grid" style="margin-bottom:6px;"><div class="field-row grow"><label class="field-label">Vybrat ze založených dodavatelů</label><select data-k="ii-sup-pick"><option value="">— vyberte, pokud se dodavatel nepřečetl správně —</option>${suppliersList().slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs")).map(s => `<option value="${esc(s.id)}">${esc(s.name)}${s.ico ? ` (IČ ${esc(s.ico)})` : ""}</option>`).join("")}</select></div></div>` : ``}
       <div class="form-grid">
         <div class="field-row ${cls("n", "supplierName", "supplier")}"><label class="field-label">Dodavatel – název</label><input type="text" data-k="ii-sup-name" value="${esc(p.supplier.name)}"></div>
         <div class="field-row ${cls("i", "ico")}"><label class="field-label">IČ</label><input type="text" data-k="ii-sup-ico" value="${esc(p.supplier.ico)}"></div>
@@ -7577,6 +7579,17 @@ function bindAdmin(){
       }
     } finally { b.disabled = false; }
   });
+  // Výběr dodavatele ze seznamu přepíše údaje o dodavateli na kartě (zbytek faktury zůstává).
+  document.querySelectorAll('.ii-panel [data-k="ii-sup-pick"]').forEach(sel => sel.addEventListener("change", () => {
+    const s = suppliersList().find(x => x.id === sel.value);
+    const it = invoiceImportItemOf(sel);
+    if(!s || !it) return;
+    const panel = sel.closest(".ii-panel");
+    const set = (k, v) => { const el = panel.querySelector(`[data-k="${k}"]`); if(el) el.value = v || ""; };
+    set("ii-sup-name", s.name); set("ii-sup-ico", s.ico); set("ii-sup-dic", s.dic); set("ii-sup-address", s.address); set("ii-sup-account", s.bankAccount);
+    captureInvoiceImportDraft({ target: sel });
+    render();
+  }));
   document.querySelectorAll('.ii-panel [data-k="ii-project"]').forEach(sel => sel.addEventListener("change", () => {
     const pr = state.config.projects.find(x => x.id === sel.value);
     const phSel = sel.closest(".ii-panel").querySelector('[data-k="ii-phase"]');
