@@ -6169,12 +6169,11 @@ const ADMIN_TAB_LABELS = { projects: "Projekty", billing: "Finance", hours: "Hod
 function adminTabId(){ return state.adminSubTab === "settings" ? "settings" : state.reportsGroup; }
 function adminTabTitle(){ return ADMIN_TAB_LABELS[adminTabId()] || "Nastavení"; }
 function adminTabsNavHtml(){
-  const bw = budgetWatchRows();
   const rv = reviewIssues();
-  const billing = billingPaymentCount(pendingBillingPayments());
+  // Počty u plateb k fakturaci a u hlídání rozpočtů jsou jen v hlavičkách jejich karet, ne v liště záložek.
   const badges = {
     projects: "",
-    billing: (billing ? ` <span class="bw-count" title="Plateb čeká na fakturaci">${billing}</span>` : "") + (bw && bw.length ? ` <span class="bw-count ${bw.some(r => r.pct >= 100) ? "over" : ""}" title="Fází nad 80 % rozpočtu">${bw.length}</span>` : ""),
+    billing: "",
     hours: rv && rv.length ? ` <span class="bw-count ${rv.some(r => r.reasons.some(x => x.level === "bad")) ? "over" : ""}" title="Záznamů ke kontrole">${rv.length}</span>` : "",
     settings: ""
   };
