@@ -5591,6 +5591,8 @@ function parseCzNumber(str){
   const n = Number(t);
   return isFinite(n) ? n : null;
 }
+const CZ_MONTHS = { ledna: 1, leden: 1, února: 2, únor: 2, března: 3, březen: 3, dubna: 4, duben: 4, května: 5, květen: 5, června: 6, červen: 6, července: 7, červenec: 7, srpna: 8, srpen: 8, září: 9, října: 10, říjen: 10, listopadu: 11, listopad: 11, prosince: 12, prosinec: 12 };
+const CZ_MONTH_RX = "(?:ledna|leden|února|únor|března|březen|dubna|duben|května|květen|června|červenec|července|červen|srpna|srpen|září|října|říjen|listopadu|listopad|prosince|prosinec)";
 const EN_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 function parseCzDate(str){
   const s = String(str || "");
@@ -5598,6 +5600,9 @@ function parseCzDate(str){
   if(m) return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
   m = /(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if(m) return m[0];
+  // česky slovy: „26. února 2026“
+  m = /(\d{1,2})\s*\.\s*([A-Za-zÁ-ž]+)\s+(\d{4})/.exec(s);
+  if(m && CZ_MONTHS[m[2].toLowerCase()]) return `${m[3]}-${String(CZ_MONTHS[m[2].toLowerCase()]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
   // anglicky: „January 23, 2026“ nebo „23 January 2026“
   m = /([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(s);
   if(m && EN_MONTHS[m[1].toLowerCase()]) return `${m[3]}-${String(EN_MONTHS[m[1].toLowerCase()]).padStart(2, "0")}-${String(m[2]).padStart(2, "0")}`;
@@ -5606,7 +5611,7 @@ function parseCzDate(str){
   return null;
 }
 const EN_MONTH_RX = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*";
-const INVOICE_DATE_RX = `(\\d{1,2}\\s*\\.\\s*\\d{1,2}\\s*\\.\\s*\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{2}-\\d{2}|${EN_MONTH_RX}\\.?\\s+\\d{1,2},?\\s+\\d{4}|\\d{1,2}\\s+${EN_MONTH_RX}\\.?,?\\s+\\d{4})`;
+const INVOICE_DATE_RX = `(\\d{1,2}\\s*\\.\\s*\\d{1,2}\\s*\\.\\s*\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\s*\\.\\s*${CZ_MONTH_RX}\\s+\\d{4}|${EN_MONTH_RX}\\.?\\s+\\d{1,2},?\\s+\\d{4}|\\d{1,2}\\s+${EN_MONTH_RX}\\.?,?\\s+\\d{4})`;
 function labeledDate(lines, labelRx){
   const rx = new RegExp(`(?:${labelRx})[^0-9]{0,40}${INVOICE_DATE_RX}`, "i");
   for(const l of lines){ const m = rx.exec(l); if(m) return parseCzDate(m[1]); }
@@ -5778,6 +5783,7 @@ function parseInvoiceRows(rows, opts){
   const iDod = rows.findIndex(r => r.items.some(i => labelRx.test(i.str)));
   let supplierLines = [];
   let enSupplier = false;
+  const enLegal = [];
   if(iDod !== -1){
     const dodItem = rows[iDod].items.find(i => labelRx.test(i.str));
     let xMax = Infinity, endRow = Math.min(rows.length, iDod + 25);
@@ -5799,16 +5805,26 @@ function parseInvoiceRows(rows, opts){
       if(r > iDod && stopRx.test(t)) break;
       if(t) supplierLines.push(t);
     }
-  } else if(rows.some(r => r.items.some(i => /bill(ed)?\s*to\s*$/i.test(i.str)))){
+  } else if(rows.some(r => r.items.some(i => /(bill(ed)?\s*to|fakturovat)\s*$/i.test(i.str)))){
     // Anglická faktura: dodavatel je v levém sloupci nad/vedle štítku „Bill to“, odběratel vpravo.
-    const iBill = rows.findIndex(r => r.items.some(i => /bill(ed)?\s*to\s*$/i.test(i.str)));
-    const billItem = rows[iBill].items.find(i => /bill(ed)?\s*to\s*$/i.test(i.str));
-    const stopEn = /^([€$£]\s?\d|description|pay online|amount|total)/i;
+    const iBill = rows.findIndex(r => r.items.some(i => /(bill(ed)?\s*to|fakturovat)\s*$/i.test(i.str)));
+    const billItem = rows[iBill].items.find(i => /(bill(ed)?\s*to|fakturovat)\s*$/i.test(i.str));
+    const stopEn = /^([€$£]\s?\d|description|popis|pay online|amount|částka|total|celkem)/i;
     for(let r = iBill; r < Math.min(rows.length, iBill + 14); r++){
-      const left = rows[r].items.filter(i => i.x < billItem.x - 3 || (r === iBill && i !== billItem && i.x <= billItem.x)).map(i => i.str).join(" ").replace(/bill(ed)?\s*to\s*$/i, "").trim();
+      const left = rows[r].items.filter(i => i.x < billItem.x - 3 || (r === iBill && i !== billItem && i.x <= billItem.x)).map(i => i.str).join(" ").replace(/(bill(ed)?\s*to|fakturovat)\s*$/i, "").trim();
       if(!left || (r > iBill && stopEn.test(left))) break;
       supplierLines.push(left);
     }
+    // Stripe: pod hlavičkou bývá „Legal Information“ s právním názvem, adresou a DIČ dodavatele.
+    const iLegal = rows.findIndex((r, ri) => ri > iBill && r.items.some(i => i.x < billItem.x - 3 && /^(legal\s+information|právní\s+(údaje|informace))/i.test(i.str)));
+    if(iLegal !== -1){
+      for(let r = iLegal + 1; r < Math.min(rows.length, iLegal + 8); r++){
+        const left = rows[r].items.filter(i => i.x < billItem.x - 3).map(i => i.str).join(" ").trim();
+        if(!left) break;
+        enLegal.push(left);
+      }
+    }
+    supplierLines.push(...enLegal);
     enSupplier = true;
   } else {
     check.supplier = "Štítek „Dodavatel“ ve faktuře nenalezen – zkontrolujte údaje o dodavateli.";
@@ -5826,7 +5842,8 @@ function parseInvoiceRows(rows, opts){
   out.supplier.ico = ico;
   const dicM = /\bDI[ČC]\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(block);
   const enVatM = /\b[A-Z]{2}\s+VAT\s+([A-Z0-9]{8,14})\b/.exec(block) || /\bVAT\s*(?:ID|No\.?|number)?\s*[:.]?\s*([A-Z]{2}[A-Z0-9]{8,12})\b/i.exec(block);
-  out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : (enVatM ? enVatM[1].toUpperCase() : "");
+  const enVatLine = /^([A-Z]{2})\s+([A-Z0-9]{8,12})$/m.exec(enLegal.join("\n"));
+  out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : (enVatM ? enVatM[1].toUpperCase() : (enVatLine ? enVatLine[1] + enVatLine[2] : ""));
   const mailM = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(block);
   out.supplier.email = mailM ? mailM[0] : "";
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
@@ -5835,7 +5852,7 @@ function parseInvoiceRows(rows, opts){
   // Adresa může být na jednom řádku s IČO/DIČ („Havlíčkova 5, Jihlava, 586 01, CZ, IČO: …“) – vezme se část před IČO.
   const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).map(l => l.replace(/[,;\s]*(?:I[ČC]O?|DI[ČC])\s*[:.]?\s*[A-Z]{0,2}\s?\d.*$/, "").trim()).filter(l => l && !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
   out.supplier.address = enSupplier
-    ? supplierLines.slice(supplierLines.indexOf(nameLine) + 1).filter(l => !/@|\bVAT\b/i.test(l)).join(", ")
+    ? (enLegal.length ? enLegal : supplierLines.slice(supplierLines.indexOf(nameLine) + 1)).filter(l => !/@|\bVAT\b/i.test(l) && !/^[A-Z]{2}\s+[A-Z0-9]{8,12}$/.test(l)).join(", ")
     : addr.slice(0, 2).join(", ");
   const BANK_CODES = new Set(["0100","0300","0600","0710","0800","2010","2060","2070","2100","2200","2220","2240","2250","2260","2275","2600","2700","3030","3050","3060","3500","4000","4300","5500","5800","6000","6100","6200","6210","6300","6363","6700","6800","7910","7940","7950","7960","7970","7980","7990","8030","8040","8060","8090","8150","8200","8215","8225","8230","8240","8250","8255","8265","8280","8291","8292","8293"]);
   const acctLabel = "(?:číslo\\s+účtu|č\\.\\s*účtu|č\\.\\s?ú\\.|bankovní\\s+spojení|bankovní\\s+účet|účtu|účet|iban)";
@@ -5855,9 +5872,9 @@ function parseInvoiceRows(rows, opts){
 
   // ---- číslo faktury, data ----
   let num = "";
-  const fullN = full.replace(/\u0000/g, "-");
-  let m = /(?:invoice|receipt)\s*(?:number|no\.?|#)\s*[:.]?\s*([A-Za-z0-9]+(?:\s*-\s*[A-Za-z0-9]+)*)/i.exec(fullN);
-  if(m && /\d/.test(m[1])) num = m[1].replace(/\s+/g, "");
+  const fullN = full.replace(/[ \t]*\u0000[ \t]*/g, "-");
+  let m = /(?:(?:invoice|receipt)\s*(?:number|no\.?|#)|číslo\s+(?:faktury|dokladu))\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\/\-]{2,})/i.exec(fullN);
+  if(m && /\d/.test(m[1])) num = m[1].replace(/-+$/, "");
   if(!num) m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full);
   if(!num && m && /\d/.test(m[1])) num = m[1];
   if(!num){ m = /číslo\s+(?:faktury|dokladu)[^\n]{0,30}?\s([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full); if(m && /\d/.test(m[1])) num = m[1]; }
@@ -5887,9 +5904,9 @@ function parseInvoiceRows(rows, opts){
   }
   const recapUse = recap.length === 1 ? recap[0] : null;
   if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
-  let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]|amount\\s+due|total\\s+due|balance\\s+due|grand\\s+total|\\btotal\\b(?!\\s+excl)");
+  let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]|splatn[áa]\\s+č[áa]stka|amount\\s+due|total\\s+due|balance\\s+due|grand\\s+total|\\btotal\\b(?!\\s+excl)");
   if(gross === null) gross = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad");
-  let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|cena\\s+bez\\s+dph|z[áa]klad|subtotal|total\\s+excl[a-z.]*\\s+(?:tax|vat)|net\\s+amount");
+  let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|cena\\s+bez\\s+dph|z[áa]klad|subtotal|mezisou[čc]et|total\\s+excl[a-z.]*\\s+(?:tax|vat)|net\\s+amount");
   let rate = null, vat = null;
   const vatLine = lines.find(l => /dph\s*\d{1,2}\s*%/i.test(l));
   if(vatLine){
@@ -5900,7 +5917,7 @@ function parseInvoiceRows(rows, opts){
   }
   if(rate === null){ const rm = /(\d{1,2})\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
   if(recapUse){ net = recapUse.net; rate = recapUse.rate; vat = recapUse.vat; if(gross === null) gross = recapUse.gross; }
-  const reverseCharge = /reverse\s+charge|p[řr]enesen[áa]\s+da[ňn]ov[áa]\s+povinnost/i.test(full);
+  const reverseCharge = /reverse\s+charge|p[řr]enesen[áaé]\s+da[ňn]ov[áaé]\s+povinnost/i.test(full);
   if(nonPayer || reverseCharge){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
   if(net === null && gross !== null && rate !== null) net = r2(gross / (1 + rate / 100));
   if(net === null && gross !== null && vat !== null) net = r2(gross - vat);
@@ -6070,6 +6087,15 @@ function buildSplitCosts(split, price){
 }
 
 // Import faktur je fronta: state.invoiceImport = { origin, items: [{ key, fileName, file, busy, parsed, error, draft, formError }] }.
+// Projekt posledního nákladu daného dodavatele (nejnovější datum, při shodě později zadaný).
+function lastProjectForSupplier(supplier){
+  let best = null, bestIdx = -1;
+  (state.costs || []).forEach((c, i) => {
+    if(!c.projectId || costSupplierKey(c) !== supplier.id || !state.config.projects.some(pr => pr.id === c.projectId)) return;
+    if(!best || (c.date || "") >= (best.date || "")){ best = c; bestIdx = i; }
+  });
+  return best ? best.projectId : "";
+}
 function invoiceImportItemHtml(origin, it){
   if(it.error) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="ii-head"><b>${esc(it.fileName || "Faktura")}</b></div><div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(it.error)}</div><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel" data-key="${esc(it.key)}">Zavřít</button></div>`;
   if(!it.parsed) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="empty-state" style="margin:0;">${it.busy ? `<span id="ii-progress">Čtu fakturu ${esc(it.fileName || "")}…</span><div class="q-hint" style="margin:6px 0 0;">U naskenované faktury nebo fotky to může trvat až půl minuty.</div>` : `Čeká ve frontě: ${esc(it.fileName || "")}`}</div></div>`;
@@ -6079,8 +6105,10 @@ function invoiceImportItemHtml(origin, it){
   const cls = (k, ...ks) => (ks.some(x => miss[x]) ? "ii-needs" : (ks.some(x => Object.prototype.hasOwnProperty.call(chk, x)) ? "ii-check" : ""));
   const dr = it.draft || {};
   const existing = matchSupplierForInvoice({ name: dr["ii-sup-name"] !== undefined ? dr["ii-sup-name"] : p.supplier.name, ico: dr["ii-sup-ico"] !== undefined ? dr["ii-sup-ico"] : p.supplier.ico });
-  const projectOptions = `<option value="">— vyberte projekt —</option>` + sortedProjects().map(pr => `<option value="${esc(pr.id)}" ${origin === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
-  const proj = origin !== "global" ? state.config.projects.find(x => x.id === origin) : null;
+  // Výchozí projekt: u karty v projektu ten projekt, jinak projekt posledního nákladu stejného dodavatele.
+  const selProj = origin !== "global" ? origin : (existing ? lastProjectForSupplier(existing) : "");
+  const projectOptions = `<option value="">— vyberte projekt —</option>` + sortedProjects().map(pr => `<option value="${esc(pr.id)}" ${selProj === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
+  const proj = selProj ? state.config.projects.find(x => x.id === selProj) : null;
   const phaseOptions = `<option value="">—</option>` + (proj ? phasesForProject(proj).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
   const notes = [...Object.values(chk).filter(Boolean), ...(p.warnings || [])];
   const missNames = [miss.supplierName ? "název dodavatele" : "", miss.date ? "datum vystavení" : "", miss.net ? "cenu bez DPH" : ""].filter(Boolean);
@@ -6157,7 +6185,7 @@ function restoreInvoiceImportDraft(){
     const d = it.draft;
     panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
       const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
-      if(k && d[k] !== undefined) el.value = d[k];
+      if(k && d[k] !== undefined && !(k === "ii-project" && d[k] === "")) el.value = d[k];
     });
     const wantedPhase = d["ii-phase"];
     const projSel = panel.querySelector('[data-k="ii-project"]');
