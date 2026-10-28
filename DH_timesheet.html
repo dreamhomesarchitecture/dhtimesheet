@@ -3847,7 +3847,11 @@ function bulkToolbarHtml(listId, kind, items, ctxProjectId){
   const phaseOptions = `<option value="">— ponechat fázi —</option>`
     + (kind === "cost" ? `<option value="-" ${target.phaseId === "-" ? "selected" : ""}>— bez fáze —</option>` : ``)
     + phaseList.map(ph => `<option value="${esc(ph.id)}" ${target.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("");
-  const canApply = !!(target.projectId || target.phaseId);
+  const supplierOptions = kind === "cost"
+    ? `<select class="bulk-target-supplier" data-list="${listId}"><option value="">— ponechat dodavatele —</option><option value="-" ${target.supplierId === "-" ? "selected" : ""}>— bez dodavatele —</option>`
+      + suppliersList().filter(sp => sp.name).slice().sort((a, b) => a.name.localeCompare(b.name, "cs")).map(sp => `<option value="${esc(sp.id)}" ${target.supplierId === sp.id ? "selected" : ""}>${esc(sp.name)}</option>`).join("") + `</select>`
+    : "";
+  const canApply = !!(target.projectId || target.phaseId || target.supplierId);
   const err = (state.bulkError || {})[listId];
   return `
     <div class="bulk-toolbar">
@@ -3856,6 +3860,7 @@ function bulkToolbarHtml(listId, kind, items, ctxProjectId){
         <span class="bulk-sum">Vybráno: ${picked.length} · ${summary}</span>
         <select class="bulk-target-project" data-list="${listId}">${projOptions}</select>
         <select class="bulk-target-phase" data-list="${listId}">${phaseOptions}</select>
+        ${supplierOptions}
         <button type="button" class="btn btn-tan btn-small" data-bulk-apply data-list="${listId}" data-kind="${kind}" ${canApply ? "" : "disabled"}>Přepsat u vybraných</button>
         <button type="button" class="btn btn-outline btn-small" data-bulk-clear data-list="${listId}">Zrušit výběr</button>
         ${err ? `<div class="bulk-error">${esc(err)}</div>` : ``}
@@ -3864,7 +3869,7 @@ function bulkToolbarHtml(listId, kind, items, ctxProjectId){
 }
 async function bulkApply(listId, kind){
   const target = (state.bulkTarget || {})[listId] || {};
-  if(!(target.projectId || target.phaseId)) return;
+  if(!(target.projectId || target.phaseId || target.supplierId)) return;
   const visible = new Set(Array.from(document.querySelectorAll(`.bulk-row-cb[data-list="${listId}"]`)).map(c => c.getAttribute("data-id")));
   const ids = bulkSelectedIds(listId).filter(id => visible.has(id));
   if(!ids.length) return;
@@ -3878,6 +3883,10 @@ async function bulkApply(listId, kind){
   if(target.projectId) patch.projectId = target.projectId;
   if(target.phaseId) patch.phaseId = target.phaseId === "-" ? "" : target.phaseId;
   if(kind === "entry" && newProject && isPhaselessProject(newProject)) patch.phaseId = "";
+  if(kind === "cost" && target.supplierId){
+    if(target.supplierId === "-"){ patch.supplier = ""; patch.supplierId = undefined; }
+    else { const sp = suppliersList().find(x => x.id === target.supplierId); if(sp){ patch.supplier = sp.name || ""; patch.supplierId = sp.id; } }
+  }
 
   if(kind === "entry"){
     const byEmployee = {};
@@ -3921,7 +3930,11 @@ function bindBulkEvents(){
       });
       setState({ bulkSel: { ...state.bulkSel, [listId]: m } });
     } else if(t.classList.contains("bulk-target-project")){
-      setState({ bulkTarget: { ...state.bulkTarget, [listId]: { projectId: t.value, phaseId: "" } }, bulkError: { ...state.bulkError, [listId]: "" } });
+      const cur0 = (state.bulkTarget || {})[listId] || {};
+      setState({ bulkTarget: { ...state.bulkTarget, [listId]: { projectId: t.value, phaseId: "", supplierId: cur0.supplierId || "" } }, bulkError: { ...state.bulkError, [listId]: "" } });
+    } else if(t.classList.contains("bulk-target-supplier")){
+      const cur = (state.bulkTarget || {})[listId] || {};
+      setState({ bulkTarget: { ...state.bulkTarget, [listId]: { ...cur, supplierId: t.value } }, bulkError: { ...state.bulkError, [listId]: "" } });
     } else if(t.classList.contains("bulk-target-phase")){
       const cur = (state.bulkTarget || {})[listId] || {};
       setState({ bulkTarget: { ...state.bulkTarget, [listId]: { ...cur, phaseId: t.value } }, bulkError: { ...state.bulkError, [listId]: "" } });
