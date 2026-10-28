@@ -524,6 +524,17 @@
   .ii-panel{ border:1px solid var(--sage); background:var(--sage-tint); border-radius:var(--radius-md); padding:16px 18px; margin-bottom:16px; }
   .ii-pick{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
   .ii-head{ margin-bottom:10px; }
+  .split-full{ grid-column:1 / -1; }
+  .split-wrap{ margin:2px 0 10px; }
+  .split-ed:not(:empty){ margin-top:10px; padding:12px 14px; border:1px dashed var(--line); border-radius:var(--radius-sm); }
+  .split-head{ font-weight:700; margin-bottom:8px; }
+  .split-row{ display:grid; grid-template-columns:1.4fr 1fr 130px 90px 32px; gap:8px; margin-bottom:8px; align-items:center; }
+  .split-foot{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .split-sum{ font-size:13px; color:var(--soft); }
+  .split-sum.bad{ color:var(--danger); font-weight:600; }
+  .split-err{ color:var(--danger); font-size:13px; margin-top:6px; }
+  .split-on .cost-main-proj{ display:none; }
+  @media (max-width:700px){ .split-row{ grid-template-columns:1fr 1fr; } }
   .ii-queue-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
   .ii-alert{ font-size:13px; margin:0 0 8px; padding:8px 12px; border-radius:var(--radius-sm); background:var(--tan-tint); }
   .ii-alert.bad{ background:rgba(179,56,44,.12); color:var(--danger); font-weight:600; }
@@ -972,6 +983,7 @@ let state = {
   costs: null,
   costsLoading: false,
   editingCostId: null,
+  costSplit: null,
   costError: "",
   costImportError: "",
   costImportPreview: null,
@@ -4396,13 +4408,14 @@ function adminCostsTemplate(){
 
     ${invoiceImportPanelHtml("global")}
 
-    <form id="add-cost-form">
+    <form id="add-cost-form" class="${state.costSplit && !editingCost ? "split-on" : ""}">
       ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
-        <div class="field-row"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
-        <div class="field-row"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
+        <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
+        <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
         ${costPriceFieldsHtml({ cost: editingCost, required: true })}
+        ${editingCost ? "" : `<div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>`}
         <div class="field-row"><label class="field-label">Platba</label>
           <select name="paymentMethod" required>
             <option value="hotove" ${editingCost && editingCost.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
@@ -5823,6 +5836,137 @@ function matchSupplierForInvoice(sup){
   const ico = String(sup.ico || "").replace(/\D/g, "");
   return suppliersList().find(s => ico && String(s.ico || "").replace(/\D/g, "") === ico) || supplierByName(sup.name) || null;
 }
+// ---- rozdělení jednoho nákladu mezi víc projektů (částkou nebo procenty) ----
+// Rozdělení drží state.costSplit (formulář nákladu) nebo položka fronty importu (it.split): { rows: [{ projectId, phaseId, amount, pct, by }] }.
+function splitGet(owner){
+  if(owner === "global") return state.costSplit;
+  const imp = state.invoiceImport;
+  const it = imp && imp.items ? imp.items.find(x => x.key === owner) : null;
+  return it ? it.split || null : null;
+}
+function splitSet(owner, obj){
+  if(owner === "global"){ state.costSplit = obj; return; }
+  const imp = state.invoiceImport;
+  const it = imp && imp.items ? imp.items.find(x => x.key === owner) : null;
+  if(it) it.split = obj;
+}
+function splitScopeOf(el){ return el && el.closest ? el.closest("#add-cost-form, .ii-panel") : null; }
+function splitTotalNet(scope){ const el = scope && scope.querySelector(".pf-net"); return el ? numOrNull(el.value) : null; }
+function splitRowAmount(row, total){
+  if(row.by === "pct") return total !== null && numOrNull(row.pct) !== null ? r2(total * numOrNull(row.pct) / 100) : null;
+  return numOrNull(row.amount);
+}
+function splitEditorInnerHtml(owner, split, total){
+  if(!split) return "";
+  const withEmployees = owner === "global";
+  const projOpts = sel => `<option value="">— projekt —</option>` + sortedProjects().map(p => `<option value="${esc(p.id)}" ${sel === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("")
+    + (withEmployees ? state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs")).map(e => `<option value="emp:${esc(e.id)}" ${sel === "emp:" + e.id ? "selected" : ""}>Zaměstnanec – ${esc(e.name)}</option>`).join("") : "");
+  let sum = 0;
+  const rows = split.rows.map((r, i) => {
+    const amt = splitRowAmount(r, total);
+    if(amt !== null) sum += amt;
+    const project = state.config.projects.find(p => p.id === r.projectId);
+    const phaseOpts = `<option value="">—</option>` + (project ? phasesForProject(project).map(ph => `<option value="${esc(ph.id)}" ${r.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
+    return `<div class="split-row" data-i="${i}">
+      <select data-sf="projectId" aria-label="Projekt">${projOpts(r.projectId)}</select>
+      <select data-sf="phaseId" aria-label="Fáze">${phaseOpts}</select>
+      <input type="number" data-sf="amount" min="0" step="0.01" placeholder="Kč bez DPH" value="${amt !== null ? esc(amt) : esc(r.amount ?? "")}" aria-label="Částka bez DPH">
+      <input type="number" data-sf="pct" min="0" max="100" step="0.01" placeholder="%" value="${esc(r.pct ?? "")}" aria-label="Procenta">
+      <button type="button" class="icon-btn" data-action="split-del" data-split-owner="${esc(owner)}" data-i="${i}" title="Odebrat řádek">×</button>
+    </div>`;
+  }).join("");
+  const rest = total !== null ? r2(total - sum) : null;
+  const sumLine = total !== null
+    ? `<div class="split-sum ${Math.abs(rest) > 0.05 ? "bad" : ""}">Rozděleno ${fmtKc2(r2(sum))} z ${fmtKc2(total)} bez DPH${Math.abs(rest) > 0.05 ? ` – zbývá ${fmtKc2(rest)}` : " ✓"}</div>`
+    : `<div class="split-sum">Zadejte cenu bez DPH – podle ní se částky a procenta propojí.</div>`;
+  return `<div class="split-head">Rozdělení nákladu <span class="meta">(DPH se rozdělí stejným poměrem)</span></div>${rows}
+    <div class="split-foot"><button type="button" class="btn btn-outline btn-small" data-action="split-add" data-split-owner="${esc(owner)}">+ Další řádek</button>${sumLine}</div>
+    <div class="split-err"></div>`;
+}
+function splitBlockHtml(owner, split, total){
+  return `<div class="split-wrap"><button type="button" class="btn btn-outline btn-small" data-action="split-toggle" data-split-owner="${esc(owner)}">${split ? "Zrušit rozdělení" : "Rozdělit mezi více projektů"}</button>
+    <div class="split-ed" data-split-owner="${esc(owner)}">${splitEditorInnerHtml(owner, split, total)}</div></div>`;
+}
+function splitRefresh(scope){
+  if(!scope) return;
+  const ed = scope.querySelector(".split-ed");
+  if(!ed) return;
+  const owner = ed.getAttribute("data-split-owner");
+  const split = splitGet(owner);
+  const total = splitTotalNet(scope);
+  if(split) split.rows.forEach(r => { if(r.by === "pct" && total !== null && numOrNull(r.pct) !== null) r.amount = r2(total * numOrNull(r.pct) / 100); });
+  ed.innerHTML = splitEditorInnerHtml(owner, split, total);
+  scope.classList.toggle("split-on", !!split);
+  const btn = scope.querySelector('[data-action="split-toggle"]');
+  if(btn) btn.textContent = split ? "Zrušit rozdělení" : "Rozdělit mezi více projektů";
+}
+document.addEventListener("click", e => {
+  const b = e.target && e.target.closest ? e.target.closest('[data-action="split-toggle"],[data-action="split-add"],[data-action="split-del"]') : null;
+  if(!b) return;
+  const scope = splitScopeOf(b);
+  const owner = b.getAttribute("data-split-owner");
+  const act = b.getAttribute("data-action");
+  let split = splitGet(owner);
+  if(act === "split-toggle"){
+    if(split) split = null;
+    else {
+      const mainProj = scope && scope.querySelector('#cost-project-select, [data-k="ii-project"]');
+      const first = mainProj && mainProj.value ? mainProj.value : "";
+      split = { rows: [{ projectId: first, phaseId: "", amount: "", pct: 50, by: "pct" }, { projectId: "", phaseId: "", amount: "", pct: 50, by: "pct" }] };
+    }
+    splitSet(owner, split);
+  } else if(split && act === "split-add"){
+    split.rows.push({ projectId: "", phaseId: "", amount: "", pct: "", by: "amount" });
+  } else if(split && act === "split-del"){
+    split.rows.splice(Number(b.getAttribute("data-i")), 1);
+    if(split.rows.length < 2){ split = null; splitSet(owner, null); }
+  }
+  splitRefresh(scope);
+});
+document.addEventListener("change", e => {
+  const t = e.target;
+  if(!t || !t.closest) return;
+  const scope = splitScopeOf(t);
+  if(!scope) return;
+  if(t.classList && t.classList.contains("pf-net")){ if(scope.querySelector(".split-ed") && splitGet(scope.querySelector(".split-ed").getAttribute("data-split-owner"))) splitRefresh(scope); return; }
+  const rowEl = t.closest(".split-row");
+  const ed = t.closest(".split-ed");
+  if(!rowEl || !ed) return;
+  const split = splitGet(ed.getAttribute("data-split-owner"));
+  const row = split && split.rows[Number(rowEl.getAttribute("data-i"))];
+  if(!row) return;
+  const total = splitTotalNet(scope);
+  const f = t.getAttribute("data-sf");
+  if(f === "projectId"){ row.projectId = t.value; row.phaseId = ""; }
+  else if(f === "phaseId") row.phaseId = t.value;
+  else if(f === "amount"){ row.amount = t.value; row.by = "amount"; row.pct = total && numOrNull(t.value) !== null ? r2(numOrNull(t.value) / total * 100) : ""; }
+  else if(f === "pct"){ row.pct = t.value; row.by = "pct"; }
+  splitRefresh(scope);
+});
+// Z rozdělení vyrobí jednotlivé náklady; částky se zaokrouhlí tak, aby jejich součet přesně sedl na celek.
+function buildSplitCosts(split, price){
+  if(!split || split.rows.length < 2) return { error: "Rozdělení musí mít aspoň dva řádky." };
+  const total = price.amount;
+  if(!(total > 0)) return { error: "Zadejte cenu bez DPH." };
+  if(split.rows.some(r => !r.projectId)) return { error: "U každého řádku vyberte projekt." };
+  const nets = split.rows.map(r => splitRowAmount(r, total));
+  if(nets.some(n => n === null || !(n > 0))) return { error: "U každého řádku zadejte částku nebo procenta." };
+  const diff = r2(total - nets.reduce((a, n) => a + n, 0));
+  if(Math.abs(diff) > 0.05) return { error: `Součet řádků (${fmtKc2(r2(total - diff))}) se nerovná ceně bez DPH (${fmtKc2(total)}). Rozdíl ${fmtKc2(diff)}.` };
+  nets[nets.length - 1] = r2(nets[nets.length - 1] + diff);
+  let vatLeft = price.vatAmount, grossLeft = price.amountGross;
+  const parts = split.rows.map((r, i) => {
+    const last = i === split.rows.length - 1;
+    const share = nets[i] / total;
+    const vat = last ? r2(vatLeft) : r2(price.vatAmount * share);
+    const gross = last ? r2(grossLeft) : r2(price.amountGross * share);
+    vatLeft = r2(vatLeft - vat); grossLeft = r2(grossLeft - gross);
+    const emp = String(r.projectId).startsWith("emp:");
+    return { projectId: emp ? "" : r.projectId, phaseId: emp ? "" : (r.phaseId || ""), employeeId: emp ? String(r.projectId).slice(4) : undefined, price: { ...price, amount: nets[i], vatAmount: vat, amountGross: gross } };
+  });
+  return { parts };
+}
+
 // Import faktur je fronta: state.invoiceImport = { origin, items: [{ key, fileName, file, busy, parsed, error, draft, formError }] }.
 function invoiceImportItemHtml(origin, it){
   if(it.error) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="ii-head"><b>${esc(it.fileName || "Faktura")}</b></div><div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(it.error)}</div><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel" data-key="${esc(it.key)}">Zavřít</button></div>`;
@@ -5839,7 +5983,7 @@ function invoiceImportItemHtml(origin, it){
   const notes = [...Object.values(chk).filter(Boolean), ...(p.warnings || [])];
   const missNames = [miss.supplierName ? "název dodavatele" : "", miss.date ? "datum vystavení" : "", miss.net ? "cenu bez DPH" : ""].filter(Boolean);
   return `
-    <div class="ii-panel" data-key="${esc(it.key)}" data-origin="${esc(origin)}">
+    <div class="ii-panel${it.split ? " split-on" : ""}" data-key="${esc(it.key)}" data-origin="${esc(origin)}">
       <div class="ii-head"><b>Náklad z faktury</b> <span class="meta">${esc(it.fileName || "")}</span></div>
       ${missNames.length ? `<div class="ii-alert bad">Nepodařilo se přečíst: ${esc(missNames.join(", "))}. Doplňte prosím označená pole.</div>` : ``}
       ${notes.map(n => `<div class="ii-alert">${esc(n)}</div>`).join("")}
@@ -5860,9 +6004,10 @@ function invoiceImportItemHtml(origin, it){
       <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
         ${costPriceFieldsHtml({ noSupplier: true, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
+      ${splitBlockHtml(it.key, it.split, numOrNull(dr["pf-net"] !== undefined ? dr["pf-net"] : p.net))}
       <div class="form-grid" style="margin-top:6px;">
-        <div class="field-row"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
-        <div class="field-row"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
+        <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
+        <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
         <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
         <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc(p.number ? "Faktura č. " + p.number : "")}"></div>
       </div>
@@ -5940,13 +6085,19 @@ async function saveInvoiceImport(panel){
   if(!sup.name) problems.push("název dodavatele");
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) problems.push("datum vystavení");
   if(!price) problems.push("cenu bez DPH");
-  if(!projectId) problems.push("projekt");
+  if(!projectId && !it.split) problems.push("projekt");
   if(problems.length){
     captureInvoiceImportDraft({ target: panel.querySelector("input") });
     it.formError = `Doplňte prosím: ${problems.join(", ")}.`;
     render();
     return false;
   }
+  let split = null;
+  if(it.split){
+    split = buildSplitCosts(it.split, price);
+    if(split.error){ captureInvoiceImportDraft({ target: panel.querySelector("input") }); it.formError = split.error; render(); return false; }
+  }
+  it.formError = "";
   const number = val("ii-number");
   let supplier = matchSupplierForInvoice(sup);
   if(number && (state.costs || []).some(c => c.invoiceNumber === number && (supplier ? c.supplierId === supplier.id : costSupplierName(c).toLowerCase() === sup.name.toLowerCase()))){
@@ -5965,10 +6116,15 @@ async function saveInvoiceImport(panel){
   }
   await saveConfig();
   if(state.costs === null) state.costs = await loadCosts();
-  const cost = { id: uid("cost"), date, projectId, phaseId: val("ii-phase"), ...price, supplier: supplier.name, supplierId: supplier.id, paymentMethod: val("ii-payment") || "ucet", note: val("ii-note") };
-  if(number) cost.invoiceNumber = number;
-  if(val("ii-due")) cost.dueDate = val("ii-due");
-  state.costs.push(cost);
+  const baseCost = { date, supplier: supplier.name, supplierId: supplier.id, paymentMethod: val("ii-payment") || "ucet", note: val("ii-note") };
+  if(number) baseCost.invoiceNumber = number;
+  if(val("ii-due")) baseCost.dueDate = val("ii-due");
+  if(it.split){
+    const gid = uid("split");
+    split.parts.forEach(pt => state.costs.push({ id: uid("cost"), ...baseCost, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, employeeId: pt.employeeId, splitId: gid }));
+  } else {
+    state.costs.push({ id: uid("cost"), ...baseCost, projectId, phaseId: val("ii-phase"), ...price });
+  }
   await saveCosts();
   imp.items = imp.items.filter(x => x !== it);
   if(!imp.items.length) state.invoiceImport = null;
@@ -8287,6 +8443,16 @@ function bindAdmin(){
     const isEmployeeTarget = String(data.projectId).startsWith("emp:");
     const fields = { date: data.date, projectId: isEmployeeTarget ? "" : data.projectId, phaseId: isEmployeeTarget ? "" : (data.phaseId || ""), ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: isEmployeeTarget ? String(data.projectId).slice(4) : undefined };
     if(!state.costs) state.costs = [];
+    if(state.costSplit && !state.editingCostId){
+      const res = buildSplitCosts(state.costSplit, price);
+      if(res.error){ const er = addCostForm.querySelector(".split-err"); if(er) er.textContent = res.error; return; }
+      const gid = uid("split");
+      res.parts.forEach(pt => state.costs.push({ id: uid("cost"), date: data.date, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: pt.employeeId, splitId: gid }));
+      state.costSplit = null; state.costError = "";
+      await saveCosts();
+      render();
+      return;
+    }
     if(state.editingCostId){
       const idx = state.costs.findIndex(c => c.id === state.editingCostId);
       if(idx !== -1) state.costs[idx] = { ...state.costs[idx], ...fields };
