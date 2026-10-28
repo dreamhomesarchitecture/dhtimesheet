@@ -6530,8 +6530,8 @@ function adminTemplate(){
         ${state.adminOpenSection === "records-filter" ? adminRecordsTemplate() : ""}
       </div>
 
-      <div class="admin-block${state.adminOpenSection === "overhead" ? " is-open" : ""}" data-group="projects">
-        ${adminSectionHeader("overhead", "Režie – nulové hodiny a chod kanceláře")}
+      <div class="admin-block${state.adminOpenSection === "overhead" ? " is-open" : ""}" data-group="billing" style="order:6;">
+        ${adminSectionHeader("overhead", "Režie")}
         ${state.adminOpenSection === "overhead" ? adminOverheadTemplate() : ""}
       </div>
 
