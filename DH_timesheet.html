@@ -5591,14 +5591,22 @@ function parseCzNumber(str){
   const n = Number(t);
   return isFinite(n) ? n : null;
 }
+const EN_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 function parseCzDate(str){
   const s = String(str || "");
   let m = /(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{4})/.exec(s) || /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
   if(m) return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
   m = /(\d{4})-(\d{2})-(\d{2})/.exec(s);
-  return m ? m[0] : null;
+  if(m) return m[0];
+  // anglicky: „January 23, 2026“ nebo „23 January 2026“
+  m = /([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(s);
+  if(m && EN_MONTHS[m[1].toLowerCase()]) return `${m[3]}-${String(EN_MONTHS[m[1].toLowerCase()]).padStart(2, "0")}-${String(m[2]).padStart(2, "0")}`;
+  m = /(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?,?\s+(\d{4})/.exec(s);
+  if(m && EN_MONTHS[m[2].toLowerCase()]) return `${m[3]}-${String(EN_MONTHS[m[2].toLowerCase()]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+  return null;
 }
-const INVOICE_DATE_RX = "(\\d{1,2}\\s*\\.\\s*\\d{1,2}\\s*\\.\\s*\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})";
+const EN_MONTH_RX = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*";
+const INVOICE_DATE_RX = `(\\d{1,2}\\s*\\.\\s*\\d{1,2}\\s*\\.\\s*\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{2}-\\d{2}|${EN_MONTH_RX}\\.?\\s+\\d{1,2},?\\s+\\d{4}|\\d{1,2}\\s+${EN_MONTH_RX}\\.?,?\\s+\\d{4})`;
 function labeledDate(lines, labelRx){
   const rx = new RegExp(`(?:${labelRx})[^0-9]{0,40}${INVOICE_DATE_RX}`, "i");
   for(const l of lines){ const m = rx.exec(l); if(m) return parseCzDate(m[1]); }
@@ -5723,6 +5731,40 @@ async function extractInvoiceRows(file){
   if(textLength >= 60) return { rows, ocr: false };
   return { rows: await ocrCanvasesToRows(await pdfPagesToCanvases(file, 2)), ocr: true };
 }
+// Přepočet faktury v cizí měně na Kč zadaným kurzem (Kč za 1 jednotku měny).
+function applyInvoiceFx(it, rate, sourceText){
+  const p = it.parsed, f = p && p.foreign;
+  if(!f || !(rate > 0)) return;
+  const num = v => (v === null || v === undefined) ? null : Number(v);
+  p.net = f.net !== null ? r2(num(f.net) * rate) : (f.gross !== null ? r2(num(f.gross) * rate) : null);
+  p.vat = f.vat !== null ? r2(num(f.vat) * rate) : 0;
+  p.gross = f.gross !== null ? r2(num(f.gross) * rate) : (p.net !== null ? r2(p.net + p.vat) : null);
+  p.rate = f.rate !== null && f.rate !== undefined ? f.rate : p.rate;
+  const fmtF = v => (Number(v) || 0).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  p.noteSuffix = ` (${fmtF(f.gross !== null ? f.gross : f.net)} ${p.currency}, kurz ${String(r2(rate * 1000) / 1000).replace(".", ",")} Kč/${p.currency})`;
+  p.check = { ...(p.check || {}), fx: `Částky jsou přepočtené z ${p.currency} ${sourceText || "zadaným kurzem"} – zkontrolujte.` };
+  it.fx = { rate };
+  it.draft = it.draft || {};
+  ["pf-net", "pf-rate", "pf-vat", "pf-gross", "ii-note"].forEach(k => { delete it.draft[k]; });
+  it.draft["ii-fx"] = String(rate);
+}
+async function fetchCnbRate(cur, date){
+  const r = await fetch(`/api/cnb-rate?cur=${encodeURIComponent(cur)}&date=${encodeURIComponent(date)}`);
+  if(!r.ok) throw new Error("Kurz ČNB se nepodařilo načíst.");
+  const j = await r.json();
+  if(!(j.rate > 0)) throw new Error("Kurz ČNB se nepodařilo načíst.");
+  return j.rate;
+}
+async function autoInvoiceFx(it){
+  const p = it.parsed;
+  if(!p || !p.currency) return;
+  const date = (it.draft && it.draft["ii-date"]) || p.date || p.taxDate;
+  if(!date) return;
+  try{
+    const rate = await fetchCnbRate(p.currency, date);
+    applyInvoiceFx(it, rate, `kurzem ČNB k ${fmtDateCz(date)}`);
+  } catch(err){ /* zůstane ruční zadání kurzu */ }
+}
 function parseInvoiceRows(rows, opts){
   const lines = rows.map(r => r.text);
   const full = lines.join("\n");
@@ -5735,6 +5777,7 @@ function parseInvoiceRows(rows, opts){
   const labelRx = /dodavatel|poskytovatel|vystavil/i, custRx = /odb[ěe]ratel|p[řr]íjemce|z[áa]kazn[ií]k|objednatel|fakturov[áa]no/i;
   const iDod = rows.findIndex(r => r.items.some(i => labelRx.test(i.str)));
   let supplierLines = [];
+  let enSupplier = false;
   if(iDod !== -1){
     const dodItem = rows[iDod].items.find(i => labelRx.test(i.str));
     let xMax = Infinity, endRow = Math.min(rows.length, iDod + 25);
@@ -5756,6 +5799,17 @@ function parseInvoiceRows(rows, opts){
       if(r > iDod && stopRx.test(t)) break;
       if(t) supplierLines.push(t);
     }
+  } else if(rows.some(r => r.items.some(i => /bill(ed)?\s*to\s*$/i.test(i.str)))){
+    // Anglická faktura: dodavatel je v levém sloupci nad/vedle štítku „Bill to“, odběratel vpravo.
+    const iBill = rows.findIndex(r => r.items.some(i => /bill(ed)?\s*to\s*$/i.test(i.str)));
+    const billItem = rows[iBill].items.find(i => /bill(ed)?\s*to\s*$/i.test(i.str));
+    const stopEn = /^([€$£]\s?\d|description|pay online|amount|total)/i;
+    for(let r = iBill; r < Math.min(rows.length, iBill + 14); r++){
+      const left = rows[r].items.filter(i => i.x < billItem.x - 3 || (r === iBill && i !== billItem && i.x <= billItem.x)).map(i => i.str).join(" ").replace(/bill(ed)?\s*to\s*$/i, "").trim();
+      if(!left || (r > iBill && stopEn.test(left))) break;
+      supplierLines.push(left);
+    }
+    enSupplier = true;
   } else {
     check.supplier = "Štítek „Dodavatel“ ve faktuře nenalezen – zkontrolujte údaje o dodavateli.";
     const iIc = lines.findIndex(l => { const m = /\bI[ČC]O?\s*[:.]?\s*(\d{8})/i.exec(l); return m && !ownIcos.includes(m[1]); });
@@ -5771,7 +5825,8 @@ function parseInvoiceRows(rows, opts){
   if(ico && ownIcos.includes(ico)) check.ico = "IČ dodavatele je stejné jako vaše firma – zkontrolujte, zda není dodavatel a odběratel zaměněn.";
   out.supplier.ico = ico;
   const dicM = /\bDI[ČC]\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(block);
-  out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : "";
+  const enVatM = /\b[A-Z]{2}\s+VAT\s+([A-Z0-9]{8,14})\b/.exec(block) || /\bVAT\s*(?:ID|No\.?|number)?\s*[:.]?\s*([A-Z]{2}[A-Z0-9]{8,12})\b/i.exec(block);
+  out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : (enVatM ? enVatM[1].toUpperCase() : "");
   const mailM = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(block);
   out.supplier.email = mailM ? mailM[0] : "";
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
@@ -5779,7 +5834,9 @@ function parseInvoiceRows(rows, opts){
   out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
   // Adresa může být na jednom řádku s IČO/DIČ („Havlíčkova 5, Jihlava, 586 01, CZ, IČO: …“) – vezme se část před IČO.
   const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).map(l => l.replace(/[,;\s]*(?:I[ČC]O?|DI[ČC])\s*[:.]?\s*[A-Z]{0,2}\s?\d.*$/, "").trim()).filter(l => l && !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
-  out.supplier.address = addr.slice(0, 2).join(", ");
+  out.supplier.address = enSupplier
+    ? supplierLines.slice(supplierLines.indexOf(nameLine) + 1).filter(l => !/@|\bVAT\b/i.test(l)).join(", ")
+    : addr.slice(0, 2).join(", ");
   const BANK_CODES = new Set(["0100","0300","0600","0710","0800","2010","2060","2070","2100","2200","2220","2240","2250","2260","2275","2600","2700","3030","3050","3060","3500","4000","4300","5500","5800","6000","6100","6200","6210","6300","6363","6700","6800","7910","7940","7950","7960","7970","7980","7990","8030","8040","8060","8090","8150","8200","8215","8225","8230","8240","8250","8255","8265","8280","8291","8292","8293"]);
   const acctLabel = "(?:číslo\\s+účtu|č\\.\\s*účtu|č\\.\\s?ú\\.|bankovní\\s+spojení|bankovní\\s+účet|účtu|účet|iban)";
   let acc = "";
@@ -5798,14 +5855,17 @@ function parseInvoiceRows(rows, opts){
 
   // ---- číslo faktury, data ----
   let num = "";
-  let m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full);
-  if(m && /\d/.test(m[1])) num = m[1];
+  const fullN = full.replace(/\u0000/g, "-");
+  let m = /(?:invoice|receipt)\s*(?:number|no\.?|#)\s*[:.]?\s*([A-Za-z0-9]+(?:\s*-\s*[A-Za-z0-9]+)*)/i.exec(fullN);
+  if(m && /\d/.test(m[1])) num = m[1].replace(/\s+/g, "");
+  if(!num) m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full);
+  if(!num && m && /\d/.test(m[1])) num = m[1];
   if(!num){ m = /číslo\s+(?:faktury|dokladu)[^\n]{0,30}?\s([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full); if(m && /\d/.test(m[1])) num = m[1]; }
   if(!num){ m = /^\s*(?:faktura|da[ňn]ov[ýy] doklad)[^\n\d]{0,30}?(\d{5,})\s*$/im.exec(full); if(m) num = m[1]; }
   if(!num){ m = /variabiln[íi]\s+symbol[:\s]*(\d{1,10})/i.exec(full); if(m){ num = m[1]; check.number = "Číslo faktury není ve faktuře jasně uvedené, vzal jsem variabilní symbol – zkontrolujte."; } }
   out.number = num;
-  out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury") || "";
-  out.dueDate = labeledDate(lines, "datum\\s+splatnosti|splatnost") || "";
+  out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury|date\\s+of\\s+issue|invoice\\s+date|issue\\s+date") || "";
+  out.dueDate = labeledDate(lines, "datum\\s+splatnosti|splatnost|date\\s+due|due\\s+date|payment\\s+due") || "";
   out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+(?:zdaniteln[ée]ho\\s+)?pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
   if(!out.date && out.taxDate){ out.date = out.taxDate; check.date = "Datum vystavení nenalezeno, použil jsem datum plnění – zkontrolujte."; }
 
@@ -5827,9 +5887,9 @@ function parseInvoiceRows(rows, opts){
   }
   const recapUse = recap.length === 1 ? recap[0] : null;
   if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
-  let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]");
+  let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]|amount\\s+due|total\\s+due|balance\\s+due|grand\\s+total|\\btotal\\b(?!\\s+excl)");
   if(gross === null) gross = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad");
-  let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|cena\\s+bez\\s+dph|z[áa]klad");
+  let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|cena\\s+bez\\s+dph|z[áa]klad|subtotal|total\\s+excl[a-z.]*\\s+(?:tax|vat)|net\\s+amount");
   let rate = null, vat = null;
   const vatLine = lines.find(l => /dph\s*\d{1,2}\s*%/i.test(l));
   if(vatLine){
@@ -5840,7 +5900,8 @@ function parseInvoiceRows(rows, opts){
   }
   if(rate === null){ const rm = /(\d{1,2})\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
   if(recapUse){ net = recapUse.net; rate = recapUse.rate; vat = recapUse.vat; if(gross === null) gross = recapUse.gross; }
-  if(nonPayer){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
+  const reverseCharge = /reverse\s+charge|p[řr]enesen[áa]\s+da[ňn]ov[áa]\s+povinnost/i.test(full);
+  if(nonPayer || reverseCharge){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
   if(net === null && gross !== null && rate !== null) net = r2(gross / (1 + rate / 100));
   if(net === null && gross !== null && vat !== null) net = r2(gross - vat);
   if(gross === null && net !== null && vat !== null) gross = r2(net + vat);
@@ -5849,7 +5910,14 @@ function parseInvoiceRows(rows, opts){
   if(rate === null && net && vat !== null) rate = r2(vat / net * 100);
   if(net !== null && gross !== null && vat !== null && Math.abs(net + vat - gross) > 1) check.amount = "Částky ve faktuře nesedí k sobě (základ + DPH ≠ celkem) – zkontrolujte.";
   out.net = net; out.gross = gross; out.vat = vat; out.rate = rate;
-  if(/\b(EUR|€)\b/.test(full) && !/\b(CZK|Kč)\b/.test(full)) out.warnings.push("Faktura je pravděpodobně v eurech. Do nákladů je potřeba zadat částku v Kč – přepočtěte ji.");
+  // Cizí měna: částky se uchovají zvlášť a do nákladu (v Kč) se přepočtou kurzem – viz applyInvoiceFx.
+  const cur = /Kč|CZK/.test(full) ? "CZK" : /€|\bEUR\b/.test(full) ? "EUR" : /\$|\bUSD\b/.test(full) ? "USD" : /£|\bGBP\b/.test(full) ? "GBP" : "CZK";
+  if(cur !== "CZK"){
+    out.currency = cur;
+    out.foreign = { net, vat, gross, rate };
+    out.net = null; out.vat = null; out.gross = null;
+    if(reverseCharge) check.reverse = "Na faktuře je „reverse charge“ (přenesená daňová povinnost) – DPH 0 %, daň přiznáte sám.";
+  }
   if(/v\s+hotovosti|hotov[ěe]|platba\s+hotově/i.test(full)) out.paymentMethod = "hotove";
   if(opts && opts.ocr){
     out.warnings.unshift("Faktura byla přečtena rozpoznáním textu z obrázku, takže se mohla některá čísla přečíst špatně. Zkontrolujte pečlivě hlavně částky, IČ, číslo účtu a číslo faktury.");
@@ -6035,6 +6103,11 @@ function invoiceImportItemHtml(origin, it){
         <div class="field-row ${cls("d", "date")}"><label class="field-label">Datum vystavení</label><input type="date" data-k="ii-date" value="${esc(p.date)}"></div>
         <div class="field-row"><label class="field-label">Splatnost</label><input type="date" data-k="ii-due" value="${esc(p.dueDate)}"></div>
       </div>
+      ${p.currency && p.foreign ? (() => {
+        const f = p.foreign, fm = v => v === null || v === undefined ? "–" : Number(v).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + p.currency;
+        return `<div class="ii-fx"><div class="q-hint" style="margin:0 0 8px;">Faktura je v měně <b>${esc(p.currency)}</b>: základ ${fm(f.net)}, DPH ${fm(f.vat)}, celkem ${fm(f.gross)}. Náklady se vedou v Kč – použije se kurz ČNB k datu vystavení, nebo zadejte vlastní.</div>
+          <div class="form-grid"><div class="field-row"><label class="field-label">Kurz (Kč za 1 ${esc(p.currency)})</label><input type="number" step="0.001" min="0" data-k="ii-fx" value="${it.fx ? esc(it.fx.rate) : ""}"></div>
+          <div class="field-row" style="display:flex;gap:8px;align-items:flex-end;"><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx" data-key="${esc(it.key)}">Přepočítat podle kurzu</button><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx-cnb" data-key="${esc(it.key)}">Načíst kurz ČNB</button></div></div></div>`; })() : ``}
       <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
         ${costPriceFieldsHtml({ noSupplier: true, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
@@ -6043,7 +6116,7 @@ function invoiceImportItemHtml(origin, it){
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
         <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
-        <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc(p.number ? "Faktura č. " + p.number : "")}"></div>
+        <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc((p.number ? "Faktura č. " + p.number : "") + (p.noteSuffix || ""))}"></div>
       </div>
       ${it.formError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(it.formError)}</div>` : ``}
       <div style="display:flex;gap:8px;margin-top:14px;">
@@ -7736,6 +7809,7 @@ function bindAdmin(){
       try{
         const extracted = await extractInvoiceRows(it.file);
         it.parsed = parseInvoiceRows(extracted.rows, { ocr: extracted.ocr });
+        if(it.parsed.currency) await autoInvoiceFx(it);
       } catch(err){
         console.error("invoice read failed", err);
         it.error = `Fakturu se nepodařilo přečíst (${err && err.message ? err.message : err}). Zkuste jiný soubor, nebo údaje zadejte ručně.`;
@@ -7749,6 +7823,31 @@ function bindAdmin(){
     if(!imp) return;
     imp.items = imp.items.filter(x => x.key !== b.getAttribute("data-key"));
     if(!imp.items.length) state.invoiceImport = null;
+    render();
+  });
+  document.querySelectorAll('[data-action="invoice-import-fx"]').forEach(b => b.onclick = () => {
+    const it = invoiceImportItemOf(b);
+    const panel = b.closest(".ii-panel");
+    const rate = numOrNull(panel.querySelector('[data-k="ii-fx"]').value);
+    if(!it || !(rate > 0)){ if(it){ it.formError = "Zadejte kurz (Kč za 1 jednotku měny)."; render(); } return; }
+    captureInvoiceImportDraft({ target: panel.querySelector("input") });
+    it.formError = "";
+    applyInvoiceFx(it, rate, "zadaným kurzem");
+    render();
+  });
+  document.querySelectorAll('[data-action="invoice-import-fx-cnb"]').forEach(b => b.onclick = async () => {
+    const it = invoiceImportItemOf(b);
+    const panel = b.closest(".ii-panel");
+    if(!it || b.disabled) return;
+    captureInvoiceImportDraft({ target: panel.querySelector("input") });
+    const date = (it.draft && it.draft["ii-date"]) || it.parsed.date || it.parsed.taxDate;
+    if(!date){ it.formError = "Nejdřív doplňte datum vystavení."; render(); return; }
+    b.disabled = true;
+    try{
+      const rate = await fetchCnbRate(it.parsed.currency, date);
+      it.formError = "";
+      applyInvoiceFx(it, rate, `kurzem ČNB k ${fmtDateCz(date)}`);
+    } catch(err){ it.formError = "Kurz ČNB se nepodařilo načíst – zadejte ho ručně."; }
     render();
   });
   document.querySelectorAll('[data-action="invoice-import-cancel-all"]').forEach(b => b.onclick = () => setState({ invoiceImport: null }));

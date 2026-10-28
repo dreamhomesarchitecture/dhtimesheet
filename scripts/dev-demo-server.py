@@ -2,6 +2,7 @@ import http.server
 import json
 import os
 import urllib.parse
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORT = int(os.environ.get("PORT", 8935))
@@ -84,6 +85,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({"found": False}, 404)
             value = STORE[key] if (key != "config" or admin) else sanitized_config()
             return self._json({"found": True, "value": value, "admin": admin})
+        if parsed.path == "/api/cnb-rate":
+            q = urllib.parse.parse_qs(parsed.query)
+            cur, date = q.get("cur", ["EUR"])[0], q.get("date", [""])[0]
+            try:
+                y, m, d = date.split("-")
+                url = f"https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt?date={d}.{m}.{y}"
+                text = urllib.request.urlopen(url, timeout=10).read().decode("utf-8")
+                for line in text.splitlines():
+                    parts = line.strip().split("|")
+                    if len(parts) >= 5 and parts[3] == cur:
+                        return self._json({"cur": cur, "date": date, "rate": float(parts[4].replace(",", ".")) / float(parts[2])})
+                return self._json({"error": "currency not found"}, 404)
+            except Exception:
+                return self._json({"error": "failed"}, 500)
         path = parsed.path
         if path == "/":
             path = "/DH_timesheet.html"
