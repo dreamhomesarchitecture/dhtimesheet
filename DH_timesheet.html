@@ -4444,14 +4444,14 @@ function adminCostsTemplate(){
 
     ${invoiceImportPanelHtml("global")}
 
-    <form id="add-cost-form" class="${state.costSplit && !editingCost ? "split-on" : ""}">
+    <form id="add-cost-form" class="${state.costSplit ? "split-on" : ""}">
       ${editingCost ? `<div class="q-hint" style="color:var(--tan);margin-bottom:10px;">Upravujete existující náklad.</div>` : ``}
       <div class="form-grid">
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
         ${costPriceFieldsHtml({ cost: editingCost, required: true })}
-        ${editingCost ? "" : `<div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>`}
+        <div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>
         <div class="field-row"><label class="field-label">Platba</label>
           <select name="paymentMethod" required>
             <option value="hotove" ${editingCost && editingCost.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
@@ -5111,6 +5111,7 @@ function projectDetailPageHtml(){
                 <span class="meta">ceny níže ↓</span>
                 <input type="text" class="cost-edit-note" value="${esc(c.note||"")}" placeholder="Poznámka" style="padding:6px 8px;font-size:13px;">
                 <span style="display:flex;gap:4px;">
+                  <button type="button" class="icon-btn" data-action="split-project-cost" data-id="${esc(c.id)}" title="Rozdělit mezi více projektů (otevře úpravu ve Finance → Náklady)">⇄</button>
                   <button type="button" class="icon-btn" data-action="save-project-cost-edit" title="Uložit">✓</button>
                   <button type="button" class="icon-btn" data-action="cancel-project-cost-edit" title="Zrušit">×</button>
                 </span>
@@ -8442,6 +8443,11 @@ function bindAdmin(){
   document.querySelectorAll('[data-action="edit-project-cost"]').forEach(b => b.onclick = () => {
     setState({ editingProjectCostId: b.getAttribute("data-id") });
   });
+  // Rozdělení nákladu mezi projekty se dělá v hlavním formuláři nákladů (Finance → Náklady).
+  document.querySelectorAll('[data-action="split-project-cost"]').forEach(b => b.onclick = () => {
+    setState({ editingProjectCostId: null, editingProjectId: null, adminSubTab: "reports", reportsGroup: "billing", adminOpenSection: "project-costs", editingCostId: b.getAttribute("data-id"), costSplit: null });
+    window.scrollTo(0, 0);
+  });
   document.querySelectorAll('[data-action="cancel-project-cost-edit"]').forEach(b => b.onclick = () => {
     setState({ editingProjectCostId: null });
   });
@@ -8889,12 +8895,19 @@ function bindAdmin(){
     const isEmployeeTarget = String(data.projectId).startsWith("emp:");
     const fields = { date: data.date, projectId: isEmployeeTarget ? "" : data.projectId, phaseId: isEmployeeTarget ? "" : (data.phaseId || ""), ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: isEmployeeTarget ? String(data.projectId).slice(4) : undefined };
     if(!state.costs) state.costs = [];
-    if(state.costSplit && !state.editingCostId){
+    if(state.costSplit){
       const res = buildSplitCosts(state.costSplit, price);
       if(res.error){ const er = addCostForm.querySelector(".split-err"); if(er) er.textContent = res.error; return; }
-      const gid = uid("split");
-      res.parts.forEach(pt => state.costs.push({ id: uid("cost"), date: data.date, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: pt.employeeId, splitId: gid }));
-      state.costSplit = null; state.costError = "";
+      // Při úpravě existujícího nákladu se původní náklad nahradí jeho částmi (číslo faktury a splatnost zůstanou).
+      const orig = state.editingCostId ? state.costs.find(c => c.id === state.editingCostId) : null;
+      const gid = (orig && orig.splitId) || uid("split");
+      const extra = {};
+      if(orig && orig.invoiceNumber) extra.invoiceNumber = orig.invoiceNumber;
+      if(orig && orig.dueDate) extra.dueDate = orig.dueDate;
+      const parts = res.parts.map(pt => ({ id: uid("cost"), date: data.date, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: pt.employeeId, ...extra, splitId: gid }));
+      if(orig){ const at = state.costs.indexOf(orig); state.costs.splice(at, 1, ...parts); }
+      else state.costs.push(...parts);
+      state.costSplit = null; state.costError = ""; state.editingCostId = null;
       await saveCosts();
       render();
       return;
@@ -8912,10 +8925,10 @@ function bindAdmin(){
   });
 
   const cancelEditCostBtn = document.getElementById("cancel-edit-cost-btn");
-  if(cancelEditCostBtn) cancelEditCostBtn.onclick = () => setState({ editingCostId: null, costError: "" });
+  if(cancelEditCostBtn) cancelEditCostBtn.onclick = () => setState({ editingCostId: null, costSplit: null, costError: "" });
 
   document.querySelectorAll('[data-action="edit-cost"]').forEach(b => b.onclick = () => {
-    setState({ editingCostId: b.getAttribute("data-id") });
+    setState({ editingCostId: b.getAttribute("data-id"), costSplit: null });
   });
   // Kopie nákladu: stejný náklad s dnešním datem, rovnou otevřený k úpravě data. Číslo faktury a splatnost se nekopírují.
   document.querySelectorAll('[data-action="copy-cost"]').forEach(b => b.onclick = async () => {
