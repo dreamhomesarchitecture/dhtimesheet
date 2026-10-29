@@ -524,6 +524,13 @@
   .ii-panel{ border:1px solid var(--sage); background:var(--sage-tint); border-radius:var(--radius-md); padding:16px 18px; margin-bottom:16px; }
   .ii-pick{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
   .ii-head{ margin-bottom:10px; }
+  .zone{ border:1px solid var(--line); border-radius:var(--radius-md); padding:18px 20px 20px; margin-top:18px; }
+  .zone-entry{ background:var(--tan-tint); border-color:rgba(186,148,112,0.45); }
+  .zone-entry.editing{ border-color:var(--tan); box-shadow:0 0 0 2px rgba(186,148,112,0.35); }
+  .zone-title{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 0 14px; font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--ink); }
+  .zone-title .zone-total{ font-size:13px; font-weight:500; letter-spacing:0; text-transform:none; color:var(--soft); }
+  .zone-title .zone-total b{ color:var(--ink); }
+  .zone-entry .ii-pick{ margin-bottom:12px; }
   .split-full{ grid-column:1 / -1; }
   .split-wrap{ margin:2px 0 10px; }
   .split-ed:not(:empty){ margin-top:10px; padding:12px 14px; border:1px dashed var(--line); border-radius:var(--radius-sm); }
@@ -1868,9 +1875,9 @@ function shiftDateByMonths(dateStr, deltaMonths){
   const lastDayOfTarget = new Date(targetY, targetMonth0 + 1, 0).getDate();
   return `${targetY}-${pad2(targetMonth0+1)}-${pad2(Math.min(d, lastDayOfTarget))}`;
 }
-function dateMonthNavHtml(idPrefix, fieldPrefix, dateVal){
+function dateMonthNavHtml(idPrefix, fieldPrefix, dateVal, below){
   return `
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+    <div style="display:flex;align-items:center;gap:6px;${below ? "margin-top:5px;" : "margin-bottom:5px;"}">
       <button type="button" class="icon-btn" id="${idPrefix}-${fieldPrefix}-month-prev" title="O měsíc dříve">‹</button>
       <span style="flex:1;text-align:center;font-size:11.5px;color:var(--soft);">${dateVal ? czechMonthYear(dateVal) : ""}</span>
       <button type="button" class="icon-btn" id="${idPrefix}-${fieldPrefix}-month-next" title="O měsíc později">›</button>
@@ -3730,7 +3737,9 @@ function timesheetTemplate(){
       ${!canLogHours ? `
         <div class="empty-state">Nejsou nastavené žádné projekty. <div><button class="btn btn-outline btn-small" id="goto-admin-btn2">Přidat v administraci</button></div></div>
       ` : `
-        <form id="add-entry-form" style="margin-bottom:28px;">
+        <section class="zone zone-entry">
+        <div class="zone-title"><span>Zapsat hodiny</span></div>
+        <form id="add-entry-form" style="margin:0;">
           <div class="entry-form-row">
             <div class="field-row w-date"><label class="field-label">Datum</label><input type="date" name="date" id="entry-date-input" value="${esc(formDate)}" required></div>
             <div class="field-row w-hours"><label class="field-label">Hodiny</label><input type="number" name="hours" id="entry-hours-input" min="0.01" step="0.01" placeholder="8" required></div>
@@ -3752,9 +3761,13 @@ function timesheetTemplate(){
           <div id="phase-warning" class="q-hint" style="color:var(--danger);margin-top:8px;${canSubmitInitially ? "display:none;" : ""}">Tento projekt nemá pro zvolené datum dostupnou žádnou fázi (buď žádná není přiřazená, nebo jsou k tomuto datu uzavřené).</div>
           ${state.entryError && !state.editingEntryId ? `<div class="q-hint" style="color:var(--danger);margin-top:8px;">${esc(state.entryError)}</div>` : ``}
         </form>
+        </section>
       `}
 
-      ${rows}
+      <section class="zone">
+        <div class="zone-title"><span>Záznamy · ${esc(fmtMonthLabel(state.month))}</span><span class="zone-total">Hodiny: <b>${fmtH(totalH)}</b></span></div>
+        ${rows}
+      </section>
   `;
 
   const today = todayStr();
@@ -3805,7 +3818,7 @@ function timesheetTemplate(){
 
 function noteSearchFieldHtml(id, value){
   return `
-      <div class="field-row grow" style="min-width:min(220px,100%);">
+      <div class="field-row grow" style="min-width:0;">
         <label class="field-label">Hledat v poznámkách</label>
         <div style="position:relative;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--soft)" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -4449,7 +4462,8 @@ function adminCostsTemplate(){
   }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
   return `
-    <p class="q-hint" style="margin:0 0 14px;">${filtersActive ? "Náklady dle filtru" : "Celkové náklady"} (bez DPH): <b style="color:var(--ink);">${fmtKc(totalAmount)}</b> · všechny součty a výpočty v aplikaci počítají s cenou bez DPH.</p>
+    <section class="zone zone-entry${editingCost ? " editing" : ""}">
+    <div class="zone-title"><span>${editingCost ? "Úprava nákladu" : "Zadat nový náklad"}</span></div>
 
     ${invoiceImportPanelHtml("global")}
 
@@ -4459,8 +4473,7 @@ function adminCostsTemplate(){
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
-        ${costPriceFieldsHtml({ cost: editingCost, required: true, vl: state.costVatLines, vlOwner: "global" })}
-        <div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>
+        ${costPriceFieldsHtml({ cost: editingCost, required: true, vl: state.costVatLines })}
         <div class="field-row"><label class="field-label">Platba</label>
           <select name="paymentMethod" required>
             <option value="hotove" ${editingCost && editingCost.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option>
@@ -4468,17 +4481,21 @@ function adminCostsTemplate(){
           </select>
         </div>
         <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" name="note" value="${editingCost ? esc(editingCost.note || "") : ""}"></div>
-        <div class="field-row" style="display:flex;gap:8px;">
+        ${vlBlockHtml("global", state.costVatLines)}
+        <div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>
+        <div class="field-row split-full" style="display:flex;gap:8px;flex-direction:row;">
           <button class="btn btn-tan btn-small" type="submit">${editingCost ? "Uložit změny" : "+ Přidat"}</button>
           ${editingCost ? `<button class="btn btn-small" type="button" id="cancel-edit-cost-btn">Zrušit</button>` : ``}
         </div>
       </div>
       ${state.costError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.costError)}</div>` : ``}
     </form>
+    </section>
 
-    <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--line);">
+    <section class="zone zone-list">
+      <div class="zone-title"><span>Přehled zadaných nákladů</span><span class="zone-total">${filtersActive ? "Dle filtru" : "Celkem"} (bez DPH): <b>${fmtKc(totalAmount)}</b></span></div>
       ${costs.length ? `
-      <div class="form-grid" style="margin-bottom:14px;">
+      <div class="form-grid" style="margin-bottom:14px;align-items:start;">
         <div class="field-row"><label class="field-label">Projekt</label><select id="cost-filter-project">${filterProjectOptions}</select></div>
         <div class="field-row"><label class="field-label">Fáze</label><select id="cost-filter-phase">${filterPhaseOptions}</select></div>
         <div class="field-row"><label class="field-label">Platba</label>
@@ -4489,14 +4506,15 @@ function adminCostsTemplate(){
           </select>
         </div>
         <div class="field-row"><label class="field-label">Dodavatel</label><select id="cost-filter-supplier">${costSupplierFilterOptionsHtml(costs, state.costFilterSupplier)}</select></div>
-        <div class="field-row"><label class="field-label">Datum od</label>${dateMonthNavHtml("cost-filter", "from", state.costFilterFrom)}<input type="date" id="cost-filter-from" value="${esc(state.costFilterFrom)}"></div>
-        <div class="field-row"><label class="field-label">Datum do</label>${dateMonthNavHtml("cost-filter", "to", state.costFilterTo)}<input type="date" id="cost-filter-to" value="${esc(state.costFilterTo)}"></div>
+        <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="cost-filter-from" value="${esc(state.costFilterFrom)}">${dateMonthNavHtml("cost-filter", "from", state.costFilterFrom, true)}</div>
+        <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="cost-filter-to" value="${esc(state.costFilterTo)}">${dateMonthNavHtml("cost-filter", "to", state.costFilterTo, true)}</div>
         ${noteSearchFieldHtml("cost-filter-text", state.costFilterText)}
-        ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
+        ${filtersActive ? `<div class="field-row"><label class="field-label">&nbsp;</label><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
       ${bulkToolbarHtml("gcosts", "cost", sorted, "")}
       <div class="entries">${rows}</div>
-    </div>`;
+      <p class="q-hint" style="margin:14px 0 0;">Všechny součty a výpočty v aplikaci počítají s cenou bez DPH.</p>
+    </section>`;
 }
 
 function costImportFormHtml(){
@@ -5079,7 +5097,7 @@ function projectDetailPageHtml(){
           });
           const costsTotal = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
           const costsFilterHtml = `
-            <div class="form-grid" style="margin-bottom:12px;">
+            <div class="form-grid" style="margin-bottom:12px;align-items:start;">
               <div class="field-row"><label class="field-label">Fáze</label><select id="project-costs-filter-phase">
                 <option value="">Všechny fáze</option>
                 ${costPhaseIdsPresent.map(pid => { const ph = state.config.phases.find(x => x.id === pid); return `<option value="${esc(pid)}" ${costsFilterPhase === pid ? "selected" : ""}>${esc(pid)}${ph ? ` — ${esc(ph.name)}` : ""}</option>`; }).join("")}
@@ -5090,15 +5108,15 @@ function projectDetailPageHtml(){
                 <option value="ucet" ${costsFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
               </select></div>
               <div class="field-row"><label class="field-label">Dodavatel</label><select id="project-costs-filter-supplier">${costSupplierFilterOptionsHtml(allProjectCosts, costsFilterSupplier)}</select></div>
-              <div class="field-row"><label class="field-label">Datum od</label>${dateMonthNavHtml("project-costs-filter", "from", costsFilterFrom)}<input type="date" id="project-costs-filter-from" value="${esc(costsFilterFrom)}"></div>
-              <div class="field-row"><label class="field-label">Datum do</label>${dateMonthNavHtml("project-costs-filter", "to", costsFilterTo)}<input type="date" id="project-costs-filter-to" value="${esc(costsFilterTo)}"></div>
+              <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="project-costs-filter-from" value="${esc(costsFilterFrom)}">${dateMonthNavHtml("project-costs-filter", "from", costsFilterFrom, true)}</div>
+              <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="project-costs-filter-to" value="${esc(costsFilterTo)}">${dateMonthNavHtml("project-costs-filter", "to", costsFilterTo, true)}</div>
               ${noteSearchFieldHtml("project-costs-filter-text", costsFilterText)}
               <div class="field-row"><label class="field-label">Seřadit podle</label><select id="project-costs-sort">
                 <option value="date" ${costsSort === "date" ? "selected" : ""}>Data (nejnovější)</option>
                 <option value="phase" ${costsSort === "phase" ? "selected" : ""}>Fáze</option>
                 <option value="amount" ${costsSort === "amount" ? "selected" : ""}>Nejvyšší cena</option>
               </select></div>
-              ${costsFiltersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="project-costs-filter-reset-btn">Zrušit filtr</button></div>` : ``}
+              ${costsFiltersActive ? `<div class="field-row"><label class="field-label">&nbsp;</label><button class="btn btn-small" type="button" id="project-costs-filter-reset-btn">Zrušit filtr</button></div>` : ``}
             </div>`;
           const costsRowsHtml = projectCosts.length ? projectCosts.map(c => {
             const phase = state.config.phases.find(x => x.id === c.phaseId);
@@ -5210,8 +5228,8 @@ function projectDetailPageHtml(){
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
               <div style="font-weight:700;font-size:15px;">Klasické náklady</div>
             </div>
-            <div class="phase-block" style="margin-bottom:14px;">
-              <div class="field-label" style="margin-bottom:10px;">+ Přidat náklad</div>
+            <section class="zone zone-entry">
+              <div class="zone-title"><span>Zadat nový náklad</span></div>
               ${invoiceImportPanelHtml(p.id)}
               <div class="form-grid">
                 <div class="field-row"><label class="field-label">Datum</label><input type="date" id="project-cost-add-date" value="${esc(todayStr())}"></div>
@@ -5230,20 +5248,23 @@ function projectDetailPageHtml(){
                 <div class="field-row"><button type="button" class="btn btn-tan btn-small" id="project-cost-add-btn" data-project-id="${esc(p.id)}">+ Přidat</button></div>
               </div>
               ${state.projectCostAddError ? `<div class="q-hint" style="color:var(--danger);margin-top:8px;">${esc(state.projectCostAddError)}</div>` : ``}
-            </div>
-            ${allProjectCosts.length ? costsFilterHtml : ``}
-            <p class="q-hint" style="margin:0 0 12px;">${costsFiltersActive ? "Náklady dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(costsTotal)}</b></p>
-            ${bulkToolbarHtml("pcosts", "cost", projectCosts, p.id)}
-            <div class="entries">${costsRowsHtml}</div>
+            </section>
+            <section class="zone">
+              <div class="zone-title"><span>Přehled nákladů projektu</span><span class="zone-total">${costsFiltersActive ? "Dle filtru" : "Celkem"}: <b>${fmtKc(costsTotal)}</b></span></div>
+              ${allProjectCosts.length ? costsFilterHtml : ``}
+              ${bulkToolbarHtml("pcosts", "cost", projectCosts, p.id)}
+              <div class="entries">${costsRowsHtml}</div>
+            </section>
           </div>
 
           <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--line);">
-            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Mzdové náklady</div>
+            <section class="zone">
+            <div class="zone-title"><span>Mzdové náklady</span><span class="zone-total">${laborFiltersActive ? "Hodiny dle filtru" : "Celkem"}: <b>${fmtKc(laborTotal)}</b></span></div>
             ${allProjectLabor.length ? laborFilterHtml : ``}
-            <p class="q-hint" style="margin:0 0 12px;">${laborFiltersActive ? "Hodiny dle filtru" : "Celkem"}: <b style="color:var(--ink);">${fmtKc(laborTotal)}</b></p>
             ${laborToolbarHtml}
             <div class="entry-head-labor"><span></span><span>Datum</span><span>Zaměstnanec</span><span>Fáze</span><span>Hodiny</span><span>Sazba</span><span>Náklad</span><span>Poznámka</span><span></span></div>
             <div class="entries">${laborRowsHtml}</div>
+            </section>
           </div>`;
         })()}
 
@@ -6548,15 +6569,16 @@ function invoiceImportItemHtml(origin, it){
           <div class="form-grid"><div class="field-row"><label class="field-label">Kurz (Kč za 1 ${esc(p.currency)})</label><input type="number" step="0.001" min="0" data-k="ii-fx" value="${it.fx ? esc(it.fx.rate) : ""}"></div>
           <div class="field-row" style="display:flex;gap:8px;align-items:flex-end;"><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx" data-key="${esc(it.key)}">Přepočítat podle kurzu</button><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx-cnb" data-key="${esc(it.key)}">Načíst kurz ČNB</button></div></div></div>`; })() : ``}
       <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
-        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, vlOwner: it.key, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
+        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
-      ${splitBlockHtml(it.key, it.split, numOrNull(dr["pf-net"] !== undefined ? dr["pf-net"] : p.net))}
       <div class="form-grid" style="margin-top:6px;">
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
         <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
         <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc((p.number ? (p.docLabel || "Faktura č.") + " " + p.number : "") + (p.noteSuffix || ""))}"></div>
+        ${vlBlockHtml(it.key, it.vatLines || null)}
       </div>
+      ${splitBlockHtml(it.key, it.split, numOrNull(dr["pf-net"] !== undefined ? dr["pf-net"] : p.net))}
       ${it.formError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(it.formError)}</div>` : ``}
       <div style="display:flex;gap:8px;margin-top:14px;">
         <button type="button" class="btn btn-tan btn-small" data-action="invoice-import-save" data-key="${esc(it.key)}">Uložit náklad</button>
@@ -7208,7 +7230,9 @@ function adminTemplate(){
         ${rateGapHtml}
         ${rateRows}
 
-        <form data-action="add-rate-form" data-id="${esc(e.id)}" style="margin-top:14px;">
+        <section class="zone zone-entry">
+        <div class="zone-title"><span>Přidat sazbu</span></div>
+        <form data-action="add-rate-form" data-id="${esc(e.id)}" style="margin:0;">
           <div class="form-grid">
             <div class="field-row"><label class="field-label">Od</label><input type="date" name="from" required></div>
             <div class="field-row"><label class="field-label">Do (nepovinné)</label><input type="date" name="to"></div>
@@ -7220,6 +7244,7 @@ function adminTemplate(){
           </div>
           ${state.rateError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.rateError)}</div>` : ``}
         </form>
+        </section>
       </div>` : ``}
     </div>`;
   }).join("") || `<div class="empty-state">Zatím žádní zaměstnanci.</div>`;
@@ -7336,7 +7361,9 @@ function adminTemplate(){
         ${adminSectionHeader("employees", `Zaměstnanci (${state.config.employees.length})`)}
         ${state.adminOpenSection === "employees" ? `
         ${empRows}
-        <form id="add-employee-form" style="margin-top:14px;">
+        <section class="zone zone-entry">
+        <div class="zone-title"><span>Přidat zaměstnance</span></div>
+        <form id="add-employee-form" style="margin:0;">
           <div class="form-grid">
             <div class="field-row"><label class="field-label">Jméno</label><input type="text" name="name" required></div>
             <div class="field-row"><label class="field-label">Heslo</label><input type="password" name="password" autocomplete="new-password" required></div>
@@ -7344,6 +7371,7 @@ function adminTemplate(){
           </div>
           ${state.empError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.empError)}</div>` : ``}
         </form>
+        </section>
         ` : ``}
       </div>
 
@@ -7351,7 +7379,9 @@ function adminTemplate(){
         ${adminSectionHeader("projects", `Projekty (${state.config.projects.length})`)}
         ${state.adminOpenSection === "projects" ? `
         ${projRows}
-        <form id="add-project-form" style="margin-top:14px;">
+        <section class="zone zone-entry">
+        <div class="zone-title"><span>Přidat projekt</span></div>
+        <form id="add-project-form" style="margin:0;">
           <div class="form-grid">
             <div class="field-row"><label class="field-label">Číslo projektu</label><input type="text" name="id" required></div>
             <div class="field-row"><label class="field-label">Název</label><input type="text" name="name" required></div>
@@ -7367,6 +7397,7 @@ function adminTemplate(){
           </div>
           ${state.projError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.projError)}</div>` : ``}
         </form>
+        </section>
         ` : ``}
       </div>
 
@@ -7376,7 +7407,9 @@ function adminTemplate(){
         ${state.adminOpenSection === "phases" ? `
         <p class="q-hint" style="margin:0 0 12px;">Šipkami určíte pořadí fází. Platí ve všech projektech, bez ohledu na to, kdy byla která fáze přidána.</p>
         ${phaseRows}
-        <form id="add-phase-form" style="margin-top:14px;">
+        <section class="zone zone-entry">
+        <div class="zone-title"><span>Přidat fázi</span></div>
+        <form id="add-phase-form" style="margin:0;">
           <div class="form-grid">
             <div class="field-row"><label class="field-label">Zkratka</label><input type="text" name="id" placeholder="např. AS" required></div>
             <div class="field-row"><label class="field-label">Název fáze</label><input type="text" name="name" required></div>
@@ -7384,6 +7417,7 @@ function adminTemplate(){
           </div>
           ${state.phaseError ? `<div class="q-hint" style="color:var(--danger);margin:6px 0 0;">${esc(state.phaseError)}</div>` : ``}
         </form>
+        </section>
         ` : ``}
       </div>
 
@@ -8351,7 +8385,7 @@ function bindAdmin(){
     const projectId = projectCostAddBtn.getAttribute("data-project-id");
     const date = document.getElementById("project-cost-add-date").value;
     const phaseId = document.getElementById("project-cost-add-phase").value;
-    const price = readPriceGroup(projectCostAddBtn.closest(".phase-block"));
+    const price = readPriceGroup(projectCostAddBtn.closest(".zone"));
     const paymentMethod = document.getElementById("project-cost-add-payment").value;
     const note = document.getElementById("project-cost-add-note").value.trim();
     if(!date || !price || !paymentMethod){
