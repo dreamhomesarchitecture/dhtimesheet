@@ -5865,7 +5865,7 @@ function parseInvoiceRows(rows, opts){
   const mailM = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(block);
   out.supplier.email = mailM ? mailM[0] : "";
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
-  const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l) && !/^(variabiln|konstantn|symbol|datum|číslo|faktura|odb[ěe]ratel|objedn)/i.test(l));
+  const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l) && !/^(variabiln|konstantn|symbol|datum|číslo|faktura|odb[ěe]ratel|objedn)/i.test(l) && !/da[ňn]ov[ýy]\s+doklad|^invoice\b|^tax\s+invoice/i.test(l));
   out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
   // Zkomolený název (typicky z rozpoznávání textu): málo písmen, hodně číslic nebo kód místo názvu – raději prázdný, ať ho doplníte/vyberete.
   if(out.supplier.name){
@@ -5877,7 +5877,7 @@ function parseInvoiceRows(rows, opts){
   const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).map(l => l.replace(/[,;\s]*(?:I[ČC]O?|DI[ČC])\s*[:.]?\s*[A-Z]{0,2}\s?\d.*$/, "").trim()).filter(l => l && !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !addrJunk.test(l) && (/\d/.test(l)));
   out.supplier.address = enSupplier
     ? (enLegal.length ? enLegal : supplierLines.slice(supplierLines.indexOf(nameLine) + 1)).filter(l => !/@|\bVAT\b|www\./i.test(l) && !/^[A-Z]{2}\s+[A-Z0-9]{8,12}$/.test(l) && !/^(DI[ČC]|I[ČC]O?)\s*[:.]/i.test(l)).join(", ")
-    : addr.slice(0, 2).join(", ");
+    : addr.slice(0, 2).join(", ").replace(/\s*\|\s*/g, ", ");
   if(opts && opts.ocr && out.supplier.address){
     const am = /([A-ZÁ-Ž][A-Za-zÁ-ž.\- ]{2,40}?\s\d+(?:\/\d+)?),?\s*(\d{3}\s?\d{2})\s+([A-ZÁ-Ž][A-Za-zÁ-ž\-]+)/.exec(out.supplier.address);
     if(am) out.supplier.address = `${am[1]}, ${am[2]} ${am[3]}`;
@@ -5944,8 +5944,10 @@ function parseInvoiceRows(rows, opts){
   }
   const recapUse = recap.length === 1 ? recap[0] : null;
   if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
-  let gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|celkem\\s+s\\s+dph|celkov[áa]\\s+č[áa]stka|k\\s+zaplacen[íi]|splatn[áa]\\s+č[áa]stka|amount\\s+due|total\\s+due|balance\\s+due|grand\\s+total|\\btotal\\b(?!\\s+excl)");
-  if(gross === null) gross = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad");
+  // Celková částka s DPH: nejdřív výslovné „celkem vč./s DPH“, „total“; „k úhradě“ až potom (u zaplacené faktury bývá 0).
+  let gross = amountOnLine(lines, "celkem\\s+(?:v[čc]\\.?|s)\\s+dph|celkov[áa]\\s+č[áa]stka|grand\\s+total|total\\s+incl[a-z.]*\\s+(?:tax|vat)|\\btotal\\b(?!\\s+excl)");
+  if(gross === null) gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|k\\s+zaplacen[íi]|splatn[áa]\\s+č[áa]stka|amount\\s+due|total\\s+due|balance\\s+due");
+  if(gross === null || gross === 0){ const alt = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad|bez\\s+dan[ěe]"); if(alt) gross = alt; }
   let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|celkem\\s+cena\\s+bez\\s+dan[ěe]|cena\\s+bez\\s+dan[ěe]|celkem\\s+bez\\s+dan[ěe]|cena\\s+bez\\s+dph|z[áa]klad|subtotal|mezisou[čc]et|total\\s+excl[a-z.]*\\s+(?:tax|vat)|net\\s+amount");
   let rate = null, vat = null;
   const vatLine = lines.find(l => /dph\s*\(?\s*\d{1,2}(?:[.,]\d+)?\s*%/i.test(l));
@@ -5954,6 +5956,10 @@ function parseInvoiceRows(rows, opts){
     rate = Number(mm[1]);
     const nums = numbersIn(mm[2]);
     if(nums.length) vat = nums[nums.length - 1].val;
+  }
+  if(vat === null){
+    const vl = lines.find(l => /^\s*DPH\s+\d/i.test(l) && !/%/.test(l));
+    if(vl){ const ns = numbersIn(vl.replace(/^\s*DPH/i, "")); if(ns.length) vat = ns[0].val; }
   }
   if(rate === null){ const rm = /(?<![\d.,])(\d{1,2})(?:[.,]\d+)?\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
   if(recapUse){ net = recapUse.net; rate = recapUse.rate; vat = recapUse.vat; if(gross === null) gross = recapUse.gross; }
