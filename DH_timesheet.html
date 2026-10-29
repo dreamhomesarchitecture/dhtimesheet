@@ -5666,7 +5666,8 @@ async function pdfPagesToCanvases(file, maxPages){
   const out = [];
   for(let pn = 1; pn <= Math.min(pdf.numPages, maxPages); pn++){
     const page = await pdf.getPage(pn);
-    const viewport = page.getViewport({ scale: 2.5 });
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(2.5, 3200 / Math.max(base.width, base.height)) });
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(viewport.width);
     canvas.height = Math.round(viewport.height);
@@ -5675,11 +5676,43 @@ async function pdfPagesToCanvases(file, maxPages){
   }
   return out;
 }
+// Fotky účtenek a skeny: zmenší na rozumnou velikost, převede na šedou a vyrovná nerovnoměrné osvětlení
+// (lokální práh), takže stíny, zmačkaný papír a pozadí kolem účtenky text nerozbijí.
+function ocrPrepareCanvas(src){
+  const sc = Math.min(1, 3000 / Math.max(src.width, src.height));
+  const w = Math.round(src.width * sc), h = Math.round(src.height * sc);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(src, 0, 0, w, h);
+  const img = ctx.getImageData(0, 0, w, h), d = img.data;
+  const gray = new Float32Array(w * h);
+  for(let i = 0; i < w * h; i++) gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  const integral = new Float64Array((w + 1) * (h + 1));
+  for(let y = 0; y < h; y++){
+    let row = 0;
+    for(let x = 0; x < w; x++){ row += gray[y * w + x]; integral[(y + 1) * (w + 1) + x + 1] = integral[y * (w + 1) + x + 1] + row; }
+  }
+  const r = Math.max(12, Math.round(0.02 * Math.max(w, h)));
+  for(let y = 0; y < h; y++){
+    const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+    for(let x = 0; x < w; x++){
+      const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+      const mean = (integral[y1 * (w + 1) + x1] - integral[y0 * (w + 1) + x1] - integral[y1 * (w + 1) + x0] + integral[y0 * (w + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+      const v = gray[y * w + x] < mean * 0.85 ? 0 : 255;
+      const o = (y * w + x) * 4;
+      d[o] = d[o + 1] = d[o + 2] = v; d[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
 async function imageFileToCanvas(file){
   const url = URL.createObjectURL(file);
   try{
     const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("Obrázek se nepodařilo otevřít.")); im.src = url; });
-    const scale = Math.min(1, 2600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, 3000 / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(img.naturalWidth * scale);
     canvas.height = Math.round(img.naturalHeight * scale);
@@ -5710,17 +5743,24 @@ async function ocrCanvasesToRows(canvases){
         el.textContent = (/recogniz/i.test(m.status) ? `Rozpoznávám text, strana ${pageIndex}/${canvases.length}` : "Připravuji rozpoznávání textu (poprvé se stahují jazyková data)") + pct;
       }
     };
-    const { data } = await worker.recognize(canvas);
+    const { data } = await worker.recognize(ocrPrepareCanvas(canvas));
     const words = (data.words || []).filter(w => w.text && w.text.trim() && w.bbox);
     if(!words.length) continue;
     const heights = words.map(w => w.bbox.y1 - w.bbox.y0).sort((a, b) => a - b);
     const tol = Math.max(4, heights[Math.floor(heights.length / 2)] * 0.6);
+    // Řádky určuje rozpoznávač (drží pohromadě i prohnutý nebo nakřivo vyfocený řádek); vedle sebe stojící
+    // řádky (sloupce) se spojí, jen pokud se nepřekrývají do šířky.
+    const ocrLines = (data.lines || []).filter(l => l.bbox && (l.words || []).some(w => w.text && w.text.trim() && w.bbox));
+    const units = ocrLines.length ? ocrLines.map(l => ({
+      cy: (l.bbox.y0 + l.bbox.y1) / 2, x0: l.bbox.x0, x1: l.bbox.x1,
+      items: l.words.filter(w => w.text && w.text.trim() && w.bbox).map(w => ({ x: w.bbox.x0, str: fixOcrDigits(w.text.trim()) }))
+    })) : words.map(w => ({ cy: (w.bbox.y0 + w.bbox.y1) / 2, x0: w.bbox.x0, x1: w.bbox.x1, items: [{ x: w.bbox.x0, str: fixOcrDigits(w.text.trim()) }] }));
     const pageRows = [];
-    words.forEach(w => {
-      const cy = (w.bbox.y0 + w.bbox.y1) / 2;
-      let row = pageRows.find(r => Math.abs(r.cy - cy) < tol);
-      if(!row){ row = { cy, y: -cy - (pageIndex - 1) * 100000, items: [] }; pageRows.push(row); }
-      row.items.push({ x: w.bbox.x0, str: fixOcrDigits(w.text.trim()) });
+    units.sort((a, b) => a.cy - b.cy).forEach(u => {
+      let row = pageRows.find(r => Math.abs(r.cy - u.cy) < tol && r.spans.every(s => u.x1 < s[0] || u.x0 > s[1]));
+      if(!row){ row = { cy: u.cy, y: -u.cy - (pageIndex - 1) * 100000, items: [], spans: [] }; pageRows.push(row); }
+      row.items.push(...u.items);
+      row.spans.push([u.x0, u.x1]);
     });
     pageRows.sort((a, b) => a.cy - b.cy);
     pageRows.forEach(r => { r.items.sort((a, b) => a.x - b.x); r.text = r.items.map(i => i.str).join(" "); rows.push(r); });
@@ -5770,12 +5810,80 @@ async function autoInvoiceFx(it){
     applyInvoiceFx(it, rate, `kurzem ČNB k ${fmtDateCz(date)}`);
   } catch(err){ /* zůstane ruční zadání kurzu */ }
 }
+// Pokladní účtenka (fotka nebo sken): číslo účtenky, datum, dodavatel nad řádkem s IČO, rekapitulace DPH a celkem.
+function isReceiptText(lines){
+  const head = lines.slice(0, 8).join("\n");
+  return /[ÚU][A-ZČ]TENKA\s*[:.]/i.test(head) && !/faktura|da[ňn]ov[ýy]\s+doklad/i.test(head);
+}
+function parseReceiptRows(rows, opts){
+  const lines = rows.map(r => r.text);
+  const full = lines.join("\n");
+  const check = {};
+  const out = { supplier: { name: "", ico: "", dic: "", address: "", account: "", email: "" }, number: "", date: "", dueDate: "", taxDate: "", net: null, rate: null, vat: null, gross: null, paymentMethod: "ucet", warnings: [], docLabel: "Účtenka č.", receipt: true };
+  const ownIcos = (state.config.billingProfiles || []).map(b => String(b.ico || "").replace(/\D/g, "")).filter(Boolean);
+  const numM = /[ÚU][A-ZČ]TENKA\s*[:.]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i.exec(full);
+  out.number = numM ? numM[1] : "";
+  const dm = /(?<!\d)(\d{1,2})\s*[.,]\s*(\d{1,2})\s*[.,]\s*(20\d{2})(?!\d)/.exec(full);
+  if(dm && Number(dm[2]) >= 1 && Number(dm[2]) <= 12 && Number(dm[1]) >= 1 && Number(dm[1]) <= 31) out.date = `${dm[3]}-${dm[2].padStart(2, "0")}-${dm[1].padStart(2, "0")}`;
+  out.taxDate = out.date;
+  // IČO a DIČ (rozpoznávání občas přečte „IČO“ jako „1č0“)
+  const icRx = /(?<![A-Za-z])[I1l|]\s?[ČC]\s?[O0]?\s*[:.]?\s*(\d{8})(?!\d)/i;
+  const iIc = lines.findIndex(l => { const m = icRx.exec(l); return m && !ownIcos.includes(m[1]); });
+  if(iIc !== -1) out.supplier.ico = icRx.exec(lines[iIc])[1];
+  const dicM = /D[I1l|]\s?[ČC]\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(full);
+  if(dicM) out.supplier.dic = dicM[1].replace(/\s/g, "").toUpperCase();
+  if(!out.supplier.ico && /^CZ\d{8}$/.test(out.supplier.dic)){ out.supplier.ico = out.supplier.dic.slice(2); check.ico = "IČ je odvozené z DIČ – zkontrolujte."; }
+  // Dodavatel: řádky nad IČO bez čísla účtenky a data; název = řádek s právní formou, adresa = řádek pod ním
+  const stop = iIc !== -1 ? iIc : Math.min(lines.length, 8);
+  const head = lines.slice(0, stop).map(l => l.replace(/^[\s=|\-_.:;,]+/, "").trim()).filter(l => l && !/[ÚU][A-ZČ]TENKA|datum|čas\b|\d{1,2}:\d{2}|(?<!\d)\d{1,2}\s*[.,]\s*\d{1,2}\s*[.,]\s*20\d{2}/i.test(l) && (l.match(/[A-Za-zÁ-ž]/g) || []).length >= 3);
+  const legalRx = /\bs\.?\s?r\.?\s?o\b|\ba\.\s?s\b|\bspol\b|\bv\.\s?o\.\s?s\b|\bk\.\s?s\b/i;
+  const iLegal = head.findIndex(l => legalRx.test(l));
+  const nameRaw = iLegal !== -1 ? head[iLegal] : (head[0] || "");
+  out.supplier.name = nameRaw.replace(/[\s,;:|]+$/, "").replace(/\bs\.?\s?r\.?\s?o$/i, m => m + ".").trim();
+  const tradeName = iLegal > 0 ? head[0] : "";
+  if(tradeName) out.noteSuffix = ` – ${tradeName}`;
+  const addrLine = head.slice(iLegal !== -1 ? iLegal + 1 : 1).find(l => /\d/.test(l));
+  const alt = head.slice(0, Math.max(iLegal, 0)).find(l => /\d/.test(l));
+  out.supplier.address = (addrLine || alt || "").replace(/[\s,;:|]+$/, "");
+  check.supplier = "Dodavatel je přečtený z účtenky – zkontrolujte název a adresu.";
+  // Rekapitulace DPH: řádky „sazba %  základ  daň  celkem“ pod záhlavím „DPH Základ Daň Celkem“
+  const NUM = "(-?\\d[\\d\\s]*[.,]\\d{2})";
+  const recapRowRx = new RegExp(`(\\d{1,2})\\s*%\\s+${NUM}\\s+${NUM}\\s+${NUM}`);
+  const hdr = lines.findIndex(l => /dph/i.test(l) && /z[áa]klad/i.test(l));
+  const recap = [];
+  if(hdr !== -1) lines.slice(hdr + 1, hdr + 8).forEach(l => {
+    const m = recapRowRx.exec(l);
+    if(m) recap.push({ rate: Number(m[1]), net: parseCzNumber(m[2]), vat: parseCzNumber(m[3]), gross: parseCzNumber(m[4]) });
+  });
+  const celkemLine = lines.find(l => /^\W*celkem\b(?!\s*\()/i.test(l) && numbersIn(l.replace(/^\W*celkem/i, "")).length);
+  let total = null;
+  if(celkemLine){ const ns = numbersIn(celkemLine.replace(/^\W*celkem/i, "")); total = ns[ns.length - 1].val; }
+  if(recap.length){
+    const net = r2(recap.reduce((a, x) => a + x.net, 0)), vat = r2(recap.reduce((a, x) => a + x.vat, 0));
+    const main = recap.reduce((a, x) => Math.abs(x.net) > Math.abs(a.net) ? x : a, recap[0]);
+    const rowsOk = recap.every(x => Math.abs(x.net + x.vat - x.gross) <= 1);
+    out.net = net; out.vat = vat; out.rate = main.rate;
+    out.gross = total !== null && Math.abs(net + vat - total) <= 1 ? total : r2(net + vat);
+    if(total !== null && Math.abs(net + vat - total) > 1 || !rowsOk) check.amount = "Částky na účtence nesedí k sobě (základ + DPH ≠ celkem) – zkontrolujte je.";
+  } else if(total !== null){
+    const rm = /(?<![\d.,])(\d{1,2})\s*%/.exec(full);
+    const rate = rm && [0, 10, 12, 15, 21].includes(Number(rm[1])) ? Number(rm[1]) : 21;
+    out.gross = total; out.rate = rate; out.net = r2(total / (1 + rate / 100)); out.vat = r2(total - out.net);
+    check.amount = "Rekapitulace DPH na účtence se nepodařilo přečíst – sazbu a základ jsem dopočítal z celkové částky, zkontrolujte.";
+  }
+  if(/hotov[ěe]|v\s+hotovosti/i.test(full)) out.paymentMethod = "hotove";
+  out.warnings.unshift("Účtenka byla přečtena rozpoznáním textu z obrázku, takže se mohla některá čísla přečíst špatně. Zkontrolujte pečlivě hlavně částky, IČ a datum.");
+  ["supplier", "ico", "number", "date", "amount", "account"].forEach(k => { if(!check[k]) check[k] = ""; });
+  out.check = check;
+  return out;
+}
 function parseInvoiceRows(rows, opts){
   const lines = rows.map(r => r.text);
   const full = lines.join("\n");
   const check = {};    // údaj nalezen, ale je potřeba ho zkontrolovat
   const out = { supplier: { name: "", ico: "", dic: "", address: "", account: "", email: "" }, number: "", date: "", dueDate: "", taxDate: "", net: null, rate: null, vat: null, gross: null, paymentMethod: "ucet", warnings: [] };
   if(lines.length < 3){ out.warnings.push("Ve faktuře se nepodařilo najít žádný čitelný text. Zkuste ostřejší sken nebo údaje zadejte ručně."); return { ...out, check, empty: true }; }
+  if(isReceiptText(lines)) return parseReceiptRows(rows, opts);
   const ownIcos = (state.config.billingProfiles || []).map(b => String(b.ico || "").replace(/\D/g, "")).filter(Boolean);
 
   // ---- dodavatel: blok pod štítkem „Dodavatel“ (dvousloupcové i pod sebou uspořádané faktury) ----
@@ -5903,7 +6011,10 @@ function parseInvoiceRows(rows, opts){
   const fullN = full.replace(/[ \t]*\u0000[ \t]*/g, "-");
   let m = /(?:(?:invoice|receipt)\s*(?:number|no\.?|#)|(?:číslo|č\.)\s*(?:faktury|dokladu))\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\/\-]{2,})/i.exec(fullN);
   if(m && /\d/.test(m[1])) num = m[1].replace(/-+$/, "");
-  if(!num) m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full);
+  // Číslo přímo v nadpisu na začátku dokladu („Faktura - 4032637164“, „Daňový doklad č. 2026001“)
+  if(!num){ const hm = /^\W*(?:faktura|da[ňn]ov[ýy]\s+doklad|invoice)(?:\s*[-–:]\s*|\s+(?:č\.|číslo|no\.?|#)\s*)([A-Za-z0-9][A-Za-z0-9\/\-]{4,})\s*$/i.exec(lines.slice(0, 5).find(l => /^\W*(?:faktura|da[ňn]ov[ýy]\s+doklad|invoice)/i.test(l) && /\d{5}/.test(l)) || ""); if(hm && /\d{4}/.test(hm[1])) num = hm[1]; }
+  if(!num) m = /(?:faktura|daňový doklad|invoice)[^\n]{0,25}?(?:č\.|číslo|no\.?|#)\s*[:.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{2,})(?!\s*Sb)/i.exec(full);
+  if(!num && m && /^\d{1,4}\/\d{4}$/.test(m[1]) && new RegExp(m[1].replace("/", "\\/") + "\\s*Sb", "i").test(full)) m = null;
   if(!num && m && /\d/.test(m[1])) num = m[1];
   if(!num){ m = /číslo\s+(?:faktury|dokladu)[^\n]{0,30}?\s([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full); if(m && /\d/.test(m[1])) num = m[1]; }
   if(!num){ m = /^\s*(?:faktura|da[ňn]ov[ýy] doklad)[^\n\d]{0,30}?(\d{5,})\s*$/im.exec(full); if(m) num = m[1]; }
@@ -6273,7 +6384,7 @@ function invoiceImportItemHtml(origin, it){
       </div>
       <div class="q-hint" style="margin:6px 0 14px;">${existing ? `Dodavatel už je v seznamu: <b style="color:var(--ink);">${esc(existing.name)}</b>. Chybějící údaje se mu doplní.` : similar.length ? `Není to jeden z uložených dodavatelů? ${similar.map(sp => `<button type="button" class="btn btn-outline btn-small" data-action="invoice-import-use-supplier" data-key="${esc(it.key)}" data-id="${esc(sp.id)}">Použít „${esc(sp.name)}“</button>`).join(" ")} Jinak se po uložení založí nový.` : `Tento dodavatel zatím v seznamu není – po uložení se automaticky založí.`}</div>
       <div class="form-grid">
-        <div class="field-row ${cls("nu", "number")}"><label class="field-label">Číslo faktury</label><input type="text" data-k="ii-number" value="${esc(p.number)}"></div>
+        <div class="field-row ${cls("nu", "number")}"><label class="field-label">${p.receipt ? "Číslo účtenky" : "Číslo faktury"}</label><input type="text" data-k="ii-number" value="${esc(p.number)}"></div>
         <div class="field-row ${cls("d", "date")}"><label class="field-label">Datum vystavení</label><input type="date" data-k="ii-date" value="${esc(p.date)}"></div>
         <div class="field-row"><label class="field-label">Splatnost</label><input type="date" data-k="ii-due" value="${esc(p.dueDate)}"></div>
       </div>
@@ -6290,7 +6401,7 @@ function invoiceImportItemHtml(origin, it){
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
         <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
-        <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc((p.number ? "Faktura č. " + p.number : "") + (p.noteSuffix || ""))}"></div>
+        <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc((p.number ? (p.docLabel || "Faktura č.") + " " + p.number : "") + (p.noteSuffix || ""))}"></div>
       </div>
       ${it.formError ? `<div class="q-hint" style="color:var(--danger);margin:8px 0 0;">${esc(it.formError)}</div>` : ``}
       <div style="display:flex;gap:8px;margin-top:14px;">
