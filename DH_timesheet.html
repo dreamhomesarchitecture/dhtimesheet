@@ -527,6 +527,10 @@
   .split-full{ grid-column:1 / -1; }
   .split-wrap{ margin:2px 0 10px; }
   .split-ed:not(:empty){ margin-top:10px; padding:12px 14px; border:1px dashed var(--line); border-radius:var(--radius-sm); }
+  .vl-ed:not(:empty){ margin-top:10px; padding:12px 14px; border:1px dashed var(--line); border-radius:var(--radius-sm); }
+  .vl-row{ display:grid; grid-template-columns:90px 1fr 1fr 32px; gap:8px; margin-bottom:8px; align-items:center; }
+  .vl-err{ color:var(--danger); font-size:13px; margin-top:6px; }
+  .price-group.vl-on .pf-net, .price-group.vl-on .pf-rate, .price-group.vl-on .pf-vat, .price-group.vl-on .pf-gross{ background:var(--bg-soft, rgba(0,0,0,.04)); }
   .split-head{ font-weight:700; margin-bottom:8px; }
   .split-row{ display:grid; grid-template-columns:1.4fr 1fr 130px 90px 32px; gap:8px; margin-bottom:8px; align-items:center; }
   .split-foot{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
@@ -984,6 +988,7 @@ let state = {
   costsLoading: false,
   editingCostId: null,
   costSplit: null,
+  costVatLines: null,
   costError: "",
   costImportError: "",
   costImportPreview: null,
@@ -1471,20 +1476,24 @@ function supplierSelectOptionsHtml(c){
 }
 function costPriceFieldsHtml(o){
   o = o || {};
-  const c = o.cost || null;
+  let c = o.cost || null;
   const has = v => v !== undefined && v !== null && v !== "";
+  // Víc sazeb DPH: celkové pole se dopočítá z řádků sazeb a je jen ke čtení.
+  if(o.vl){ const t = vlTotals(o.vl); c = { ...(c || {}), amount: t.net, vatAmount: t.vat, amountGross: t.gross, vatRate: "" }; }
   const net = c && has(c.amount) ? c.amount : "";
   const rate = c ? (has(c.vatRate) ? c.vatRate : "") : 21;
   const vat = c && has(c.vatAmount) ? c.vatAmount : (net !== "" && rate !== "" ? r2(net * rate / 100) : "");
   const gross = c && has(c.amountGross) ? c.amountGross : (net !== "" ? r2(Number(net) + Number(vat || 0)) : "");
+  const ro = o.vl ? "readonly" : "";
   const netAttrs = `${o.netId ? `id="${o.netId}"` : ""} class="pf-net ${o.netClass || ""}"`;
   return `
-        <div class="price-group" data-anchor="${c && has(c.amountGross) && c.priceAnchor === "gross" ? "gross" : "net"}">
+        <div class="price-group ${o.vl ? "vl-on" : ""}" data-anchor="${c && has(c.amountGross) && c.priceAnchor === "gross" ? "gross" : "net"}">
           ${o.noSupplier ? `` : `<div class="field-row"><label class="field-label">Dodavatel</label><select class="pf-supplier" name="supplierId">${supplierSelectOptionsHtml(c)}</select></div>`}
-          <div class="field-row"><label class="field-label">Cena bez DPH (Kč)</label><input type="number" ${netAttrs} name="amount" min="0" step="0.01" value="${esc(net)}" ${o.required ? "required" : ""}></div>
-          <div class="field-row"><label class="field-label">DPH (%)</label><input type="number" class="pf-rate" name="vatRate" min="0" max="100" step="0.01" list="vat-rate-list" value="${esc(rate)}"></div>
-          <div class="field-row"><label class="field-label">DPH (Kč)</label><input type="number" class="pf-vat" name="vatAmount" min="0" step="0.01" value="${esc(vat)}"></div>
-          <div class="field-row"><label class="field-label">Cena s DPH (Kč)</label><input type="number" class="pf-gross" name="amountGross" min="0" step="0.01" value="${esc(gross)}"></div>
+          <div class="field-row"><label class="field-label">Cena bez DPH (Kč)</label><input type="number" ${netAttrs} name="amount" min="0" step="0.01" value="${esc(net)}" ${o.required ? "required" : ""} ${ro}></div>
+          <div class="field-row"><label class="field-label">DPH (%)</label><input type="number" class="pf-rate" name="vatRate" min="0" max="100" step="0.01" list="vat-rate-list" value="${esc(rate)}" ${ro} ${o.vl ? 'placeholder="více"' : ""}></div>
+          <div class="field-row"><label class="field-label">DPH (Kč)</label><input type="number" class="pf-vat" name="vatAmount" min="0" step="0.01" value="${esc(vat)}" ${ro}></div>
+          <div class="field-row"><label class="field-label">Cena s DPH (Kč)</label><input type="number" class="pf-gross" name="amountGross" min="0" step="0.01" value="${esc(gross)}" ${ro}></div>
+          ${o.vlOwner ? vlBlockHtml(o.vlOwner, o.vl || null) : ``}
         </div>`;
 }
 function readPriceGroup(scope){
@@ -4450,7 +4459,7 @@ function adminCostsTemplate(){
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
-        ${costPriceFieldsHtml({ cost: editingCost, required: true })}
+        ${costPriceFieldsHtml({ cost: editingCost, required: true, vl: state.costVatLines, vlOwner: "global" })}
         <div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>
         <div class="field-row"><label class="field-label">Platba</label>
           <select name="paymentMethod" required>
@@ -6078,7 +6087,9 @@ function parseInvoiceRows(rows, opts){
     }
   }
   const recapUse = recap.length === 1 ? recap[0] : null;
-  if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
+  const recapMulti = recap.filter(x => x.net > 0);
+  const multiRate = recapMulti.length > 1 && new Set(recapMulti.map(x => x.rate)).size === recapMulti.length;
+  if(recap.length > 1 && !multiRate) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
   // Celková částka s DPH: nejdřív výslovné „celkem vč./s DPH“, „total“; „k úhradě“ až potom (u zaplacené faktury bývá 0).
   let gross = amountOnLine(lines, "celkem\\s+(?:v[čc]\\.?|s)\\s+dph|celkov[áa]\\s+č[áa]stka|grand\\s+total|total\\s+incl[a-z.]*\\s+(?:tax|vat)|\\btotal\\b(?!\\s+excl)");
   if(gross === null) gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|k\\s+zaplacen[íi]|splatn[áa]\\s+č[áa]stka|amount\\s+due|total\\s+due|balance\\s+due");
@@ -6110,9 +6121,18 @@ function parseInvoiceRows(rows, opts){
   if(rate === null && net && vat !== null) rate = r2(vat / net * 100);
   if(net !== null && gross !== null && vat !== null && Math.abs(net + vat - gross) > 1) check.amount = "Částky ve faktuře nesedí k sobě (základ + DPH ≠ celkem) – zkontrolujte.";
   out.net = net; out.gross = gross; out.vat = vat; out.rate = rate;
+  // Víc sazeb DPH na jednom dokladu: řádky rekapitulace se nabídnou jako samostatné sazby (každá se uloží zvlášť).
+  if(multiRate && !nonPayer && !reverseCharge){
+    const sumNet = r2(recapMulti.reduce((a, x) => a + x.net, 0)), sumVat = r2(recapMulti.reduce((a, x) => a + x.vat, 0));
+    if(gross === null || Math.abs(sumNet + sumVat - gross) <= 1){
+      out.vatLines = recapMulti.map(x => ({ rate: x.rate, net: x.net, vat: x.vat }));
+      out.net = sumNet; out.vat = sumVat; out.gross = r2(sumNet + sumVat); out.rate = null;
+    } else check.amount = "Faktura má víc sazeb DPH, ale částky nesedí k sobě – zkontrolujte je.";
+  }
   // Cizí měna: částky se uchovají zvlášť a do nákladu (v Kč) se přepočtou kurzem – viz applyInvoiceFx.
   const cur = /Kč|CZK/.test(full) ? "CZK" : /€|\bEUR\b/.test(full) ? "EUR" : /\$|\bUSD\b/.test(full) ? "USD" : /£|\bGBP\b/.test(full) ? "GBP" : "CZK";
   if(cur !== "CZK"){
+    delete out.vatLines;
     out.currency = cur;
     out.foreign = { net, vat, gross, rate };
     out.net = null; out.vat = null; out.gross = null;
@@ -6224,6 +6244,122 @@ function invoiceCardUseSupplier(el, supplierId){
   set("ii-sup-name", s.name); set("ii-sup-ico", s.ico); set("ii-sup-dic", s.dic); set("ii-sup-address", s.address); set("ii-sup-account", s.bankAccount);
   captureInvoiceImportDraft({ target: el });
   render();
+}
+// ---- víc sazeb DPH na jednom dokladu: na každou sazbu vznikne samostatný náklad ----
+// Řádky drží state.costVatLines (formulář nákladu) nebo položka fronty importu (it.vatLines): { rows: [{ rate, net, vat }] }.
+function vlGet(owner){
+  if(owner === "global") return state.costVatLines;
+  const imp = state.invoiceImport;
+  const it = imp && imp.items ? imp.items.find(x => x.key === owner) : null;
+  return it ? it.vatLines || null : null;
+}
+function vlSet(owner, obj){
+  if(owner === "global"){ state.costVatLines = obj; return; }
+  const imp = state.invoiceImport;
+  const it = imp && imp.items ? imp.items.find(x => x.key === owner) : null;
+  if(it) it.vatLines = obj;
+}
+function vlTotals(vl){
+  let net = 0, vat = 0;
+  ((vl && vl.rows) || []).forEach(r => { const n = numOrNull(r.net), v = numOrNull(r.vat); if(n !== null) net += n; if(v !== null) vat += v; });
+  return { net: r2(net), vat: r2(vat), gross: r2(net + vat) };
+}
+function vlEditorInnerHtml(owner, vl){
+  if(!vl) return "";
+  const rows = vl.rows.map((r, i) => `<div class="vl-row" data-i="${i}">
+      <input type="number" data-vf="rate" min="0" max="100" step="0.01" list="vat-rate-list" placeholder="DPH %" value="${esc(r.rate ?? "")}" aria-label="Sazba DPH">
+      <input type="number" data-vf="net" min="0" step="0.01" placeholder="Základ bez DPH" value="${esc(r.net ?? "")}" aria-label="Základ bez DPH">
+      <input type="number" data-vf="vat" min="0" step="0.01" placeholder="DPH v Kč" value="${esc(r.vat ?? "")}" aria-label="DPH v Kč">
+      <button type="button" class="icon-btn" data-action="vl-del" data-vl-owner="${esc(owner)}" data-i="${i}" title="Odebrat sazbu">×</button>
+    </div>`).join("");
+  const t = vlTotals(vl);
+  return `<div class="split-head">Víc sazeb DPH <span class="meta">(na každou sazbu se založí samostatný náklad)</span></div>${rows}
+    <div class="split-foot"><button type="button" class="btn btn-outline btn-small" data-action="vl-add" data-vl-owner="${esc(owner)}">+ Další sazba</button><div class="split-sum">Základ ${fmtKc2(t.net)} · DPH ${fmtKc2(t.vat)} · s DPH ${fmtKc2(t.gross)}</div></div>
+    <div class="vl-err"></div>`;
+}
+function vlBlockHtml(owner, vl){
+  return `<div class="field-row split-full vl-wrap"><div><button type="button" class="btn btn-outline btn-small" data-action="vl-toggle" data-vl-owner="${esc(owner)}">${vl ? "Zrušit více sazeb DPH" : "Víc sazeb DPH na jednom dokladu"}</button></div>
+    <div class="vl-ed" data-vl-owner="${esc(owner)}">${vlEditorInnerHtml(owner, vl)}</div></div>`;
+}
+// Překreslí editor sazeb a přepíše celková pole (jsou jen ke čtení).
+function vlRefresh(scope){
+  if(!scope) return;
+  const ed = scope.querySelector(".vl-ed");
+  if(!ed) return;
+  const owner = ed.getAttribute("data-vl-owner");
+  const vl = vlGet(owner);
+  ed.innerHTML = vlEditorInnerHtml(owner, vl);
+  const btn = scope.querySelector('[data-action="vl-toggle"]');
+  if(btn) btn.textContent = vl ? "Zrušit více sazeb DPH" : "Víc sazeb DPH na jednom dokladu";
+  const g = scope.querySelector(".price-group");
+  if(g) g.classList.toggle("vl-on", !!vl);
+  const f = c => scope.querySelector(c);
+  const net = f(".pf-net"), rate = f(".pf-rate"), vat = f(".pf-vat"), gross = f(".pf-gross");
+  [net, rate, vat, gross].forEach(el => { if(el) el.readOnly = !!vl; });
+  if(vl){
+    const t = vlTotals(vl);
+    net.value = t.net || ""; vat.value = t.vat || ""; gross.value = t.gross || ""; rate.value = ""; rate.placeholder = "více";
+    net.dispatchEvent(new Event("change", { bubbles: true }));
+  } else if(rate) rate.placeholder = "";
+}
+document.addEventListener("click", e => {
+  const b = e.target && e.target.closest ? e.target.closest('[data-action="vl-toggle"],[data-action="vl-add"],[data-action="vl-del"]') : null;
+  if(!b) return;
+  const scope = splitScopeOf(b);
+  const owner = b.getAttribute("data-vl-owner");
+  const act = b.getAttribute("data-action");
+  let vl = vlGet(owner);
+  if(act === "vl-toggle"){
+    if(vl) vl = null;
+    else {
+      const rate = numOrNull(scope.querySelector(".pf-rate").value), net = numOrNull(scope.querySelector(".pf-net").value);
+      const eff = rate === null ? 21 : rate, other = eff === 21 ? 12 : 21;
+      vl = { rows: [{ rate: eff, net: net === null ? "" : net, vat: net === null ? "" : r2(net * eff / 100) }, { rate: other, net: "", vat: "" }] };
+    }
+    vlSet(owner, vl);
+  } else if(vl && act === "vl-add"){
+    vl.rows.push({ rate: "", net: "", vat: "" });
+  } else if(vl && act === "vl-del"){
+    vl.rows.splice(Number(b.getAttribute("data-i")), 1);
+    if(vl.rows.length < 2){ vl = null; vlSet(owner, null); }
+  }
+  vlRefresh(scope);
+});
+document.addEventListener("change", e => {
+  const t = e.target;
+  const rowEl = t && t.closest ? t.closest(".vl-row") : null;
+  if(!rowEl) return;
+  const scope = splitScopeOf(t);
+  const ed = t.closest(".vl-ed");
+  const vl = ed && vlGet(ed.getAttribute("data-vl-owner"));
+  const row = vl && vl.rows[Number(rowEl.getAttribute("data-i"))];
+  if(!row) return;
+  const f = t.getAttribute("data-vf");
+  row[f] = t.value;
+  if(f === "rate" || f === "net"){
+    const n = numOrNull(row.net), r = numOrNull(row.rate);
+    row.vat = n !== null && r !== null ? r2(n * r / 100) : "";
+  }
+  vlRefresh(scope);
+});
+// Z řádků sazeb vyrobí náklady: každá část (projekt) se rozloží na sazby poměrně, poslední část doplní zaokrouhlení.
+function vatLineCostParts(parts, price, vl){
+  const lines = (vl && vl.rows || []).map(r => ({ rate: numOrNull(r.rate), net: numOrNull(r.net), vat: numOrNull(r.vat) }));
+  if(lines.length < 2) return { error: "Zadejte aspoň dvě sazby DPH." };
+  if(lines.some(l => l.rate === null || l.net === null || !(l.net > 0))) return { error: "U každé sazby zadejte procenta a základ bez DPH." };
+  lines.forEach(l => { if(l.vat === null) l.vat = r2(l.net * l.rate / 100); });
+  const total = price.amount;
+  const out = [];
+  lines.forEach(l => {
+    let restNet = l.net, restVat = l.vat;
+    parts.forEach((pt, i) => {
+      const last = i === parts.length - 1, share = pt.price.amount / total;
+      const net = last ? r2(restNet) : r2(l.net * share), vat = last ? r2(restVat) : r2(l.vat * share);
+      restNet = r2(restNet - net); restVat = r2(restVat - vat);
+      out.push({ ...pt, price: { ...pt.price, amount: net, vatAmount: vat, amountGross: r2(net + vat), vatRate: l.rate } });
+    });
+  });
+  return { parts: out };
 }
 // ---- rozdělení jednoho nákladu mezi víc projektů (částkou nebo procenty) ----
 // Rozdělení drží state.costSplit (formulář nákladu) nebo položka fronty importu (it.split): { rows: [{ projectId, phaseId, amount, pct, by }] }.
@@ -6367,6 +6503,7 @@ function lastProjectForSupplier(supplier){
   return best ? best.projectId : "";
 }
 function invoiceImportItemHtml(origin, it){
+  if(it.vatLines === undefined) it.vatLines = it.parsed && it.parsed.vatLines ? { rows: it.parsed.vatLines.map(l => ({ rate: l.rate, net: l.net, vat: l.vat })) } : null;
   if(it.error) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="ii-head"><b>${esc(it.fileName || "Faktura")}</b></div><div class="q-hint" style="color:var(--danger);margin:0 0 10px;">${esc(it.error)}</div><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-cancel" data-key="${esc(it.key)}">Zavřít</button></div>`;
   if(!it.parsed) return `<div class="ii-panel" data-key="${esc(it.key)}"><div class="empty-state" style="margin:0;">${it.busy ? `<span id="ii-progress">Čtu fakturu ${esc(it.fileName || "")}…</span><div class="q-hint" style="margin:6px 0 0;">U naskenované faktury nebo fotky to může trvat až půl minuty.</div>` : `Čeká ve frontě: ${esc(it.fileName || "")}`}</div></div>`;
   const p = it.parsed;
@@ -6411,7 +6548,7 @@ function invoiceImportItemHtml(origin, it){
           <div class="form-grid"><div class="field-row"><label class="field-label">Kurz (Kč za 1 ${esc(p.currency)})</label><input type="number" step="0.001" min="0" data-k="ii-fx" value="${it.fx ? esc(it.fx.rate) : ""}"></div>
           <div class="field-row" style="display:flex;gap:8px;align-items:flex-end;"><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx" data-key="${esc(it.key)}">Přepočítat podle kurzu</button><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx-cnb" data-key="${esc(it.key)}">Načíst kurz ČNB</button></div></div></div>`; })() : ``}
       <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
-        ${costPriceFieldsHtml({ noSupplier: true, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
+        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, vlOwner: it.key, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
       ${splitBlockHtml(it.key, it.split, numOrNull(dr["pf-net"] !== undefined ? dr["pf-net"] : p.net))}
       <div class="form-grid" style="margin-top:6px;">
@@ -6506,6 +6643,15 @@ async function saveInvoiceImport(panel){
     split = buildSplitCosts(it.split, price);
     if(split.error){ captureInvoiceImportDraft({ target: panel.querySelector("input") }); it.formError = split.error; render(); return false; }
   }
+  // Víc sazeb DPH: každá část (projekt) se rozloží na řádky sazeb.
+  let vatParts = null;
+  if(it.vatLines){
+    const isEmp0 = String(projectId).startsWith("emp:");
+    const base = split ? split.parts : [{ projectId: isEmp0 ? "" : projectId, phaseId: isEmp0 ? "" : val("ii-phase"), employeeId: isEmp0 ? String(projectId).slice(4) : undefined, price }];
+    const vres = vatLineCostParts(base, price, it.vatLines);
+    if(vres.error){ captureInvoiceImportDraft({ target: panel.querySelector("input") }); it.formError = vres.error; render(); return false; }
+    vatParts = vres.parts;
+  }
   it.formError = "";
   const number = val("ii-number");
   let supplier = matchSupplierForInvoice(sup);
@@ -6533,7 +6679,10 @@ async function saveInvoiceImport(panel){
   const baseCost = { date, supplier: supplier.name, supplierId: supplier.id, paymentMethod: val("ii-payment") || "ucet", note: val("ii-note") };
   if(number) baseCost.invoiceNumber = number;
   if(val("ii-due")) baseCost.dueDate = val("ii-due");
-  if(it.split){
+  if(vatParts){
+    const gid = uid("split");
+    vatParts.forEach(pt => state.costs.push({ id: uid("cost"), projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, ...baseCost, employeeId: pt.employeeId, splitId: gid }));
+  } else if(it.split){
     const gid = uid("split");
     split.parts.forEach(pt => state.costs.push({ id: uid("cost"), projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, ...baseCost, employeeId: pt.employeeId, splitId: gid }));
   } else {
@@ -8445,7 +8594,7 @@ function bindAdmin(){
   });
   // Rozdělení nákladu mezi projekty se dělá v hlavním formuláři nákladů (Finance → Náklady).
   document.querySelectorAll('[data-action="split-project-cost"]').forEach(b => b.onclick = () => {
-    setState({ editingProjectCostId: null, editingProjectId: null, adminSubTab: "reports", reportsGroup: "billing", adminOpenSection: "project-costs", editingCostId: b.getAttribute("data-id"), costSplit: null });
+    setState({ editingProjectCostId: null, editingProjectId: null, adminSubTab: "reports", reportsGroup: "billing", adminOpenSection: "project-costs", editingCostId: b.getAttribute("data-id"), costSplit: null, costVatLines: null });
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-action="cancel-project-cost-edit"]').forEach(b => b.onclick = () => {
@@ -8895,9 +9044,10 @@ function bindAdmin(){
     const isEmployeeTarget = String(data.projectId).startsWith("emp:");
     const fields = { date: data.date, projectId: isEmployeeTarget ? "" : data.projectId, phaseId: isEmployeeTarget ? "" : (data.phaseId || ""), ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: isEmployeeTarget ? String(data.projectId).slice(4) : undefined };
     if(!state.costs) state.costs = [];
-    if(state.costSplit){
-      const res = buildSplitCosts(state.costSplit, price);
-      if(res.error){ const er = addCostForm.querySelector(".split-err"); if(er) er.textContent = res.error; return; }
+    if(state.costSplit || state.costVatLines){
+      let res = state.costSplit ? buildSplitCosts(state.costSplit, price) : { parts: [{ projectId: fields.projectId, phaseId: fields.phaseId, employeeId: fields.employeeId, price }] };
+      if(!res.error && state.costVatLines) res = vatLineCostParts(res.parts, price, state.costVatLines);
+      if(res.error){ const er = addCostForm.querySelector(state.costSplit && !/sazb/i.test(res.error) ? ".split-err" : ".vl-err") || addCostForm.querySelector(".split-err"); if(er) er.textContent = res.error; return; }
       // Při úpravě existujícího nákladu se původní náklad nahradí jeho částmi (číslo faktury a splatnost zůstanou).
       const orig = state.editingCostId ? state.costs.find(c => c.id === state.editingCostId) : null;
       const gid = (orig && orig.splitId) || uid("split");
@@ -8907,7 +9057,7 @@ function bindAdmin(){
       const parts = res.parts.map(pt => ({ id: uid("cost"), date: data.date, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: pt.employeeId, ...extra, splitId: gid }));
       if(orig){ const at = state.costs.indexOf(orig); state.costs.splice(at, 1, ...parts); }
       else state.costs.push(...parts);
-      state.costSplit = null; state.costError = ""; state.editingCostId = null;
+      state.costSplit = null; state.costVatLines = null; state.costError = ""; state.editingCostId = null;
       await saveCosts();
       render();
       return;
@@ -8925,10 +9075,10 @@ function bindAdmin(){
   });
 
   const cancelEditCostBtn = document.getElementById("cancel-edit-cost-btn");
-  if(cancelEditCostBtn) cancelEditCostBtn.onclick = () => setState({ editingCostId: null, costSplit: null, costError: "" });
+  if(cancelEditCostBtn) cancelEditCostBtn.onclick = () => setState({ editingCostId: null, costSplit: null, costVatLines: null, costError: "" });
 
   document.querySelectorAll('[data-action="edit-cost"]').forEach(b => b.onclick = () => {
-    setState({ editingCostId: b.getAttribute("data-id"), costSplit: null });
+    setState({ editingCostId: b.getAttribute("data-id"), costSplit: null, costVatLines: null });
   });
   // Kopie nákladu: stejný náklad s dnešním datem, rovnou otevřený k úpravě data. Číslo faktury a splatnost se nekopírují.
   document.querySelectorAll('[data-action="copy-cost"]').forEach(b => b.onclick = async () => {
