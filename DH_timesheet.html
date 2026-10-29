@@ -5887,7 +5887,7 @@ function parseInvoiceRows(rows, opts){
   const ownIcos = (state.config.billingProfiles || []).map(b => String(b.ico || "").replace(/\D/g, "")).filter(Boolean);
 
   // ---- dodavatel: blok pod štítkem „Dodavatel“ (dvousloupcové i pod sebou uspořádané faktury) ----
-  const labelRx = /dodavatel|poskytovatel|vystavil|prod[áa]vaj[íi]c[íi]|prodejce/i, custRx = /odb[ěe]ratel|p[řr]íjemce|z[áa]kazn[ií]k|objednatel|fakturov[áa]no/i;
+  const labelRx = /dodavatel|poskytovatel|vystavil|prod[áa]vaj[íi]c[íi]|prodejce/i, custRx = /odb[ěe]ratel|p[řr]íjemce|z[áa]kazn[ií]k|objednatel|fakturov[áa]no|pl[áa]tce\s*[-–:]/i;
   const iDod = rows.findIndex(r => r.items.some(i => labelRx.test(i.str)));
   let supplierLines = [];
   let enSupplier = false;
@@ -6067,6 +6067,8 @@ function parseInvoiceRows(rows, opts){
   // Celková částka s DPH: nejdřív výslovné „celkem vč./s DPH“, „total“; „k úhradě“ až potom (u zaplacené faktury bývá 0).
   let gross = amountOnLine(lines, "celkem\\s+(?:v[čc]\\.?|s)\\s+dph|celkov[áa]\\s+č[áa]stka|grand\\s+total|total\\s+incl[a-z.]*\\s+(?:tax|vat)|\\btotal\\b(?!\\s+excl)");
   if(gross === null) gross = amountOnLine(lines, "celkem\\s+k\\s+[úu]hrad[ěe]|k\\s+[úu]hrad[ěe]|k\\s+zaplacen[íi]|splatn[áa]\\s+č[áa]stka|amount\\s+due|total\\s+due|balance\\s+due");
+  // Zaplacená záloha/doklad: „k úhradě“ je 0, skutečný součet je na samostatném řádku „CELKEM: …“.
+  if(gross === null || gross === 0){ const alt = amountOnLine(lines, "^\\s*celkem\\s*:\\s*(?=[\\d-])"); if(alt) gross = alt; }
   if(gross === null || gross === 0){ const alt = amountOnLine(lines, "celkem", "bez\\s+dph|z[áa]klad|bez\\s+dan[ěe]"); if(alt) gross = alt; }
   let net = amountOnLine(lines, "z[áa]klad\\s+dan[ěe](?:\\s+bez\\s+dph)?|celkem\\s+bez\\s+dph|celkem\\s+cena\\s+bez\\s+dan[ěe]|cena\\s+bez\\s+dan[ěe]|celkem\\s+bez\\s+dan[ěe]|cena\\s+bez\\s+dph|z[áa]klad|subtotal|mezisou[čc]et|total\\s+excl[a-z.]*\\s+(?:tax|vat)|net\\s+amount");
   let rate = null, vat = null;
