@@ -3805,7 +3805,7 @@ function timesheetTemplate(){
 
 function noteSearchFieldHtml(id, value){
   return `
-      <div class="field-row grow" style="min-width:220px;">
+      <div class="field-row grow" style="min-width:min(220px,100%);">
         <label class="field-label">Hledat v poznámkách</label>
         <div style="position:relative;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--soft)" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -4489,8 +4489,8 @@ function adminCostsTemplate(){
           </select>
         </div>
         <div class="field-row"><label class="field-label">Dodavatel</label><select id="cost-filter-supplier">${costSupplierFilterOptionsHtml(costs, state.costFilterSupplier)}</select></div>
-        <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="cost-filter-from" value="${esc(state.costFilterFrom)}"></div>
-        <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="cost-filter-to" value="${esc(state.costFilterTo)}"></div>
+        <div class="field-row"><label class="field-label">Datum od</label>${dateMonthNavHtml("cost-filter", "from", state.costFilterFrom)}<input type="date" id="cost-filter-from" value="${esc(state.costFilterFrom)}"></div>
+        <div class="field-row"><label class="field-label">Datum do</label>${dateMonthNavHtml("cost-filter", "to", state.costFilterTo)}<input type="date" id="cost-filter-to" value="${esc(state.costFilterTo)}"></div>
         ${noteSearchFieldHtml("cost-filter-text", state.costFilterText)}
         ${filtersActive ? `<div class="field-row"><button class="btn btn-small" type="button" id="cost-filter-reset-btn">Zrušit filtr</button></div>` : ``}
       </div>` : ``}
@@ -5090,8 +5090,8 @@ function projectDetailPageHtml(){
                 <option value="ucet" ${costsFilterPayment === "ucet" ? "selected" : ""}>Účtem</option>
               </select></div>
               <div class="field-row"><label class="field-label">Dodavatel</label><select id="project-costs-filter-supplier">${costSupplierFilterOptionsHtml(allProjectCosts, costsFilterSupplier)}</select></div>
-              <div class="field-row"><label class="field-label">Datum od</label><input type="date" id="project-costs-filter-from" value="${esc(costsFilterFrom)}"></div>
-              <div class="field-row"><label class="field-label">Datum do</label><input type="date" id="project-costs-filter-to" value="${esc(costsFilterTo)}"></div>
+              <div class="field-row"><label class="field-label">Datum od</label>${dateMonthNavHtml("project-costs-filter", "from", costsFilterFrom)}<input type="date" id="project-costs-filter-from" value="${esc(costsFilterFrom)}"></div>
+              <div class="field-row"><label class="field-label">Datum do</label>${dateMonthNavHtml("project-costs-filter", "to", costsFilterTo)}<input type="date" id="project-costs-filter-to" value="${esc(costsFilterTo)}"></div>
               ${noteSearchFieldHtml("project-costs-filter-text", costsFilterText)}
               <div class="field-row"><label class="field-label">Seřadit podle</label><select id="project-costs-sort">
                 <option value="date" ${costsSort === "date" ? "selected" : ""}>Data (nejnovější)</option>
@@ -9348,6 +9348,13 @@ function bindAdmin(){
   if(costFilterPayment) costFilterPayment.addEventListener("change", () => setState({ costFilterPayment: costFilterPayment.value }));
   const costFilterSupplier = document.getElementById("cost-filter-supplier");
   if(costFilterSupplier) costFilterSupplier.addEventListener("change", () => setState({ costFilterSupplier: costFilterSupplier.value }));
+  [["cost-filter", "costFilterFrom", "costFilterTo"], ["project-costs-filter", "projectCostsFilterFrom", "projectCostsFilterTo"]].forEach(([pre, kFrom, kTo]) => {
+    const wire = (id, key, shift, delta) => { const b = document.getElementById(id); if(b) b.onclick = () => setState({ [key]: shift(state[key] || todayStr(), delta) }); };
+    wire(`${pre}-from-month-prev`, kFrom, shiftDateByMonths, -1);
+    wire(`${pre}-from-month-next`, kFrom, shiftDateByMonths, 1);
+    wire(`${pre}-to-month-prev`, kTo, shiftDateByMonthsKeepEnd, -1);
+    wire(`${pre}-to-month-next`, kTo, shiftDateByMonthsKeepEnd, 1);
+  });
   const costFilterFrom = document.getElementById("cost-filter-from");
   if(costFilterFrom) costFilterFrom.addEventListener("change", () => setState({ costFilterFrom: costFilterFrom.value }));
   const costFilterTo = document.getElementById("cost-filter-to");
