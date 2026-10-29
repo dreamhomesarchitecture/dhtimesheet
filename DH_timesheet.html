@@ -5795,7 +5795,7 @@ function parseInvoiceRows(rows, opts){
       if(it){ custItem = it; custRow = r; }
     }
     if(custItem){
-      if(custItem.x > dodItem.x + 60) xMax = custItem.x - 3;
+      if(custItem.x > dodItem.x + 60) xMax = custItem.x - 8;
       else endRow = Math.min(endRow, custRow);
     }
     const stopRx = /^(datum|číslo faktury|variabiln|konstantn|forma|způsob|splatnost|označení|fakturujeme|položka|popis|množství|fáze|stavba)/i;
@@ -5828,7 +5828,7 @@ function parseInvoiceRows(rows, opts){
     enSupplier = true;
   } else {
     check.supplier = "Štítek „Dodavatel“ ve faktuře nenalezen – zkontrolujte údaje o dodavateli.";
-    const iIc = lines.findIndex(l => { const m = /\bI[ČC]O?\s*[:.]?\s*(\d{8})/i.exec(l); return m && !ownIcos.includes(m[1]); });
+    const iIc = lines.findIndex(l => { const m = /\bI[ČC]O?\s*(?:\([A-Za-z ]{2,12}\))?\s*[:.]?\s*(\d{8})/i.exec(l); return m && !ownIcos.includes(m[1]); });
     // Bez IČ (zahraniční dodavatel s DIČ v patičce): řádek s názvem firmy s právní příponou, např. „Microsoft Ireland Operations Limited, One Microsoft Place…“
     const ownNames = (state.config.billingProfiles || []).map(b => String(b.name || "").toLowerCase()).filter(Boolean);
     const legalRx = /(\b(limited|ltd\.?|llc|inc\.?|gmbh|b\.v\.|s\.a\.|s\.r\.o\.|a\.s\.|spol\.|corporation|corp\.?|plc|unlimited company)(?=[\s,.;]|$))|\bUC$/i;
@@ -5849,15 +5849,15 @@ function parseInvoiceRows(rows, opts){
     }
   }
   const block = supplierLines.join("\n");
-  const icM = /\bI[ČC]O?\s*[:.]?\s*(\d{8})/i.exec(block) || null;
+  const icM = /\bI[ČC]O?\s*(?:\([A-Za-z ]{2,12}\))?\s*[:.]?\s*(\d{8})/i.exec(block) || null;
   let ico = icM ? icM[1] : "";
   if(!ico){
-    const all = [...full.matchAll(/\bI[ČC]O?\s*[:.]?\s*(\d{8})/gi)].map(m => m[1]).filter(x => !ownIcos.includes(x));
+    const all = [...full.matchAll(/\bI[ČC]O?\s*(?:\([A-Za-z ]{2,12}\))?\s*[:.]?\s*(\d{8})/gi)].map(m => m[1]).filter(x => !ownIcos.includes(x));
     if(all.length){ ico = all[0]; check.ico = "IČ dodavatele je převzaté z jiného místa faktury – zkontrolujte."; }
   }
   if(ico && ownIcos.includes(ico)) check.ico = "IČ dodavatele je stejné jako vaše firma – zkontrolujte, zda není dodavatel a odběratel zaměněn.";
   out.supplier.ico = ico;
-  const dicM = /\bDI[ČC]\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(block);
+  const dicM = /\bDI[ČC]\s*(?:\([A-Za-z ]{2,16}\))?\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(block);
   const enVatM = /\b[A-Z]{2}\s+VAT\s+([A-Z0-9]{8,14})\b/.exec(block) || /\bVAT\s*(?:ID|No\.?|number)?\s*[:.]?\s*([A-Z]{2}[A-Z0-9]{8,12})\b/i.exec(block);
   const enVatLine = /^([A-Z]{2})\s+([A-Z0-9]{8,12})$/m.exec(enLegal.join("\n"));
   out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : (enVatM ? enVatM[1].toUpperCase() : (enVatLine ? enVatLine[1] + enVatLine[2] : ""));
@@ -5866,7 +5866,7 @@ function parseInvoiceRows(rows, opts){
   out.supplier.email = mailM ? mailM[0] : "";
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
   const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l) && !/^(variabiln|konstantn|symbol|datum|číslo|faktura|odb[ěe]ratel|objedn)/i.test(l) && !/da[ňn]ov[ýy]\s+doklad|^invoice\b|^tax\s+invoice/i.test(l));
-  out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
+  out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*(?:\([A-Za-z ]{2,12}\))?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
   // Zkomolený název (typicky z rozpoznávání textu): málo písmen, hodně číslic nebo kód místo názvu – raději prázdný, ať ho doplníte/vyberete.
   if(out.supplier.name){
     const n = out.supplier.name, letters = (n.match(/[A-Za-zÁ-ž]/g) || []).length, digitsN = (n.match(/\d/g) || []).length;
@@ -5920,7 +5920,7 @@ function parseInvoiceRows(rows, opts){
   // ---- částky ----
   const nonPayer = /nen[íi]\s+pl[áa]tce\s+dph|nepl[áa]tce\s+dph|nejsem\s+pl[áa]tce\s+dph/i.test(full);
   // rekapitulace DPH: řádek „základ  sazba %  DPH  celkem“ (bere se jediný nenulový řádek)
-  const recapRx = /(\d[\d\s]*[.,]\d{2})\s+(\d{1,2})\s*%\s+(\d[\d\s]*[.,]\d{2})\s+(\d[\d\s]*[.,]\d{2})/;
+  const recapRx = /(\d[\d\s]*[.,]\d{2})\s*(?:Kč|CZK)?\s+(\d{1,2})\s*%\s+(\d[\d\s]*[.,]\d{2})\s*(?:Kč|CZK)?\s+(\d[\d\s]*[.,]\d{2})/;
   const recapStart = lines.findIndex(l => /rekapitulace/i.test(l));
   const recap = (recapStart === -1 ? [] : lines.slice(recapStart + 1)).map(l => recapRx.exec(l)).filter(Boolean).map(m => ({ net: parseCzNumber(m[1]), rate: Number(m[2]), vat: parseCzNumber(m[3]), gross: parseCzNumber(m[4]) })).filter(x => x.net > 0);
   // Rekapitulace bez nadpisu a bez sloupce „celkem“: řádek „21 % základ DPH“ pod záhlavím se „Základ daně“.
@@ -5931,6 +5931,15 @@ function parseInvoiceRows(rows, opts){
       if(!m3) return;
       const rt = Number(m3[1]), nt = parseCzNumber(m3[2]), vt = parseCzNumber(m3[3]);
       if(nt > 0 && vt !== null && Math.abs(nt * rt / 100 - vt) <= 1) recap.push({ net: nt, rate: rt, vat: vt, gross: r2(nt + vt) });
+    });
+  }
+  if(!recap.length){
+    const hdr4 = lines.findIndex(l => /cena\s+bez\s+dph.*sazba|sazba.*cena\s+bez\s+dph/i.test(l));
+    if(hdr4 !== -1) lines.slice(hdr4 + 1).forEach(l => {
+      const m4 = recapRx.exec(l);
+      if(!m4) return;
+      const nt = parseCzNumber(m4[1]), rt = Number(m4[2]), vt = parseCzNumber(m4[3]), gt = parseCzNumber(m4[4]);
+      if(nt > 0 && Math.abs(nt * rt / 100 - vt) <= 1 && Math.abs(nt + vt - gt) <= 1) recap.push({ net: nt, rate: rt, vat: vt, gross: gt });
     });
   }
   if(!recap.length){
