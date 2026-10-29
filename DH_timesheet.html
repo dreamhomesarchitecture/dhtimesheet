@@ -528,7 +528,7 @@
   .split-wrap{ margin:2px 0 10px; }
   .split-ed:not(:empty){ margin-top:10px; padding:12px 14px; border:1px dashed var(--line); border-radius:var(--radius-sm); }
   .split-head{ font-weight:700; margin-bottom:8px; }
-  .split-row{ display:grid; grid-template-columns:1.4fr 1fr 1.1fr 130px 90px 32px; gap:8px; margin-bottom:8px; align-items:center; }
+  .split-row{ display:grid; grid-template-columns:1.4fr 1fr 130px 90px 32px; gap:8px; margin-bottom:8px; align-items:center; }
   .split-foot{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   .split-sum{ font-size:13px; color:var(--soft); }
   .split-sum.bad{ color:var(--danger); font-weight:600; }
@@ -4419,7 +4419,7 @@ function adminCostsTemplate(){
   const filterPhaseOptions = `<option value="">Všechny fáze</option>` + state.config.phases.map(p => `<option value="${esc(p.id)}" ${state.costFilterPhaseId === p.id ? "selected" : ""}>${esc(p.id)} — ${esc(p.name)}</option>`).join("");
 
   const filtered = costs.filter(c =>
-    (!state.costFilterProjectId || (String(state.costFilterProjectId).startsWith("emp:") ? (c.employeeId === String(state.costFilterProjectId).slice(4)) : c.projectId === state.costFilterProjectId)) &&
+    (!state.costFilterProjectId || (String(state.costFilterProjectId).startsWith("emp:") ? (!c.projectId && c.employeeId === String(state.costFilterProjectId).slice(4)) : c.projectId === state.costFilterProjectId)) &&
     (!state.costFilterPhaseId || c.phaseId === state.costFilterPhaseId) &&
     (!state.costFilterPayment || c.paymentMethod === state.costFilterPayment) &&
     costMatchesSupplierFilter(c, state.costFilterSupplier) &&
@@ -4444,7 +4444,6 @@ function adminCostsTemplate(){
         <div class="field-row"><label class="field-label">Datum</label><input type="date" name="date" value="${editingCost ? esc(editingCost.date) : todayStr()}" required></div>
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select name="projectId" id="cost-project-select" required>${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select name="phaseId" id="cost-phase-select">${phaseOptions}</select></div>
-        <div class="field-row"><label class="field-label">Zaměstnanec (nepovinné)</label><select name="employeeId" id="cost-employee-select">${employeeSelectOptionsHtml(editingCost && editingCost.projectId ? editingCost.employeeId : "")}</select></div>
         ${costPriceFieldsHtml({ cost: editingCost, required: true })}
         ${editingCost ? "" : `<div class="field-row split-full">${splitBlockHtml("global", state.costSplit, null)}</div>`}
         <div class="field-row"><label class="field-label">Platba</label>
@@ -5101,8 +5100,7 @@ function projectDetailPageHtml(){
                   <button type="button" class="icon-btn" data-action="save-project-cost-edit" title="Uložit">✓</button>
                   <button type="button" class="icon-btn" data-action="cancel-project-cost-edit" title="Zrušit">×</button>
                 </span>
-                <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}
-                  <div class="field-row"><label class="field-label">Zaměstnanec</label><select class="cost-edit-employee">${employeeSelectOptionsHtml(c.employeeId || "")}</select></div></div>
+                <div class="cost-edit-price">${costPriceFieldsHtml({ cost: c, netClass: "cost-edit-amount" })}</div>
               </div>`;
             }
             return costCardHtml(c, { cbList: "pcosts", showProject: false, actionsHtml: `<button type="button" class="icon-btn" data-action="copy-cost" data-scope="project" data-id="${esc(c.id)}" title="Kopírovat (stejný náklad s novým datem)">${ICON_COPY}</button><button type="button" class="icon-btn" data-action="edit-project-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button type="button" class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
@@ -5193,7 +5191,6 @@ function projectDetailPageHtml(){
               ${invoiceImportPanelHtml(p.id)}
               <div class="form-grid">
                 <div class="field-row"><label class="field-label">Datum</label><input type="date" id="project-cost-add-date" value="${esc(todayStr())}"></div>
-                <div class="field-row"><label class="field-label">Zaměstnanec (nepovinné)</label><select id="project-cost-add-employee">${employeeSelectOptionsHtml("")}</select></div>
                 <div class="field-row"><label class="field-label">Fáze</label><select id="project-cost-add-phase">
                   <option value="">—</option>
                   ${phasesForProject(p).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("")}
@@ -6091,7 +6088,7 @@ function splitRowAmount(row, total){
 }
 function splitEditorInnerHtml(owner, split, total){
   if(!split) return "";
-  const withEmployees = owner === "global";
+  const withEmployees = true;
   const projOpts = sel => `<option value="">— projekt —</option>` + sortedProjects().map(p => `<option value="${esc(p.id)}" ${sel === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("")
     + (withEmployees ? state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs")).map(e => `<option value="emp:${esc(e.id)}" ${sel === "emp:" + e.id ? "selected" : ""}>Zaměstnanec – ${esc(e.name)}</option>`).join("") : "");
   let sum = 0;
@@ -6103,7 +6100,6 @@ function splitEditorInnerHtml(owner, split, total){
     return `<div class="split-row" data-i="${i}">
       <select data-sf="projectId" aria-label="Projekt">${projOpts(r.projectId)}</select>
       <select data-sf="phaseId" aria-label="Fáze">${phaseOpts}</select>
-      <select data-sf="employeeId" aria-label="Zaměstnanec" ${String(r.projectId).startsWith("emp:") ? "disabled" : ""}>${employeeSelectOptionsHtml(r.employeeId || "")}</select>
       <input type="number" data-sf="amount" min="0" step="0.01" placeholder="Kč bez DPH" value="${amt !== null ? esc(amt) : esc(r.amount ?? "")}" aria-label="Částka bez DPH">
       <input type="number" data-sf="pct" min="0" max="100" step="0.01" placeholder="%" value="${esc(r.pct ?? "")}" aria-label="Procenta">
       <button type="button" class="icon-btn" data-action="split-del" data-split-owner="${esc(owner)}" data-i="${i}" title="Odebrat řádek">×</button>
@@ -6173,7 +6169,6 @@ document.addEventListener("change", e => {
   const f = t.getAttribute("data-sf");
   if(f === "projectId"){ row.projectId = t.value; row.phaseId = ""; }
   else if(f === "phaseId") row.phaseId = t.value;
-  else if(f === "employeeId") row.employeeId = t.value;
   else if(f === "amount"){ row.amount = t.value; row.by = "amount"; row.pct = total && numOrNull(t.value) !== null ? r2(numOrNull(t.value) / total * 100) : ""; }
   else if(f === "pct"){ row.pct = t.value; row.by = "pct"; }
   splitRefresh(scope);
@@ -6197,7 +6192,7 @@ function buildSplitCosts(split, price){
     const gross = last ? r2(grossLeft) : r2(price.amountGross * share);
     vatLeft = r2(vatLeft - vat); grossLeft = r2(grossLeft - gross);
     const emp = String(r.projectId).startsWith("emp:");
-    return { projectId: emp ? "" : r.projectId, phaseId: emp ? "" : (r.phaseId || ""), employeeId: emp ? String(r.projectId).slice(4) : (r.employeeId || undefined), price: { ...price, amount: nets[i], vatAmount: vat, amountGross: gross } };
+    return { projectId: emp ? "" : r.projectId, phaseId: emp ? "" : (r.phaseId || ""), employeeId: emp ? String(r.projectId).slice(4) : undefined, price: { ...price, amount: nets[i], vatAmount: vat, amountGross: gross } };
   });
   return { parts };
 }
@@ -6226,7 +6221,8 @@ function invoiceImportItemHtml(origin, it){
   const similar = existing ? [] : similarSuppliersForInvoice(supNow);
   // Výchozí projekt: u karty v projektu ten projekt, jinak projekt posledního nákladu stejného dodavatele.
   const selProj = origin !== "global" ? origin : (existing ? lastProjectForSupplier(existing) : "");
-  const projectOptions = `<option value="">— vyberte projekt —</option>` + sortedProjects().map(pr => `<option value="${esc(pr.id)}" ${selProj === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("");
+  const projectOptions = `<option value="">— vyberte projekt —</option>` + sortedProjects().map(pr => `<option value="${esc(pr.id)}" ${selProj === pr.id ? "selected" : ""}>#${esc(pr.id)} ${esc(pr.name)}</option>`).join("")
+    + state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs")).map(e => `<option value="emp:${esc(e.id)}">Zaměstnanec – ${esc(e.name)}</option>`).join("");
   const proj = selProj ? state.config.projects.find(x => x.id === selProj) : null;
   const phaseOptions = `<option value="">—</option>` + (proj ? phasesForProject(proj).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
   const notes = [...Object.values(chk).filter(Boolean), ...(p.warnings || [])];
@@ -6262,7 +6258,6 @@ function invoiceImportItemHtml(origin, it){
       <div class="form-grid" style="margin-top:6px;">
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
         <div class="field-row cost-main-proj"><label class="field-label">Fáze</label><select data-k="ii-phase">${phaseOptions}</select></div>
-        <div class="field-row"><label class="field-label">Zaměstnanec (nepovinné)</label><select data-k="ii-employee">${employeeSelectOptionsHtml("")}</select></div>
         <div class="field-row"><label class="field-label">Platba</label><select data-k="ii-payment"><option value="ucet" ${p.paymentMethod === "ucet" ? "selected" : ""}>Účtem</option><option value="hotove" ${p.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
         <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" data-k="ii-note" value="${esc((p.number ? "Faktura č. " + p.number : "") + (p.noteSuffix || ""))}"></div>
       </div>
@@ -6379,12 +6374,12 @@ async function saveInvoiceImport(panel){
   const baseCost = { date, supplier: supplier.name, supplierId: supplier.id, paymentMethod: val("ii-payment") || "ucet", note: val("ii-note") };
   if(number) baseCost.invoiceNumber = number;
   if(val("ii-due")) baseCost.dueDate = val("ii-due");
-  if(val("ii-employee")) baseCost.employeeId = val("ii-employee");
   if(it.split){
     const gid = uid("split");
-    split.parts.forEach(pt => state.costs.push({ id: uid("cost"), projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, ...baseCost, employeeId: pt.employeeId || val("ii-employee") || undefined, splitId: gid }));
+    split.parts.forEach(pt => state.costs.push({ id: uid("cost"), projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, ...baseCost, employeeId: pt.employeeId, splitId: gid }));
   } else {
-    state.costs.push({ id: uid("cost"), projectId, phaseId: val("ii-phase"), ...price, ...baseCost });
+    const isEmp = String(projectId).startsWith("emp:");
+    state.costs.push({ id: uid("cost"), projectId: isEmp ? "" : projectId, phaseId: isEmp ? "" : val("ii-phase"), ...price, ...baseCost, employeeId: isEmp ? String(projectId).slice(4) : undefined });
   }
   await saveCosts();
   imp.items = imp.items.filter(x => x !== it);
@@ -8048,8 +8043,7 @@ function bindAdmin(){
       return;
     }
     if(!state.costs) state.costs = [];
-    const addEmployee = document.getElementById("project-cost-add-employee").value;
-    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note, employeeId: addEmployee || undefined });
+    state.costs.push({ id: uid("cost"), date, projectId, phaseId, ...price, paymentMethod, note });
     state.projectCostAddError = "";
     await saveCosts();
     showStamp();
@@ -8299,8 +8293,6 @@ function bindAdmin(){
     Object.assign(cost, price);
     if(price.vatRate === undefined) delete cost.vatRate;
     cost.note = note.trim();
-    const editEmp = row.querySelector(".cost-edit-employee");
-    if(editEmp){ if(editEmp.value) cost.employeeId = editEmp.value; else delete cost.employeeId; }
     await saveCosts();
     state.editingProjectCostId = null;
     showStamp();
@@ -8725,13 +8717,13 @@ function bindAdmin(){
     const price = readPriceGroup(addCostForm);
     if(!data.date || !data.projectId || !price || !data.paymentMethod) return;
     const isEmployeeTarget = String(data.projectId).startsWith("emp:");
-    const fields = { date: data.date, projectId: isEmployeeTarget ? "" : data.projectId, phaseId: isEmployeeTarget ? "" : (data.phaseId || ""), ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: isEmployeeTarget ? String(data.projectId).slice(4) : (data.employeeId || undefined) };
+    const fields = { date: data.date, projectId: isEmployeeTarget ? "" : data.projectId, phaseId: isEmployeeTarget ? "" : (data.phaseId || ""), ...price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: isEmployeeTarget ? String(data.projectId).slice(4) : undefined };
     if(!state.costs) state.costs = [];
     if(state.costSplit && !state.editingCostId){
       const res = buildSplitCosts(state.costSplit, price);
       if(res.error){ const er = addCostForm.querySelector(".split-err"); if(er) er.textContent = res.error; return; }
       const gid = uid("split");
-      res.parts.forEach(pt => state.costs.push({ id: uid("cost"), date: data.date, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: pt.employeeId || data.employeeId || undefined, splitId: gid }));
+      res.parts.forEach(pt => state.costs.push({ id: uid("cost"), date: data.date, projectId: pt.projectId, phaseId: pt.phaseId, ...pt.price, paymentMethod: data.paymentMethod, note: (data.note || "").trim(), employeeId: pt.employeeId, splitId: gid }));
       state.costSplit = null; state.costError = "";
       await saveCosts();
       render();
