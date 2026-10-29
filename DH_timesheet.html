@@ -6055,6 +6055,22 @@ function rememberSupplierAlias(supplier, names){
     supplier.aliases = [...(supplier.aliases || []), nm];
   });
 }
+// Po přečtení faktury: když je dodavatel (podle IČ, DIČ, účtu nebo názvu) v seznamu, doplní se jeho údaje a název se sjednotí.
+function fillParsedSupplierFromList(p, ocr){
+  const sup = p && p.supplier;
+  if(!sup) return;
+  const m = matchSupplierForInvoice(sup);
+  if(!m) return;
+  sup.parsedName = sup.name;
+  if(m.name) sup.name = m.name;
+  // U skenu (rozpoznávání textu) se číslice často čtou špatně, proto se tam upřednostní uložené údaje.
+  ["ico", "dic", "address", "email"].forEach(k => { if(m[k] && (!sup[k] || ocr)) sup[k] = m[k]; });
+  if(m.bankAccount && (!sup.account || ocr)) sup.account = m.bankAccount;
+  p.check = p.check || {};
+  delete p.check.supplier; delete p.check.supplierName;
+  if(m.ico && String(m.ico).replace(/\D/g, "") === String(sup.ico || "").replace(/\D/g, "")) delete p.check.ico;
+  p.check.supplierMatched = `Dodavatel „${m.name}“ je v seznamu dodavatelů – jeho údaje se doplnily.`;
+}
 // Přepíše údaje o dodavateli na kartě faktury údaji ze založeného dodavatele.
 function invoiceCardUseSupplier(el, supplierId){
   const s = suppliersList().find(x => x.id === supplierId);
@@ -6368,7 +6384,7 @@ async function saveInvoiceImport(panel){
     if(!state.config.suppliers) state.config.suppliers = [];
     state.config.suppliers.push(supplier);
   }
-  rememberSupplierAlias(supplier, [it.parsed.supplier.name, sup.name]);
+  rememberSupplierAlias(supplier, [it.parsed.supplier.parsedName || it.parsed.supplier.name, sup.name]);
   await saveConfig();
   if(state.costs === null) state.costs = await loadCosts();
   const baseCost = { date, supplier: supplier.name, supplierId: supplier.id, paymentMethod: val("ii-payment") || "ucet", note: val("ii-note") };
@@ -7958,6 +7974,7 @@ function bindAdmin(){
       try{
         const extracted = await extractInvoiceRows(it.file);
         it.parsed = parseInvoiceRows(extracted.rows, { ocr: extracted.ocr });
+        fillParsedSupplierFromList(it.parsed, extracted.ocr);
         if(it.parsed.currency) await autoInvoiceFx(it);
       } catch(err){
         console.error("invoice read failed", err);
@@ -8019,6 +8036,13 @@ function bindAdmin(){
   });
   // Výběr dodavatele ze seznamu přepíše údaje o dodavateli na kartě (zbytek faktury zůstává).
   document.querySelectorAll('.ii-panel [data-k="ii-sup-pick"]').forEach(sel => sel.addEventListener("change", () => invoiceCardUseSupplier(sel, sel.value)));
+  document.querySelectorAll('.ii-panel [data-k="ii-sup-ico"], .ii-panel [data-k="ii-sup-dic"]').forEach(inp => inp.addEventListener("change", () => {
+    const panel = inp.closest(".ii-panel");
+    const v = k => (panel.querySelector(`[data-k="${k}"]`) || {}).value || "";
+    if(v("ii-sup-name").trim()) return;
+    const m = matchSupplierForInvoice({ name: "", ico: v("ii-sup-ico"), dic: v("ii-sup-dic"), account: "" });
+    if(m) invoiceCardUseSupplier(inp, m.id);
+  }));
   document.querySelectorAll('[data-action="invoice-import-use-supplier"]').forEach(b => b.onclick = () => invoiceCardUseSupplier(b, b.getAttribute("data-id")));
   document.querySelectorAll('.ii-panel [data-k="ii-project"]').forEach(sel => sel.addEventListener("change", () => {
     const pr = state.config.projects.find(x => x.id === sel.value);
