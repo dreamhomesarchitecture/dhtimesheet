@@ -5618,7 +5618,7 @@ function labeledDate(lines, labelRx){
   return null;
 }
 function numbersIn(text){
-  return [...String(text).matchAll(/-?\d[\d\s ]*(?:[.,]\d{1,2})?/g)].map(m => ({ raw: m[0], idx: m.index, val: parseCzNumber(m[0]) })).filter(n => n.val !== null);
+  return [...String(text).matchAll(/-?\d[\d\s ]*(?:[.,]\d{3})*(?:[.,]\d{1,2})?/g)].map(m => ({ raw: m[0], idx: m.index, val: parseCzNumber(m[0]) })).filter(n => n.val !== null);
 }
 function amountOnLine(lines, labelRx, exclude){
   const rx = new RegExp(labelRx, "i");
@@ -5779,7 +5779,7 @@ function parseInvoiceRows(rows, opts){
   const ownIcos = (state.config.billingProfiles || []).map(b => String(b.ico || "").replace(/\D/g, "")).filter(Boolean);
 
   // ---- dodavatel: blok pod štítkem „Dodavatel“ (dvousloupcové i pod sebou uspořádané faktury) ----
-  const labelRx = /dodavatel|poskytovatel|vystavil/i, custRx = /odb[ěe]ratel|p[řr]íjemce|z[áa]kazn[ií]k|objednatel|fakturov[áa]no/i;
+  const labelRx = /dodavatel|poskytovatel|vystavil|prod[áa]vaj[íi]c[íi]|prodejce/i, custRx = /odb[ěe]ratel|p[řr]íjemce|z[áa]kazn[ií]k|objednatel|fakturov[áa]no/i;
   const iDod = rows.findIndex(r => r.items.some(i => labelRx.test(i.str)));
   let supplierLines = [];
   let enSupplier = false;
@@ -5831,12 +5831,19 @@ function parseInvoiceRows(rows, opts){
     const iIc = lines.findIndex(l => { const m = /\bI[ČC]O?\s*[:.]?\s*(\d{8})/i.exec(l); return m && !ownIcos.includes(m[1]); });
     // Bez IČ (zahraniční dodavatel s DIČ v patičce): řádek s názvem firmy s právní příponou, např. „Microsoft Ireland Operations Limited, One Microsoft Place…“
     const ownNames = (state.config.billingProfiles || []).map(b => String(b.name || "").toLowerCase()).filter(Boolean);
-    const legalRx = /\b(limited|ltd\.?|llc|inc\.?|gmbh|b\.v\.|s\.a\.|s\.r\.o\.|a\.s\.|spol\.|corporation|corp\.?)(?=[\s,.;]|$)/i;
+    const legalRx = /(\b(limited|ltd\.?|llc|inc\.?|gmbh|b\.v\.|s\.a\.|s\.r\.o\.|a\.s\.|spol\.|corporation|corp\.?|plc|unlimited company)(?=[\s,.;]|$))|\bUC$/i;
     const iLegalLine = iIc === -1 ? lines.findIndex(l => legalRx.test(l) && !/dream\s*homes/i.test(l) && !ownNames.some(n => l.toLowerCase().includes(n))) : -1;
     if(iIc !== -1) supplierLines = lines.slice(Math.max(0, iIc - 3), iIc + 3);
     else if(iLegalLine !== -1){
       const first = lines[iLegalLine], comma = first.indexOf(",");
-      supplierLines = [comma === -1 ? first : first.slice(0, comma).trim(), ...(comma === -1 ? [] : [first.slice(comma + 1).trim()]), ...lines.slice(iLegalLine + 1, iLegalLine + 5).filter(l => !/^\d+\s*\/\s*\d+$/.test(l))];
+      supplierLines = [comma === -1 ? first : first.slice(0, comma).trim(), ...(comma === -1 ? [] : [first.slice(comma + 1).trim()]), ...(() => {
+        const rest = [];
+        for(const l of lines.slice(iLegalLine + 1, iLegalLine + 9)){
+          if(/^(invoice\s+to|sold\s+to|bill\s+to|ship\s+to|customer|odb[ěe]ratel|kupuj[íi]c[íi]|fakturovat|faktura\b)/i.test(l)) break;
+          if(!/^\d+\s*\/\s*\d+$/.test(l)) rest.push(l);
+        }
+        return rest;
+      })()];
       enSupplier = true;
       check.supplier = "Dodavatel je určený podle názvu firmy ve faktuře – zkontrolujte údaje o dodavateli.";
     }
@@ -5854,16 +5861,27 @@ function parseInvoiceRows(rows, opts){
   const enVatM = /\b[A-Z]{2}\s+VAT\s+([A-Z0-9]{8,14})\b/.exec(block) || /\bVAT\s*(?:ID|No\.?|number)?\s*[:.]?\s*([A-Z]{2}[A-Z0-9]{8,12})\b/i.exec(block);
   const enVatLine = /^([A-Z]{2})\s+([A-Z0-9]{8,12})$/m.exec(enLegal.join("\n"));
   out.supplier.dic = dicM ? dicM[1].replace(/\s/g, "").toUpperCase() : (enVatM ? enVatM[1].toUpperCase() : (enVatLine ? enVatLine[1] + enVatLine[2] : ""));
+  if(!out.supplier.dic && ico && new RegExp(`\\bCZ\\s?${ico}\\b`).test(full)) out.supplier.dic = "CZ" + ico;
   const mailM = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.exec(block);
   out.supplier.email = mailM ? mailM[0] : "";
   const isCodeLine = l => /^(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) || /^(tel|e-?mail|č\.?\s*účtu|bank)/i.test(l);
   const nameLine = supplierLines.find(l => !isCodeLine(l) && !/^\d/.test(l) && !/^(variabiln|konstantn|symbol|datum|číslo|faktura|odb[ěe]ratel|objedn)/i.test(l));
   out.supplier.name = nameLine ? nameLine.replace(/\s+I[ČC]O?\s*[:.]?\s*\d{8}.*$/, "").trim() : "";
+  // Zkomolený název (typicky z rozpoznávání textu): málo písmen, hodně číslic nebo kód místo názvu – raději prázdný, ať ho doplníte/vyberete.
+  if(out.supplier.name){
+    const n = out.supplier.name, letters = (n.match(/[A-Za-zÁ-ž]/g) || []).length, digitsN = (n.match(/\d/g) || []).length;
+    if(letters < 4 || digitsN > letters * 0.4 || /^[^A-Za-zÁ-ž]*[a-zá-ž]{0,2}:/.test(n) || /\b(IČ|DIČ|CZ\s?\d)/.test(n)){ out.supplier.name = ""; check.supplierName = "Název dodavatele se nepodařilo spolehlivě přečíst – doplňte ho nebo vyberte ze seznamu dodavatelů."; }
+  }
   // Adresa může být na jednom řádku s IČO/DIČ („Havlíčkova 5, Jihlava, 586 01, CZ, IČO: …“) – vezme se část před IČO.
-  const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).map(l => l.replace(/[,;\s]*(?:I[ČC]O?|DI[ČC])\s*[:.]?\s*[A-Z]{0,2}\s?\d.*$/, "").trim()).filter(l => l && !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !/@|\btel\b|účt|bank|iban/i.test(l) && (/\d/.test(l)));
+  const addrJunk = /@|\btel\b|účt|bank|iban|www\.|https?:|zapsán|oddíl|vložka|rejstřík|vytišt|strana|^\+?[\d\s]{9,}$|daňový doklad/i;
+  const addr = supplierLines.slice(supplierLines.indexOf(nameLine) + 1).map(l => l.replace(/[,;\s]*(?:I[ČC]O?|DI[ČC])\s*[:.]?\s*[A-Z]{0,2}\s?\d.*$/, "").trim()).filter(l => l && !/(^|\s)(I[ČC]O?|DI[ČC])(?=[\s:.]|$)/.test(l) && !addrJunk.test(l) && (/\d/.test(l)));
   out.supplier.address = enSupplier
-    ? (enLegal.length ? enLegal : supplierLines.slice(supplierLines.indexOf(nameLine) + 1)).filter(l => !/@|\bVAT\b/i.test(l) && !/^[A-Z]{2}\s+[A-Z0-9]{8,12}$/.test(l) && !/^(DI[ČC]|I[ČC]O?)\s*[:.]/i.test(l)).join(", ")
+    ? (enLegal.length ? enLegal : supplierLines.slice(supplierLines.indexOf(nameLine) + 1)).filter(l => !/@|\bVAT\b|www\./i.test(l) && !/^[A-Z]{2}\s+[A-Z0-9]{8,12}$/.test(l) && !/^(DI[ČC]|I[ČC]O?)\s*[:.]/i.test(l)).join(", ")
     : addr.slice(0, 2).join(", ");
+  if(opts && opts.ocr && out.supplier.address){
+    const am = /([A-ZÁ-Ž][A-Za-zÁ-ž.\- ]{2,40}?\s\d+(?:\/\d+)?),?\s*(\d{3}\s?\d{2})\s+([A-ZÁ-Ž][A-Za-zÁ-ž\-]+)/.exec(out.supplier.address);
+    if(am) out.supplier.address = `${am[1]}, ${am[2]} ${am[3]}`;
+  }
   const BANK_CODES = new Set(["0100","0300","0600","0710","0800","2010","2060","2070","2100","2200","2220","2240","2250","2260","2275","2600","2700","3030","3050","3060","3500","4000","4300","5500","5800","6000","6100","6200","6210","6300","6363","6700","6800","7910","7940","7950","7960","7970","7980","7990","8030","8040","8060","8090","8150","8200","8215","8225","8230","8240","8250","8255","8265","8280","8291","8292","8293"]);
   const acctLabel = "(?:číslo\\s+účtu|č\\.\\s*účtu|č\\.\\s?ú\\.|bankovní\\s+spojení|bankovní\\s+účet|účtu|účet|iban)";
   let acc = "";
@@ -5889,12 +5907,14 @@ function parseInvoiceRows(rows, opts){
   if(!num && m && /\d/.test(m[1])) num = m[1];
   if(!num){ m = /číslo\s+(?:faktury|dokladu)[^\n]{0,30}?\s([A-Za-z0-9][A-Za-z0-9\-\/]{2,})/i.exec(full); if(m && /\d/.test(m[1])) num = m[1]; }
   if(!num){ m = /^\s*(?:faktura|da[ňn]ov[ýy] doklad)[^\n\d]{0,30}?(\d{5,})\s*$/im.exec(full); if(m) num = m[1]; }
+  if(!num){ const below = valueBelowLabel(rows, /^(invoice|inv\.?)\s*(no\.?|number|#)\s*:?$/i, /^[A-Za-z0-9][A-Za-z0-9\/\-]{4,}$/); if(below && /\d/.test(below)) num = below; }
   if(!num){ m = /variabiln[íi]\s+symbol[:\s]*(\d{1,10})/i.exec(full); if(m){ num = m[1]; check.number = "Číslo faktury není ve faktuře jasně uvedené, vzal jsem variabilní symbol – zkontrolujte."; } }
   out.number = num;
   out.date = labeledDate(lines, "datum\\s+vystaven[íi]|vystaven[íi]|vystaveno|datum\\s+vyhotoven[íi]|datum\\s+faktury|date\\s+of\\s+issue|invoice\\s+date|issue\\s+date") || "";
   out.dueDate = labeledDate(lines, "datum\\s+splatnosti|splatnost|date\\s+due|due\\s+date|payment\\s+due") || "";
   out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+(?:zdaniteln[ée]ho\\s+)?pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
   if(!out.date) out.date = labeledDate(lines, "datum(?!\\s+(?:splatnosti|uskute|zdaniteln|poskytnut))") || "";
+  if(!out.date){ const below = valueBelowLabel(rows, /^(invoice\s+date|date\s+of\s+issue|datum\s+vystaven[íi])\s*:?$/i, /^\d{1,2}[./]\d{1,2}[./]\d{4}$/); if(below) out.date = parseCzDate(below) || ""; }
   if(!out.date && out.taxDate){ out.date = out.taxDate; check.date = "Datum vystavení nenalezeno, použil jsem datum plnění – zkontrolujte."; }
 
   // ---- částky ----
@@ -5912,6 +5932,15 @@ function parseInvoiceRows(rows, opts){
       const rt = Number(m3[1]), nt = parseCzNumber(m3[2]), vt = parseCzNumber(m3[3]);
       if(nt > 0 && vt !== null && Math.abs(nt * rt / 100 - vt) <= 1) recap.push({ net: nt, rate: rt, vat: vt, gross: r2(nt + vt) });
     });
+  }
+  if(!recap.length){
+    const NUMRX = "(\\d[\\d\\s]*[.,]\\d{2})";
+    const p1 = new RegExp(`z[áa]klad\\s+(\\d{1,2})\\s*%\\s+${NUMRX}\\s+DPH\\s+\\d{1,2}\\s*%\\s+${NUMRX}`, "i");
+    lines.forEach(l => { const m1 = p1.exec(l); if(m1){ const nt = parseCzNumber(m1[2]), vt = parseCzNumber(m1[3]); if(nt > 0 && vt !== null && Math.abs(nt * Number(m1[1]) / 100 - vt) <= 1) recap.push({ net: nt, rate: Number(m1[1]), vat: vt, gross: r2(nt + vt) }); } });
+    if(!recap.length){
+      const p2 = new RegExp(`celkem\\s*:?\\s+${NUMRX}\\s+${NUMRX}\\s+${NUMRX}\\s*(?:K[čc])?\\s*$`, "i");
+      lines.forEach(l => { const m2 = p2.exec(l); if(m2){ const nt = parseCzNumber(m2[1]), vt = parseCzNumber(m2[2]), gt = parseCzNumber(m2[3]); if(nt > 0 && vt >= 0 && Math.abs(nt + vt - gt) <= 1){ const rt = nt ? r2(vt / nt * 100) : 0; const std = [0, 10, 12, 15, 21].find(x => Math.abs(x - rt) < 0.6); if(std !== undefined) recap.push({ net: nt, rate: std, vat: vt, gross: gt }); } } });
+    }
   }
   const recapUse = recap.length === 1 ? recap[0] : null;
   if(recap.length > 1) check.amount = "Faktura má víc sazeb DPH – zkontrolujte částky (vzal jsem celkovou částku k úhradě).";
@@ -5961,6 +5990,18 @@ function invoiceImportMissing(parsed, draft){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v("ii-date", parsed.date)))) miss.date = true;
   if(numOrNull(v("pf-net", parsed.net)) === null) miss.net = true;
   return miss;
+}
+// Hodnota ležící pod popiskem (sloupec): najde popisek a v následujících řádcích položku na stejné pozici, která odpovídá vzoru.
+function valueBelowLabel(rows, labelRx, valueRx){
+  for(let r = 0; r < rows.length; r++){
+    const lab = rows[r].items.find(i => labelRx.test(i.str));
+    if(!lab) continue;
+    for(let k = 1; k <= 4 && r + k < rows.length; k++){
+      const hit = rows[r + k].items.find(i => Math.abs(i.x - lab.x) <= 4 && valueRx.test(i.str));
+      if(hit) return hit.str;
+    }
+  }
+  return null;
 }
 // ---- hledání dodavatele pro fakturu: IČ, DIČ, účet, název bez s.r.o./Ltd… a dříve opravené (přečtené) názvy ----
 const SUPPLIER_NOISE = new Set(["sro", "as", "spol", "ks", "vos", "ltd", "limited", "llc", "inc", "corp", "gmbh", "ag", "sl", "sa", "bv", "oy", "ab", "co", "company", "plc", "nv", "srl", "spa", "ug", "kg"]);
