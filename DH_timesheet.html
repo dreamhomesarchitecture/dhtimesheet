@@ -1971,6 +1971,34 @@ function clientExportAllExtraCosts(){
   const manualItems = (state.clientExportExtraCosts || []).map(i => ({ ...i, amount: clientExportAmountFor(i.id, i.amount) }));
   return projectItems.concat(manualItems);
 }
+// Interní náklady firmy na vyfiltrovaný výběr exportu (do exportu pro klienta se nepřenášejí): mzdy a režie z hodinových sazeb,
+// náklady zapsané u hodin, klasické náklady projektu a ručně přidané ostatní náklady. Počítá se i s hodinami odebranými z exportu.
+function clientExportOwnCosts(){
+  const inRange = d => (!state.clientExportFrom || d >= state.clientExportFrom) && (!state.clientExportTo || d <= state.clientExportTo);
+  const entries = (state.adminEntriesFlat || []).filter(e => inRange(e.date) && (!state.clientExportProjectId || e.projectId === state.clientExportProjectId)
+    && (!state.clientExportPhaseId || e.phaseId === state.clientExportPhaseId));
+  const byEmp = {};
+  let entryExtra = 0, missingH = 0;
+  entries.forEach(e => {
+    const emp = state.config.employees.find(x => x.id === e.employeeId);
+    const h = Number(e.hours || 0), total = hourlyRateForEmployee(emp, e.date, e.projectId);
+    const match = emp && emp.rates ? emp.rates.find(r => r.from && r.from <= e.date && (!r.to || e.date <= r.to)) : null;
+    const parts = match ? ratePartsOf(match) : null;
+    const wageRate = parts && parts.split ? Math.min(total, parts.wage) : total;
+    const r = byEmp[e.employeeId] || (byEmp[e.employeeId] = { name: e.employeeName || (emp && emp.name) || e.employeeId, hours: 0, wage: 0, overhead: 0 });
+    r.hours += h; r.wage += h * wageRate; r.overhead += h * (total - wageRate);
+    entryExtra += Number(e.cost || 0);
+    if(!total && h > 0 && e.projectId !== "000") missingH += h;
+  });
+  const costs = (state.costs || []).filter(c => c.projectId && inRange(c.date) && (!state.clientExportProjectId || c.projectId === state.clientExportProjectId)
+    && (!state.clientExportPhaseId || c.phaseId === state.clientExportPhaseId));
+  const projectCostsSum = costs.reduce((t, c) => t + Number(c.amount || 0), 0);
+  const manual = (state.clientExportExtraCosts || []).reduce((t, i) => t + clientExportAmountFor(i.id, i.amount), 0);
+  const people = Object.values(byEmp).sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
+  const wage = people.reduce((t, r) => t + r.wage, 0), overhead = people.reduce((t, r) => t + r.overhead, 0);
+  return { people, wage, overhead, entryExtra, projectCostsSum, projectCostsCount: costs.length, manual, missingH,
+    total: wage + overhead + entryExtra + projectCostsSum + manual, excluded: entries.filter(e => state.clientExportExcludedIds[e.id]).length };
+}
 function clientExportAmountFor(id, original){
   const v = (state.clientExportAmountOverrides || {})[id];
   return v !== undefined ? Number(v) || 0 : Number(original) || 0;
@@ -4875,6 +4903,27 @@ function adminClientExportTemplate(){
       DPH (${vatRate} %): <b style="color:var(--ink);">${fmtKc(vatAmount)}</b><br>
       Celkem k fakturaci: <b style="color:var(--ink);font-size:16px;">${fmtKc(grandTotal)}</b>
     </p>
+    ${(() => {
+      const oc = clientExportOwnCosts(), profit = subtotal - oc.total, margin = subtotal > 0 ? profit / subtotal * 100 : null;
+      return `
+    <section class="zone" style="margin-top:20px;">
+      <div class="zone-title"><span>Naše náklady na tento výběr</span><span class="zone-total">jen pro vás, do exportu se nepřenáší</span></div>
+      <div class="pf-detail"><table class="pf-table">
+        <thead><tr><th>Zaměstnanec</th><th>Hodiny</th><th>Mzdy</th><th>Režie</th><th>Celkem</th></tr></thead>
+        <tbody>${oc.people.map(r => `<tr><td>${esc(r.name)}</td><td>${fmtH(r.hours)}</td><td>${fmtKc(r.wage)}</td><td>${fmtKc(r.overhead)}</td><td>${fmtKc(r.wage + r.overhead)}</td></tr>`).join("") || `<tr><td colspan="5">Žádné hodiny.</td></tr>`}</tbody>
+        <tfoot><tr><td>Hodinovky celkem</td><td>${fmtH(oc.people.reduce((t, r) => t + r.hours, 0))}</td><td>${fmtKc(oc.wage)}</td><td>${fmtKc(oc.overhead)}</td><td>${fmtKc(oc.wage + oc.overhead)}</td></tr></tfoot>
+      </table></div>
+      <p class="q-hint" style="margin:12px 0 0;line-height:1.7;">
+        Náklady zapsané u hodin (doprava apod.): <b style="color:var(--ink);">${fmtKc(oc.entryExtra)}</b><br>
+        Klasické náklady projektu v období (${oc.projectCostsCount} ${oc.projectCostsCount === 1 ? "položka" : oc.projectCostsCount >= 2 && oc.projectCostsCount <= 4 ? "položky" : "položek"}): <b style="color:var(--ink);">${fmtKc(oc.projectCostsSum)}</b><br>
+        Ostatní náklady přidané ručně do exportu: <b style="color:var(--ink);">${fmtKc(oc.manual)}</b><br>
+        <span style="font-size:14px;">Naše náklady celkem: <b style="color:var(--ink);font-size:16px;">${fmtKc(oc.total)}</b></span><br>
+        Fakturujete (základ bez DPH): <b style="color:var(--ink);">${fmtKc(subtotal)}</b><br>
+        Zisk z tohoto výběru: <b style="color:${profit < 0 ? "var(--danger)" : "var(--ink)"};font-size:16px;">${fmtKc(profit)}</b>${margin === null ? "" : ` · marže <b style="color:${profit < 0 ? "var(--danger)" : "var(--ink)"};">${Math.round(margin)} %</b>`}
+      </p>
+      <p class="pf-note">Mzdy = plat z hodinové sazby, režie = nulové projekty + chod kanceláře obsažené v sazbě. Počítá se se skutečnými hodinami a částkami (ne s přepsanými pro export) a včetně záznamů odebraných z exportu${oc.excluded ? ` (${oc.excluded})` : ""}.${oc.missingH > 0 ? ` <span style="color:var(--danger);">U ${fmtH(oc.missingH)} chybí hodinová sazba – počítá se za 0 Kč.</span>` : ""}</p>
+    </section>`;
+    })()}
     ${exportButtonsHtml()}`;
 }
 
