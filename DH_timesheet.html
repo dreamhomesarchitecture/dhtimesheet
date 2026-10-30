@@ -656,6 +656,38 @@
   .bw-row.over .bw-bar{ background:rgba(179,56,44,.15); }
   .bw-row.over .bw-bar i{ background:var(--danger); }
   .bw-sum{ font-size:12.5px; color:var(--soft); }
+  .pf-stats .emp-stat-value{ font-size:clamp(18px,2.4vw,26px); white-space:nowrap; }
+  .pf-stats .emp-stat{ padding-left:14px; padding-right:12px; min-width:0; }
+  .recur-banner{ border:1px solid rgba(186,148,112,0.55); background:var(--tan-tint); border-radius:var(--radius-md); padding:14px 18px; margin-top:18px; }
+  .recur-banner .zone-title{ margin-bottom:10px; }
+  .recur-item{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 0; }
+  .recur-item + .recur-item{ border-top:1px solid var(--line); }
+  .recur-item .recur-what{ flex:1 1 220px; min-width:0; }
+  .recur-item .recur-what b{ font-weight:700; }
+  .recur-item .recur-what span{ color:var(--soft); font-size:12.5px; }
+  .recur-row{ border:1px solid var(--line); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:10px; background:var(--paper); display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .recur-row .recur-main{ flex:1 1 260px; min-width:0; }
+  .recur-row .recur-main b{ font-weight:700; }
+  .recur-row .recur-meta{ font-size:12.5px; color:var(--soft); }
+  .recur-status{ font-size:13px; font-weight:600; }
+  .recur-status.ok{ color:var(--sage); }
+  .recur-status.miss{ color:var(--tan); }
+  .recur-status.late{ color:var(--danger); }
+  .pf-row .bw-head{ cursor:pointer; }
+  .pf-row .chevron{ display:inline-block; width:10px; color:var(--soft); }
+  .pf-row.good .bw-pct{ color:var(--sage); }
+  .pf-row.good .bw-bar{ background:var(--sage-tint); }
+  .pf-row.good .bw-bar i{ background:var(--sage); }
+  .pf-row.none .bw-pct{ color:var(--soft); font-size:14px; }
+  .pf-row.none .bw-bar i{ background:var(--soft); }
+  .pf-row .pf-neg{ color:var(--danger); }
+  .pf-detail{ margin-top:12px; overflow-x:auto; }
+  .pf-table{ width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  .pf-table th, .pf-table td{ padding:7px 8px; text-align:right; border-top:1px solid var(--line); white-space:nowrap; }
+  .pf-table th:first-child, .pf-table td:first-child{ text-align:left; }
+  .pf-table thead th{ border-top:0; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); font-weight:600; }
+  .pf-table tfoot td{ font-weight:700; }
+  .pf-note{ font-size:12.5px; color:var(--soft); margin:8px 0 0; }
   .lock-badge{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--tan); background:var(--tan-tint); border-radius:999px; padding:5px 12px; }
   .entry-lock{ display:inline-flex; align-items:center; justify-content:center; width:29px; height:29px; color:var(--soft); opacity:.7; }
   .row-locked .entry-num, .row-locked .entry-note{ opacity:.85; }
@@ -982,6 +1014,10 @@ let state = {
   adminOpenSection: null,
   adminSubTab: "reports",
   expandedAdminProjectOverviewId: null,
+  profitOpenId: null,
+  editingRecurId: null,
+  profitFilter: "active",
+  profitSort: "profit",
   expandedPaymentCalendarProjectId: null,
   paymentCalendarExcludedPhases: {},
   expandedEmployeeRatesId: null,
@@ -1422,6 +1458,7 @@ function readRememberedLogin(){
 }
 function initials(name){ return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
 const ICON_TRASH = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6l1 14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-14M10 11v6M14 11v6"/></svg>`;
+const ICON_REPEAT = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`;
 const ICON_COPY = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>`;
 const ICON_LOCK = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
 function lockedMonthsList(){ return (state.config && Array.isArray(state.config.lockedMonths)) ? state.config.lockedMonths : []; }
@@ -4458,10 +4495,11 @@ function adminCostsTemplate(){
 
   const sorted = filtered.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const rows = sorted.length ? sorted.map(c => {
-    return costCardHtml(c, { cbList: "gcosts", actionsHtml: `<button class="icon-btn" data-action="copy-cost" data-scope="global" data-id="${esc(c.id)}" title="Kopírovat (stejný náklad s novým datem)">${ICON_COPY}</button><button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
+    return costCardHtml(c, { cbList: "gcosts", actionsHtml: `<button class="icon-btn" data-action="cost-make-recurring" data-id="${esc(c.id)}" title="Udělat z nákladu opakovaný (každý měsíc / čtvrtletí / rok)">${ICON_REPEAT}</button><button class="icon-btn" data-action="copy-cost" data-scope="global" data-id="${esc(c.id)}" title="Kopírovat (stejný náklad s novým datem)">${ICON_COPY}</button><button class="icon-btn" data-action="edit-cost" data-id="${esc(c.id)}" title="Upravit">✎</button><button class="icon-btn icon-btn-del" data-action="delete-cost" data-id="${esc(c.id)}" title="Smazat">${ICON_TRASH}</button>` });
   }).join("") : `<div class="empty-state">${costs.length === 0 ? "Zatím žádné náklady." : "Žádné náklady neodpovídají zvolenému filtru."}</div>`;
 
   return `
+    ${recurBannerHtml()}
     <section class="zone zone-entry${editingCost ? " editing" : ""}">
     <div class="zone-title"><span>${editingCost ? "Úprava nákladu" : "Zadat nový náklad"}</span></div>
 
@@ -6746,6 +6784,253 @@ function adminLockMonthsTemplate(){
 }
 
 /* ---------------- hlídání rozpočtů ---------------- */
+/* ---------------- opakované náklady ---------------- */
+// Šablona (state.config.recurringCosts): { id, name, supplier, supplierId, projectId, phaseId, employeeId, amount, vatRate, vatAmount, amountGross,
+// paymentMethod, note, day, every (měsíců), start "RRRR-MM", skip: ["RRRR-MM"] }. Náklad za měsíc se pozná podle recurringId nebo dodavatele.
+function recurList(){ return (state.config && Array.isArray(state.config.recurringCosts)) ? state.config.recurringCosts : []; }
+function recurMonthIdx(m){ const [y, mo] = m.split("-").map(Number); return y * 12 + mo - 1; }
+function recurMonthFromIdx(i){ return `${Math.floor(i / 12)}-${pad2(i % 12 + 1)}`; }
+function recurEveryLabel(n){ return ({ 1: "každý měsíc", 3: "každé čtvrtletí", 6: "každého půl roku", 12: "každý rok" })[Number(n)] || `každých ${n} měsíců`; }
+function recurIsDue(t, m){
+  if(!t.start || m < t.start) return false;
+  return (recurMonthIdx(m) - recurMonthIdx(t.start)) % (Number(t.every) || 1) === 0;
+}
+function recurDayDate(t, m){
+  const [y, mo] = m.split("-").map(Number);
+  return `${m}-${pad2(Math.min(Math.max(1, Number(t.day) || 1), new Date(y, mo, 0).getDate()))}`;
+}
+function recurCostDate(t, m){ const d = recurDayDate(t, m), today = todayStr(); return d > today && m === today.slice(0, 7) ? today : d; }
+function recurCostFor(t, m){
+  const supName = String(t.supplier || "").trim().toLowerCase();
+  return (state.costs || []).find(c => (c.date || "").startsWith(m) && (c.recurringId === t.id
+    || (t.supplierId ? c.supplierId === t.supplierId : (supName && costSupplierName(c).trim().toLowerCase() === supName)))) || null;
+}
+function recurLabel(t){ return t.name || t.supplier || t.note || "Opakovaný náklad"; }
+// Chybějící náklady za minulý a tento měsíc (u tohoto jen když už nastal den, kdy zpravidla chodí).
+function recurMissing(){
+  if(state.costs === null) return null;
+  const now = todayStr().slice(0, 7), prev = recurMonthFromIdx(recurMonthIdx(now) - 1), out = [];
+  recurList().forEach(t => {
+    [prev, now].forEach(m => {
+      if(!recurIsDue(t, m) || (t.skip || []).includes(m) || recurCostFor(t, m)) return;
+      if(m === now && recurDayDate(t, m) > todayStr()) return;
+      out.push({ t, month: m, late: m === prev });
+    });
+  });
+  return out;
+}
+function recurBannerHtml(){
+  const miss = recurMissing();
+  if(!miss || !miss.length) return "";
+  return `<section class="recur-banner">
+    <div class="zone-title"><span>Chybí opakované náklady</span><span class="zone-total">${miss.length}</span></div>
+    ${miss.map(x => `<div class="recur-item">
+      <div class="recur-what"><b>${esc(recurLabel(x.t))}</b> <span>${esc(fmtMonthLabel(x.month))} · ${fmtKc(x.t.amount)} bez DPH${x.late ? " · po termínu" : ""}</span></div>
+      <button type="button" class="btn btn-tan btn-small" data-action="recur-create" data-id="${esc(x.t.id)}" data-month="${esc(x.month)}">Založit</button>
+      <button type="button" class="btn btn-outline btn-small" data-action="recur-skip" data-id="${esc(x.t.id)}" data-month="${esc(x.month)}" title="Za tento měsíc se nic nečeká – přestane se hlásit">Za ${esc(fmtMonthLabel(x.month))} nebude</button>
+    </div>`).join("")}
+  </section>`;
+}
+function adminRecurringTemplate(){
+  if(state.costs === null) return `<div class="empty-state">Načítání…</div>`;
+  const list = recurList().slice().sort((a, b) => recurLabel(a).localeCompare(recurLabel(b), "cs"));
+  const now = todayStr().slice(0, 7), prev = recurMonthFromIdx(recurMonthIdx(now) - 1);
+  const editing = state.editingRecurId ? recurList().find(t => t.id === state.editingRecurId) : null;
+  const rows = list.map(t => {
+    const where = t.projectId ? (state.config.projects.find(p => p.id === t.projectId) ? `#${t.projectId} ${state.config.projects.find(p => p.id === t.projectId).name}` : `#${t.projectId}`)
+      : (t.employeeId ? `Zaměstnanec – ${(state.config.employees.find(e => e.id === t.employeeId) || {}).name || ""}` : "bez projektu");
+    let status = "", actions = "";
+    [prev, now].forEach(m => {
+      if(!recurIsDue(t, m)) return;
+      const c = recurCostFor(t, m);
+      if(c){ if(m === now) status = `<span class="recur-status ok">✓ za ${esc(fmtMonthLabel(m))} zadáno (${esc(fmtDateCz(c.date))})</span>`; return; }
+      if((t.skip || []).includes(m)){ if(m === now) status = `<span class="recur-status">${esc(fmtMonthLabel(m))}: přeskočeno</span>`; return; }
+      if(m === now && recurDayDate(t, m) > todayStr()){ status = `<span class="recur-status">čeká se kolem ${esc(fmtDateCz(recurDayDate(t, m)))}</span>`; return; }
+      status = `<span class="recur-status ${m === prev ? "late" : "miss"}">${m === prev ? "! " : "⏳ "}za ${esc(fmtMonthLabel(m))} chybí</span>`;
+      actions += `<button type="button" class="btn btn-tan btn-small" data-action="recur-create" data-id="${esc(t.id)}" data-month="${esc(m)}">Založit za ${esc(fmtMonthLabel(m))}</button>`;
+    });
+    if(!status){
+      let next = null;
+      for(let i = 1; i <= 24 && !next; i++){ const m = recurMonthFromIdx(recurMonthIdx(now) + i); if(recurIsDue(t, m)) next = m; }
+      status = `<span class="recur-status">${next ? `příště ${esc(fmtMonthLabel(next))}` : "žádný další termín"}</span>`;
+    }
+    return `
+    <div class="recur-row">
+      <div class="recur-main"><b>${esc(recurLabel(t))}</b>
+        <div class="recur-meta">${esc(recurEveryLabel(t.every))}, kolem ${Number(t.day) || 1}. dne · ${fmtKc(t.amount)} bez DPH · ${esc(where)}${t.supplier && t.name && t.name !== t.supplier ? ` · ${esc(t.supplier)}` : ""}</div></div>
+      ${status}
+      <span style="display:flex;gap:6px;flex-wrap:wrap;">${actions}
+        <button type="button" class="icon-btn" data-action="recur-edit" data-id="${esc(t.id)}" title="Upravit šablonu">✎</button>
+        <button type="button" class="icon-btn icon-btn-del" data-action="recur-delete" data-id="${esc(t.id)}" title="Smazat šablonu">${ICON_TRASH}</button></span>
+    </div>`;
+  }).join("");
+  const employeesSorted = state.config.employees.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
+  const selProj = editing ? (editing.projectId || (editing.employeeId ? "emp:" + editing.employeeId : "")) : ((state.config.projects[0] || {}).id || "");
+  const projOpts = state.config.projects.map(p => `<option value="${esc(p.id)}" ${selProj === p.id ? "selected" : ""}>#${esc(p.id)} ${esc(p.name)}</option>`).join("")
+    + employeesSorted.map(e => `<option value="emp:${esc(e.id)}" ${selProj === "emp:" + e.id ? "selected" : ""}>Zaměstnanec – ${esc(e.name)}</option>`).join("");
+  const selProject = state.config.projects.find(p => p.id === selProj);
+  const phaseOpts = `<option value="">—</option>` + (selProject ? phasesForProject(selProject).map(ph => `<option value="${esc(ph.id)}" ${editing && editing.phaseId === ph.id ? "selected" : ""}>${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
+  const every = editing ? Number(editing.every) || 1 : 1;
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Náklady, které chodí pravidelně (účetní, předplatné, nájem…). Aplikace hlídá, jestli je za měsíc už zadaný náklad od stejného dodavatele; když ne, nabídne jeho založení podle šablony – po založení se otevře k úpravě částky. Šablonu uděláte i tlačítkem ↻ u libovolného nákladu.</p>
+    ${rows || `<div class="empty-state">Zatím žádný opakovaný náklad.</div>`}
+    <section class="zone zone-entry${editing ? " editing" : ""}">
+      <div class="zone-title"><span>${editing ? "Úprava opakovaného nákladu" : "Nový opakovaný náklad"}</span></div>
+      <form id="add-recur-form">
+        <div class="form-grid">
+          <div class="field-row"><label class="field-label">Název (nepovinný)</label><input type="text" name="name" value="${editing ? esc(editing.name || "") : ""}" placeholder="např. Účetnictví"></div>
+          <div class="field-row"><label class="field-label">Projekt</label><select name="projectId" id="recur-project-select" required>${projOpts}</select></div>
+          <div class="field-row"><label class="field-label">Fáze</label><select name="phaseId" id="recur-phase-select">${phaseOpts}</select></div>
+          ${costPriceFieldsHtml({ cost: editing, required: true })}
+          <div class="field-row"><label class="field-label">Platba</label><select name="paymentMethod"><option value="ucet" ${!editing || editing.paymentMethod !== "hotove" ? "selected" : ""}>Účtem</option><option value="hotove" ${editing && editing.paymentMethod === "hotove" ? "selected" : ""}>Hotově</option></select></div>
+          <div class="field-row"><label class="field-label">Opakuje se</label><select name="every">${[[1, "každý měsíc"], [3, "každé čtvrtletí"], [6, "každého půl roku"], [12, "každý rok"]].map(([v, l]) => `<option value="${v}" ${every === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+          <div class="field-row"><label class="field-label">Obvykle kolem dne</label><input type="number" name="day" min="1" max="31" step="1" value="${editing ? esc(editing.day) : Number(todayStr().slice(8, 10))}" required></div>
+          <div class="field-row grow"><label class="field-label">Poznámka (za co)</label><input type="text" name="note" value="${editing ? esc(editing.note || "") : ""}"></div>
+          <div class="field-row split-full" style="display:flex;gap:8px;flex-direction:row;">
+            <button class="btn btn-tan btn-small" type="submit">${editing ? "Uložit změny" : "+ Přidat šablonu"}</button>
+            ${editing ? `<button class="btn btn-small" type="button" data-action="recur-cancel-edit">Zrušit</button>` : ``}
+          </div>
+        </div>
+        <div class="q-hint recur-err" style="color:var(--danger);margin:6px 0 0;"></div>
+      </form>
+    </section>`;
+}
+async function recurCreateCost(id, month){
+  const t = recurList().find(x => x.id === id);
+  if(!t) return;
+  if(state.costs === null) state.costs = await loadCosts();
+  const c = { id: uid("cost"), date: recurCostDate(t, month), projectId: t.projectId || "", phaseId: t.phaseId || "", amount: t.amount, vatAmount: t.vatAmount, amountGross: t.amountGross,
+    paymentMethod: t.paymentMethod || "ucet", note: t.note || "", supplier: t.supplier || "", recurringId: t.id };
+  if(t.vatRate !== undefined && t.vatRate !== null && t.vatRate !== "") c.vatRate = t.vatRate;
+  if(t.supplierId) c.supplierId = t.supplierId;
+  if(t.employeeId) c.employeeId = t.employeeId;
+  state.costs.push(c);
+  await saveCosts();
+  setState({ adminSubTab: "reports", reportsGroup: "billing", adminOpenSection: "project-costs", editingCostId: c.id, costSplit: null, costVatLines: null });
+  setTimeout(() => { const z = document.querySelector(".zone-entry"); if(z) z.scrollIntoView({ block: "start" }); window.scrollBy(0, -100); }, 80);
+  showActionToast(`Náklad „${recurLabel(t)}“ za ${fmtMonthLabel(month)} založen – zkontrolujte částku`, { actionLabel: "Vrátit zpět", onAction: async () => {
+    state.costs = (state.costs || []).filter(x => x.id !== c.id);
+    if(state.editingCostId === c.id) state.editingCostId = null;
+    await saveCosts();
+    render();
+  }});
+}
+
+/* ---------------- ziskovost projektů ---------------- */
+// Cena = rozpočet fází (bez DPH). Náklady = mzdy (plat část hodinové sazby) + režie v sazbě (nulové projekty + chod kanceláře)
+// + klasické náklady + náklady zapsané u hodin. Hodiny na projektech 000 a 002 se do ziskovosti nepočítají.
+function profitabilityData(){
+  if(state.adminEntriesFlat === null || state.costs === null) return null;
+  const SKIP = new Set(["000", "002"]);
+  const empById = {};
+  state.config.employees.forEach(e => { empById[e.id] = e; });
+  const acc = {};
+  const slot = (pr, ph) => {
+    const a = acc[pr] || (acc[pr] = { phases: {}, missingH: 0 });
+    return a.phases[ph || ""] || (a.phases[ph || ""] = { hours: 0, wage: 0, overhead: 0, extra: 0, costs: 0 });
+  };
+  state.adminEntriesFlat.forEach(e => {
+    if(!e.projectId || SKIP.has(e.projectId)) return;
+    const h = Number(e.hours || 0), emp = empById[e.employeeId], sl = slot(e.projectId, e.phaseId);
+    const total = hourlyRateForEmployee(emp, e.date, e.projectId);
+    const match = emp && emp.rates ? emp.rates.find(r => r.from && r.from <= e.date && (!r.to || e.date <= r.to)) : null;
+    const parts = match ? ratePartsOf(match) : null;
+    const wageRate = parts && parts.split ? Math.min(total, parts.wage) : total;
+    if(!total && h > 0) acc[e.projectId].missingH += h;
+    sl.hours += h; sl.wage += h * wageRate; sl.overhead += h * (total - wageRate); sl.extra += Number(e.cost || 0);
+  });
+  state.costs.forEach(c => {
+    if(!c.projectId || SKIP.has(c.projectId)) return;
+    slot(c.projectId, c.phaseId).costs += Number(c.amount || 0);
+  });
+  return sortedProjects().filter(p => !SKIP.has(p.id)).map(p => {
+    const a = acc[p.id] || { phases: {}, missingH: 0 };
+    const keys = [...(p.phaseIds || [])];
+    Object.keys(a.phases).forEach(k => { if(!keys.includes(k)) keys.push(k); });
+    const phases = keys.map(pid => {
+      const sl = a.phases[pid] || { hours: 0, wage: 0, overhead: 0, extra: 0, costs: 0 };
+      const price = pid ? phaseBudgetTotal(p, pid) : 0;
+      const cost = sl.wage + sl.overhead + sl.extra + sl.costs;
+      return { pid, price, ...sl, cost, profit: price - cost, margin: price > 0 ? (price - cost) / price * 100 : null, perHour: sl.hours > 0 && price > 0 ? price / sl.hours : null };
+    }).filter(f => f.price > 0 || f.cost > 0 || f.hours > 0);
+    const sum = k => phases.reduce((t, f) => t + f[k], 0);
+    const price = sum("price"), cost = sum("cost");
+    const pays = paymentCalendarRows(p).flatMap(r => r.payments);
+    const invoiced = pays.filter(x => x.date || String(x.number || "").trim()).reduce((t, x) => t + (Number(x.amount) || 0), 0);
+    const paid = pays.filter(x => x.date).reduce((t, x) => t + (Number(x.amount) || 0), 0);
+    return { p, phases, price, cost, hours: sum("hours"), wage: sum("wage"), overhead: sum("overhead"), extra: sum("extra"), costs: sum("costs"),
+      profit: price - cost, margin: price > 0 ? (price - cost) / price * 100 : null, invoiced, paid, missingH: a.missingH, closed: !!projectClosedDate(p) };
+  }).filter(r => r.price > 0 || r.cost > 0);
+}
+function adminProfitabilityTemplate(){
+  const all = profitabilityData();
+  if(all === null) return `<div class="empty-state">Načítání…</div>`;
+  const filter = state.profitFilter || "active", sort = state.profitSort || "profit";
+  let list = all.filter(r => filter === "all" || (filter === "closed" ? r.closed : !r.closed));
+  const priced = list.filter(r => r.price > 0);
+  const sorters = {
+    profit: (a, b) => b.profit - a.profit,
+    margin: (a, b) => (b.margin === null ? -Infinity : b.margin) - (a.margin === null ? -Infinity : a.margin),
+    price: (a, b) => b.price - a.price,
+    number: (a, b) => Number(a.p.id) - Number(b.p.id) || String(a.p.id).localeCompare(String(b.p.id))
+  };
+  list = list.slice().sort(sorters[sort] || sorters.profit);
+  const tPrice = priced.reduce((t, r) => t + r.price, 0), tCost = priced.reduce((t, r) => t + r.cost, 0), tProfit = tPrice - tCost;
+  const tMargin = tPrice > 0 ? tProfit / tPrice * 100 : null;
+  const pct = v => v === null ? "–" : `${Math.round(v)} %`;
+  const money = v => `<span class="${v < 0 ? "pf-neg" : ""}">${fmtKc(v)}</span>`;
+  const tile = (label, value, has) => `<div class="emp-stat ${has ? "has" : ""}"><div class="emp-stat-label">${label}</div><div class="emp-stat-value">${value}</div></div>`;
+  const rowsHtml = list.map(r => {
+    const level = r.price <= 0 ? "none" : r.profit < 0 ? "over" : r.margin < 25 ? "" : "good";
+    const open = state.profitOpenId === r.p.id;
+    const costPct = r.price > 0 ? Math.min(100, r.cost / r.price * 100) : 0;
+    const detail = open ? `
+      <div class="pf-detail"><table class="pf-table">
+        <thead><tr><th>Fáze</th><th>Cena</th><th>Hodiny</th><th>Mzdy</th><th>Režie</th><th>Náklady</th><th>Zisk</th><th>Marže</th><th>Cena / h</th></tr></thead>
+        <tbody>${r.phases.map(f => {
+          const ph = state.config.phases.find(x => x.id === f.pid);
+          return `<tr><td>${f.pid ? `<span class="entry-phase">${esc(f.pid)}</span> ${ph ? esc(ph.name) : ""}` : `<i>Bez fáze</i>`}</td><td>${f.price ? fmtKc(f.price) : "–"}</td><td>${fmtH(f.hours)}</td><td>${fmtKc(f.wage)}</td><td>${fmtKc(f.overhead)}</td><td>${fmtKc(f.extra + f.costs)}</td><td>${money(f.profit)}</td><td>${pct(f.margin)}</td><td>${f.perHour === null ? "–" : fmtKc(f.perHour)}</td></tr>`;
+        }).join("")}</tbody>
+        <tfoot><tr><td>Celkem</td><td>${fmtKc(r.price)}</td><td>${fmtH(r.hours)}</td><td>${fmtKc(r.wage)}</td><td>${fmtKc(r.overhead)}</td><td>${fmtKc(r.extra + r.costs)}</td><td>${money(r.profit)}</td><td>${pct(r.margin)}</td><td>${r.price > 0 && r.hours > 0 ? fmtKc(r.price / r.hours) : "–"}</td></tr></tfoot>
+      </table></div>
+      ${r.missingH > 0 ? `<p class="pf-note" style="color:var(--danger);">U ${fmtH(r.missingH)} nemá zaměstnanec v daném termínu hodinovou sazbu – hodiny se počítají za 0 Kč, zisk je proto nadsazený.</p>` : ``}
+      <p class="pf-note">Fakturováno ${fmtKc(r.invoiced)} · zaplaceno ${fmtKc(r.paid)} z ceny ${fmtKc(r.price)}.</p>` : ``;
+    return `
+    <div class="bw-row pf-row ${level}">
+      <div class="bw-head" data-action="toggle-profit-project" data-id="${esc(r.p.id)}">
+        <span class="chevron">${open ? "▾" : "▸"}</span>
+        <span class="entry-proj ${r.closed ? "closed" : ""}" data-project-id="${esc(r.p.id)}">#${esc(r.p.id)}</span>
+        <span class="bw-name">${esc(r.p.name)}</span>
+        <b class="bw-pct">${r.price > 0 ? pct(r.margin) : "bez sjednané ceny"}</b>
+      </div>
+      <div class="bw-bar"><i style="width:${costPct}%;"></i></div>
+      <div class="bw-sum">${r.price > 0 ? `Cena ${fmtKc(r.price)} · náklady ${fmtKc(r.cost)} · zisk ${money(r.profit)}` : `Náklady ${fmtKc(r.cost)} · u fází není vyplněný rozpočet`}${r.missingH > 0 ? ` · <span class="pf-neg">chybí sazba u ${fmtH(r.missingH)}</span>` : ``}</div>
+      ${detail}
+    </div>`;
+  }).join("");
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Zisk projektu = sjednaná cena fází (bez DPH, z rozpočtu projektu) − mzdy − režie obsažená v hodinové sazbě (nulové projekty + chod kanceláře) − klasické náklady a náklady zapsané u hodin. Lišta ukazuje, kolik z ceny už „sežraly“ náklady. Hodiny na projektech 000 a 002 se nepočítají.</p>
+    <div class="emp-stats pf-stats" style="margin-bottom:16px;">
+      ${tile("Sjednaná cena", fmtKc(tPrice), tPrice > 0)}
+      ${tile("Náklady", fmtKc(tCost), tCost > 0)}
+      ${tile("Zisk", fmtKc(tProfit), tProfit > 0)}
+      ${tile("Marže", pct(tMargin), tMargin !== null && tMargin > 0)}
+    </div>
+    <div class="form-grid" style="margin-bottom:14px;">
+      <div class="field-row"><label class="field-label">Projekty</label><select id="profit-filter">
+        <option value="active" ${filter === "active" ? "selected" : ""}>Probíhající</option>
+        <option value="closed" ${filter === "closed" ? "selected" : ""}>Uzavřené</option>
+        <option value="all" ${filter === "all" ? "selected" : ""}>Všechny</option></select></div>
+      <div class="field-row"><label class="field-label">Seřadit podle</label><select id="profit-sort">
+        <option value="profit" ${sort === "profit" ? "selected" : ""}>Zisku (nejvyšší)</option>
+        <option value="margin" ${sort === "margin" ? "selected" : ""}>Marže (nejvyšší)</option>
+        <option value="price" ${sort === "price" ? "selected" : ""}>Ceny projektu</option>
+        <option value="number" ${sort === "number" ? "selected" : ""}>Čísla projektu</option></select></div>
+    </div>
+    ${rowsHtml || `<div class="empty-state">Žádný projekt s cenou nebo náklady.</div>`}
+    ${priced.length < list.length ? `<p class="pf-note">${list.length - priced.length} projektů bez sjednané ceny se do souhrnu nahoře nepočítá.</p>` : ``}`;
+}
+
 function budgetWatchRows(){
   if(state.adminEntriesFlat === null || state.costs === null) return null;
   const rows = [];
@@ -7307,6 +7592,11 @@ function adminTemplate(){
         ${state.adminOpenSection === "project-costs" ? adminCostsTemplate() : ""}
       </div>
 
+      <div class="admin-block${state.adminOpenSection === "recurring" ? " is-open" : ""}" data-group="billing" style="order:1;">
+        ${adminSectionHeader("recurring", (() => { const m = recurMissing(); return `Opakované náklady${m && m.length ? ` <span class="bw-count ${m.some(x => x.late) ? "over" : ""}">${m.length}</span>` : ""}`; })())}
+        ${state.adminOpenSection === "recurring" ? adminRecurringTemplate() : ""}
+      </div>
+
       <div class="admin-block${state.adminOpenSection === "payment-calendar" ? " is-open" : ""}" data-group="billing" style="order:3;">
         ${adminSectionHeader("payment-calendar", "Platební kalendář")}
         ${state.adminOpenSection === "payment-calendar" ? adminPaymentCalendarTemplate() : ""}
@@ -7340,6 +7630,11 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "review" ? " is-open" : ""}" data-group="hours">
         ${adminSectionHeader("review", (() => { const rv = reviewIssues(); return `Kontrola záznamů${rv && rv.length ? ` <span class="bw-count ${rv.some(r => r.reasons.some(x => x.level === "bad")) ? "over" : ""}">${rv.length}</span>` : ""}`; })())}
         ${state.adminOpenSection === "review" ? adminReviewTemplate() : ""}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "profitability" ? " is-open" : ""}" data-group="billing" style="order:2;">
+        ${adminSectionHeader("profitability", "Ziskovost projektů")}
+        ${state.adminOpenSection === "profitability" ? adminProfitabilityTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "budget-watch" ? " is-open" : ""}" data-group="billing" style="order:2;">
@@ -8010,6 +8305,73 @@ function bindAdmin(){
       item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
     });
   });
+  document.querySelectorAll('[data-action="recur-create"]').forEach(b => b.onclick = () => recurCreateCost(b.getAttribute("data-id"), b.getAttribute("data-month")));
+  document.querySelectorAll('[data-action="recur-skip"]').forEach(b => b.onclick = async () => {
+    const t = recurList().find(x => x.id === b.getAttribute("data-id"));
+    if(!t) return;
+    t.skip = [...new Set([...(t.skip || []), b.getAttribute("data-month")])];
+    await saveConfig();
+    render();
+  });
+  document.querySelectorAll('[data-action="recur-edit"]').forEach(b => b.onclick = () => { setState({ editingRecurId: b.getAttribute("data-id") }); setTimeout(() => { const f = document.getElementById("add-recur-form"); if(f) f.scrollIntoView({ block: "center" }); }, 60); });
+  document.querySelectorAll('[data-action="recur-cancel-edit"]').forEach(b => b.onclick = () => setState({ editingRecurId: null }));
+  document.querySelectorAll('[data-action="recur-delete"]').forEach(b => b.onclick = async () => {
+    const t = recurList().find(x => x.id === b.getAttribute("data-id"));
+    if(!t || !confirm(`Smazat opakovaný náklad „${recurLabel(t)}“? Už zadané náklady zůstanou.`)) return;
+    state.config.recurringCosts = recurList().filter(x => x.id !== t.id);
+    if(state.editingRecurId === t.id) state.editingRecurId = null;
+    await saveConfig();
+    render();
+  });
+  const recurProj = document.getElementById("recur-project-select"), recurPhase = document.getElementById("recur-phase-select");
+  if(recurProj && recurPhase) recurProj.addEventListener("change", () => {
+    const pr = state.config.projects.find(p => p.id === recurProj.value);
+    recurPhase.innerHTML = `<option value="">—</option>` + (pr ? phasesForProject(pr).map(ph => `<option value="${esc(ph.id)}">${esc(ph.id)} — ${esc(ph.name)}</option>`).join("") : "");
+  });
+  const addRecurForm = document.getElementById("add-recur-form");
+  if(addRecurForm) addRecurForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(addRecurForm).entries());
+    const price = readPriceGroup(addRecurForm), err = addRecurForm.querySelector(".recur-err");
+    const day = Math.round(Number(d.day));
+    if(!price || !d.projectId){ err.textContent = "Vyplňte projekt a cenu bez DPH."; return; }
+    if(!(day >= 1 && day <= 31)){ err.textContent = "Den v měsíci musí být 1 až 31."; return; }
+    const isEmp = String(d.projectId).startsWith("emp:");
+    const old = state.editingRecurId ? recurList().find(x => x.id === state.editingRecurId) : null;
+    const t = { id: old ? old.id : uid("rec"), name: (d.name || "").trim(), projectId: isEmp ? "" : d.projectId, phaseId: isEmp ? "" : (d.phaseId || ""), ...price,
+      paymentMethod: d.paymentMethod || "ucet", note: (d.note || "").trim(), day, every: Number(d.every) || 1, start: old ? old.start : todayStr().slice(0, 7), skip: old ? (old.skip || []) : [] };
+    if(isEmp) t.employeeId = String(d.projectId).slice(4);
+    if(!Array.isArray(state.config.recurringCosts)) state.config.recurringCosts = [];
+    if(old) state.config.recurringCosts[state.config.recurringCosts.indexOf(old)] = t; else state.config.recurringCosts.push(t);
+    state.editingRecurId = null;
+    await saveConfig();
+    render();
+  });
+  document.querySelectorAll('[data-action="cost-make-recurring"]').forEach(b => b.onclick = async () => {
+    const c = (state.costs || []).find(x => x.id === b.getAttribute("data-id"));
+    if(!c) return;
+    const dup = recurList().find(t => t.id === c.recurringId || (c.supplierId ? t.supplierId === c.supplierId && t.projectId === (c.projectId || "") : false));
+    if(dup){ alert(`Opakovaný náklad „${recurLabel(dup)}“ už existuje (Finance → Opakované náklady).`); return; }
+    const note = String(c.note || "").replace(/^(Faktura|Účtenka) č\.\s*\S+\s*[–-]?\s*/i, "").trim();
+    const t = { id: uid("rec"), name: costSupplierName(c) || note || "Opakovaný náklad", supplier: c.supplier || "", supplierId: c.supplierId, projectId: c.projectId || "", phaseId: c.phaseId || "", employeeId: c.employeeId,
+      amount: c.amount, vatRate: c.vatRate, vatAmount: c.vatAmount, amountGross: c.amountGross, paymentMethod: c.paymentMethod || "ucet", note,
+      day: Number((c.date || "").slice(8, 10)) || 1, every: 1, start: (c.date || todayStr()).slice(0, 7), skip: [] };
+    if(!Array.isArray(state.config.recurringCosts)) state.config.recurringCosts = [];
+    state.config.recurringCosts.push(t);
+    c.recurringId = t.id;
+    await saveConfig();
+    await saveCosts();
+    render();
+    showActionToast(`Opakovaný náklad vytvořen: ${recurEveryLabel(1)}, kolem ${t.day}. dne`, { actionLabel: "Upravit", onAction: () => { setState({ adminSubTab: "reports", reportsGroup: "billing", adminOpenSection: "recurring", editingRecurId: t.id }); } });
+  });
+  document.querySelectorAll('[data-action="toggle-profit-project"]').forEach(h => h.onclick = () => {
+    const id = h.getAttribute("data-id");
+    setState({ profitOpenId: state.profitOpenId === id ? null : id });
+  });
+  const profitFilterSel = document.getElementById("profit-filter");
+  if(profitFilterSel) profitFilterSel.addEventListener("change", () => setState({ profitFilter: profitFilterSel.value, profitOpenId: null }));
+  const profitSortSel = document.getElementById("profit-sort");
+  if(profitSortSel) profitSortSel.addEventListener("change", () => setState({ profitSort: profitSortSel.value }));
   document.querySelectorAll('[data-action="toggle-admin-project-overview"]').forEach(row => row.onclick = () => {
     const id = row.getAttribute("data-id");
     setState({ expandedAdminProjectOverviewId: state.expandedAdminProjectOverviewId === id ? null : id });

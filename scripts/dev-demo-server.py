@@ -44,6 +44,7 @@ TOKENS = {}
 def sanitized_config():
     cfg = json.loads(STORE["config"])
     cfg.pop("billingProfiles", None)
+    cfg.pop("recurringCosts", None)
     for e in cfg["employees"]:
         e.pop("rates", None)
         e.pop("password", None)
