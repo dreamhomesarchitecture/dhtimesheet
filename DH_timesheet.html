@@ -3926,6 +3926,7 @@ function bulkToolbarHtml(listId, kind, items, ctxProjectId){
         ${supplierOptions}
         <button type="button" class="btn btn-tan btn-small" data-bulk-apply data-list="${listId}" data-kind="${kind}" ${canApply ? "" : "disabled"}>Přepsat u vybraných</button>
         <button type="button" class="btn btn-outline btn-small" data-bulk-clear data-list="${listId}">Zrušit výběr</button>
+        <button type="button" class="btn btn-danger btn-small btn-with-icon" data-bulk-delete data-list="${listId}" data-kind="${kind}" title="Smazat vybrané záznamy">${ICON_TRASH} Smazat vybrané</button>
         ${err ? `<div class="bulk-error">${esc(err)}</div>` : ``}
       </div>
     </div>`;
@@ -3977,6 +3978,35 @@ async function bulkApply(listId, kind){
   showStamp();
   render();
 }
+async function bulkDelete(listId, kind){
+  const visible = new Set(Array.from(document.querySelectorAll(`.bulk-row-cb[data-list="${listId}"]`)).map(c => c.getAttribute("data-id")));
+  const ids = bulkSelectedIds(listId).filter(id => visible.has(id));
+  if(!ids.length) return;
+  if(!confirm(`Opravdu SMAZAT ${ids.length} vybraných záznamů? Tuto akci nejde vrátit zpět.`)) return;
+  if(kind === "entry"){
+    const byEmployee = {};
+    (state.adminEntriesFlat || []).forEach(en => {
+      if(ids.includes(en.id)){ (byEmployee[en.employeeId] = byEmployee[en.employeeId] || []).push(en.id); }
+    });
+    for(const employeeId of Object.keys(byEmployee)){
+      const entries = await loadEntries(employeeId);
+      await saveEntries(employeeId, "", entries.filter(e => !byEmployee[employeeId].includes(e.id)));
+    }
+    if(state.adminEntriesFlat) state.adminEntriesFlat = state.adminEntriesFlat.filter(en => !ids.includes(en.id));
+    state.projectTotals = null;
+    state.allEntriesFlat = null;
+  } else {
+    state.costs = (state.costs || []).filter(c => !ids.includes(c.id));
+    if(ids.includes(state.editingCostId)) state.editingCostId = null;
+    if(ids.includes(state.editingProjectCostId)) state.editingProjectCostId = null;
+    await saveCosts();
+  }
+  state.bulkSel = { ...state.bulkSel, [listId]: {} };
+  state.bulkTarget = { ...state.bulkTarget, [listId]: {} };
+  state.bulkError = { ...state.bulkError, [listId]: "" };
+  showStamp();
+  render();
+}
 function bindBulkEvents(){
   document.addEventListener("change", e => {
     const t = e.target;
@@ -4012,6 +4042,8 @@ function bindBulkEvents(){
     }
     const apply = e.target.closest && e.target.closest("[data-bulk-apply]");
     if(apply) bulkApply(apply.getAttribute("data-list"), apply.getAttribute("data-kind"));
+    const del = e.target.closest && e.target.closest("[data-bulk-delete]");
+    if(del) bulkDelete(del.getAttribute("data-list"), del.getAttribute("data-kind"));
   });
 }
 
