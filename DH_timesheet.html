@@ -1616,7 +1616,7 @@ function costCardHtml(c, o){
   meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
   if(empName && proj) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
   if(c.invoiceNumber) meta.push(`<span>faktura č. ${esc(c.invoiceNumber)}</span>`);
-  if(costVatMode(c) !== "odpocet") meta.push(`<span class="cc-vatmode ${costVatMode(c)}" title="Členění DPH">${esc(costVatMode(c) === "bez_naroku" ? "DPH bez nároku na odpočet" : costVatMode(c) === "pdp" ? "přenesená daň. povinnost" : "od neplátce")}</span>`);
+  if(costVatMode(c) !== "odpocet") meta.push(`<span class="cc-vatmode ${costVatMode(c)}" title="Členění DPH">${esc(costVatMode(c) === "bez_naroku" ? "DPH bez nároku na odpočet" : costVatMode(c) === "pdp" ? "přenesená daň. povinnost" : "bez DPH (osvobozeno / neplátce)")}</span>`);
   const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
   return `
     <div class="cost-card ${cb ? "has-cb" : ""}">
@@ -1636,7 +1636,7 @@ function costNoteCellHtml(c){
   return `<span class="entry-note">${sup}${sup && c.note ? " · " : ""}${esc(c.note || "")}</span>`;
 }
 // Členění DPH u nákladu: s nárokem na odpočet (výchozí), bez nároku (DPH je pro firmu náklad), přenesená daňová povinnost, od neplátce.
-const VAT_MODES = { odpocet: "S nárokem na odpočet", bez_naroku: "Bez nároku na odpočet", pdp: "Přenesená daňová povinnost", neplatce: "Od neplátce (bez DPH)" };
+const VAT_MODES = { odpocet: "S nárokem na odpočet", bez_naroku: "Bez nároku na odpočet", pdp: "Přenesená daňová povinnost", neplatce: "Bez DPH (neplátce / osvobozeno)" };
 function costVatMode(c){ return c && VAT_MODES[c.vatMode] ? c.vatMode : "odpocet"; }
 function costGross(c){ return c.amountGross !== undefined && c.amountGross !== "" && c.amountGross !== null ? Number(c.amountGross) : Number(c.amount || 0) + Number(c.vatAmount || 0); }
 // Skutečný náklad firmy: bez nároku na odpočet je to cena s DPH, jinak cena bez DPH.
@@ -1649,6 +1649,22 @@ function costPriceCellHtml(c){
   const hasVat = Number(c.vatAmount) > 0 || (Number(c.amountGross) && Number(c.amountGross) !== Number(c.amount));
   return `<span class="entry-num">${fmtKc2(c.amount)}${hasVat ? `<small class="cost-gross">s DPH ${fmtKc2(c.amountGross)}</small>` : ``}</span>`;
 }
+// Karta načtené faktury: bez data uskutečnění plnění se datum nároku na odpočet drží na datu vystavení, dokud ho uživatel neupraví.
+document.addEventListener("change", e => {
+  const t = e.target;
+  if(!t || !t.getAttribute || t.getAttribute("data-k") !== "ii-date") return;
+  const it = invoiceImportItemOf(t);
+  if(!it || !it.parsed || it.parsed.taxDate) return;
+  const d = it.draft = it.draft || {};
+  const cur = d["pf-vatdate"] !== undefined ? d["pf-vatdate"] : (it.parsed.date || "");
+  const auto = it.vatAuto !== undefined ? it.vatAuto : (it.parsed.date || "");
+  if(!cur || cur === auto){
+    d["pf-vatdate"] = t.value;
+    const vd = document.querySelector(`.ii-panel[data-key="${it.key}"] .pf-vatdate`);   // karta se mohla mezitím překreslit
+    if(vd) vd.value = t.value;
+  }
+  it.vatAuto = t.value;
+});
 // Výběr dodavatele předvyplní jeho výchozí členění DPH (pokud je nastavené).
 document.addEventListener("change", e => {
   const t = e.target;
@@ -6155,6 +6171,10 @@ function parseInvoiceRows(rows, opts){
     const all = [...full.matchAll(/\bI[ČC]O?\s*(?:\([A-Za-z ]{2,12}\))?\s*[:.]?\s*(\d{8})/gi)].map(m => m[1]).filter(x => !ownIcos.includes(x));
     if(all.length){ ico = all[0]; check.ico = "IČ dodavatele je převzaté z jiného místa faktury – zkontrolujte."; }
   }
+  if(!ico){
+    const sp = /\bI[ČC]O?\s*[:.]?\s*(\d{3}\s\d{2}\s\d{3})(?!\d)/i.exec(block + "\n" + full);
+    if(sp && !ownIcos.includes(sp[1].replace(/\s/g, ""))){ ico = sp[1].replace(/\s/g, ""); check.ico = "IČ je převzaté z textu s mezerami – zkontrolujte."; }
+  }
   if(ico && ownIcos.includes(ico)) check.ico = "IČ dodavatele je stejné jako vaše firma – zkontrolujte, zda není dodavatel a odběratel zaměněn.";
   out.supplier.ico = ico;
   const dicM = /\bDI[ČC]\s*(?:\([A-Za-z ]{2,16}\))?\s*[:.]?\s*([A-Z]{2}\s?\d{8,10})/i.exec(block);
@@ -6218,6 +6238,14 @@ function parseInvoiceRows(rows, opts){
   out.taxDate = labeledDate(lines, "datum\\s+uskute[čc]n[ěe]n[íi]\\s+(?:zdaniteln[ée]ho\\s+)?pln[ěe]n[íi]|DUZP|datum\\s+zdaniteln[ée]ho\\s+pln[ěe]n[íi]|datum\\s+poskytnut[íi]") || "";
   if(!out.date) out.date = labeledDate(lines, "datum(?!\\s+(?:splatnosti|uskute|zdaniteln|poskytnut))") || "";
   if(!out.date){ const below = valueBelowLabel(rows, /^(invoice\s+date|date\s+of\s+issue|datum\s+vystaven[íi])\s*:?$/i, /^\d{1,2}[./]\d{1,2}[./]\d{4}$/); if(below) out.date = parseCzDate(below) || ""; }
+  if(!out.date){
+    const cd = lines.slice(0, 30).map(l => /^[A-ZÁ-Ž][A-Za-zÁ-ž\- ]{2,25}\s+(\d{1,2}\s*\.\s*\d{1,2}\s*\.\s*\d{4})\s*$/.exec(l)).find(Boolean);
+    if(cd){ out.date = parseCzDate(cd[1]) || ""; if(out.date) check.date = "Datum je z řádku „místo, datum“ – zkontrolujte."; }
+  }
+  if(!out.dueDate){
+    const dd = /(?:nejpozději\s+do|zaplaťte[^\n]{0,40}?\sdo|splatn[ée]\s+do)\s+(\d{1,2}\s*\.\s*\d{1,2}\s*\.\s*\d{4})/i.exec(fullN);
+    if(dd) out.dueDate = parseCzDate(dd[1]) || "";
+  }
   if(!out.date && out.taxDate){ out.date = out.taxDate; check.date = "Datum vystavení nenalezeno, použil jsem datum plnění – zkontrolujte."; }
 
   // ---- částky ----
@@ -6280,6 +6308,9 @@ function parseInvoiceRows(rows, opts){
   if(rate === null){ const rm = /(?<![\d.,])(\d{1,2})(?:[.,]\d+)?\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
   if(recapUse){ net = recapUse.net; rate = recapUse.rate; vat = recapUse.vat; if(gross === null) gross = recapUse.gross; }
   const reverseCharge = /reverse\s+charge|p[řr]enesen[áaé]\s+da[ňn]ov[áaé]\s+povinnost/i.test(full);
+  // Pojištění je osvobozené od DPH: doklad bez zmínky o DPH, částka k zaplacení = cena.
+  const insurance = /pojistn[áéý]\s+smlouv|pojišt[ěe]ní/i.test(full) && !/\bDPH\b/i.test(full.replace(/DI[ČC]\s*[:.]?\s*[A-Z]{2}\d+/gi, ""));
+  if(insurance && net === null && rate === null && vat === null && gross !== null){ net = gross; rate = 0; vat = 0; out.vatMode = "neplatce"; out.warnings.push("Pojištění je osvobozené od DPH – doklad je bez DPH a nárok na odpočet nevzniká."); }
   if(reverseCharge) out.vatMode = "pdp"; else if(nonPayer) out.vatMode = "neplatce";
   if(nonPayer || reverseCharge){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
   if(net === null && gross !== null && rate !== null) net = r2(gross / (1 + rate / 100));
@@ -6717,7 +6748,7 @@ function invoiceImportItemHtml(origin, it){
           <div class="form-grid"><div class="field-row"><label class="field-label">Kurz (Kč za 1 ${esc(p.currency)})</label><input type="number" step="0.001" min="0" data-k="ii-fx" value="${it.fx ? esc(it.fx.rate) : ""}"></div>
           <div class="field-row" style="display:flex;gap:8px;align-items:flex-end;"><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx" data-key="${esc(it.key)}">Přepočítat podle kurzu</button><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx-cnb" data-key="${esc(it.key)}">Načíst kurz ČNB</button></div></div></div>`; })() : ``}
       <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
-        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, cost: { vatMode: p.vatMode || (existing && existing.vatMode) || "", amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
+        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, cost: { vatMode: p.vatMode || (existing && existing.vatMode) || "", vatDate: p.taxDate || p.date || "", amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
       <div class="form-grid" style="margin-top:6px;">
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
@@ -6971,7 +7002,7 @@ function adminVatReportTemplate(){
       <p class="pf-note">B.3 (do ${KH_LIMIT.toLocaleString("cs-CZ")} Kč, ${R.b3.length} dokladů): základ <b>${kc(R.b3.reduce((t, g) => t + g.net, 0))}</b>, DPH <b>${kc(R.b3.reduce((t, g) => t + g.vat, 0))}</b>.</p>` : ``}
     ${sect("Bez nároku na odpočet", "DPH si neodečítáte – je to náklad (do nákladů projektů se počítá cena s DPH). Do přiznání ani kontrolního hlášení nevstupuje.", R.bez_naroku)}
     ${sect("Přenesená daňová povinnost (samovyměření)", `Základ se v přiznání uvádí jako výstup i vstup. Při sazbě 21 % je DPH ke samovyměření orientačně <b>${kc(pdpVat)}</b>.`, R.pdp)}
-    ${sect("Od neplátců (bez DPH)", "", R.neplatce)}
+    ${sect("Bez DPH (od neplátců, osvobozená plnění – např. pojištění)", "Doklady bez DPH, které do přiznání nevstupují.", R.neplatce)}
     ${sect("Bez evidovaného DPH", "Doklady s nárokem na odpočet, u kterých není zadané DPH. Pokud na nich DPH bylo, doplňte ho, jinak se do soupisu nedostane.", R.bezdph)}`;
 }
 function vatReportCsvRows(month){
