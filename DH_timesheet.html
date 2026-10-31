@@ -658,6 +658,8 @@
   .bw-sum{ font-size:12.5px; color:var(--soft); }
   .pf-stats .emp-stat-value{ font-size:clamp(18px,2.4vw,26px); white-space:nowrap; }
   .pf-stats .emp-stat{ padding-left:14px; padding-right:12px; min-width:0; }
+  .cc-vatmode{ font-size:11.5px; font-weight:700; color:var(--tan); border:1px solid rgba(186,148,112,.5); border-radius:999px; padding:1px 8px; }
+  .cc-vatmode.bez_naroku{ color:var(--danger); border-color:rgba(179,56,44,.45); }
   .recur-banner{ border:1px solid rgba(186,148,112,0.55); background:var(--tan-tint); border-radius:var(--radius-md); padding:14px 18px; margin-top:18px; }
   .recur-banner .zone-title{ margin-bottom:10px; }
   .recur-item{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 0; }
@@ -1016,6 +1018,7 @@ let state = {
   expandedAdminProjectOverviewId: null,
   profitOpenId: null,
   editingRecurId: null,
+  vatReportMonth: "",
   profitFilter: "active",
   profitSort: "profit",
   expandedPaymentCalendarProjectId: null,
@@ -1405,7 +1408,7 @@ function paymentCalendarRowsForNumbers(p, numbers){
 }
 function phaseFinancials(p, pid){
   const totalBudget = phaseBudgetTotal(p, pid);
-  const totalCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid).reduce((s,c) => s + Number(c.amount||0), 0);
+  const totalCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid).reduce((s,c) => s + costValue(c), 0);
   const totalLabor = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid).reduce((s,en) => {
     const emp = state.config.employees.find(x => x.id === en.employeeId);
     return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date, en.projectId);
@@ -1537,6 +1540,8 @@ function costPriceFieldsHtml(o){
           <div class="field-row"><label class="field-label">DPH (%)</label><input type="number" class="pf-rate" name="vatRate" min="0" max="100" step="0.01" list="vat-rate-list" value="${esc(rate)}" ${ro} ${o.vl ? 'placeholder="více"' : ""}></div>
           <div class="field-row"><label class="field-label">DPH (Kč)</label><input type="number" class="pf-vat" name="vatAmount" min="0" step="0.01" value="${esc(vat)}" ${ro}></div>
           <div class="field-row"><label class="field-label">Cena s DPH (Kč)</label><input type="number" class="pf-gross" name="amountGross" min="0" step="0.01" value="${esc(gross)}" ${ro}></div>
+          <div class="field-row"><label class="field-label">Členění DPH</label><select class="pf-vatmode" name="vatMode" title="Když si DPH z dokladu nemůžete odečíst, zvolte „Bez nároku na odpočet“ – do nákladů se pak počítá cena s DPH.">${vatModeOptionsHtml(costVatMode(c))}</select></div>
+          <div class="field-row"><label class="field-label">Datum nároku na odpočet</label><input type="date" class="pf-vatdate" name="vatDate" value="${esc(c && c.vatDate ? c.vatDate : "")}" title="Podle něj se doklad zařadí do měsíce v soupisu DPH. Prázdné = datum nákladu."></div>
           ${o.vlOwner ? vlBlockHtml(o.vlOwner, o.vl || null) : ``}
         </div>`;
 }
@@ -1558,6 +1563,9 @@ function readPriceGroup(scope){
     if(sp){ out.supplier = sp.name || ""; out.supplierId = sp.id; }
   }
   if(rate !== null) out.vatRate = rate; else out.vatRate = undefined;
+  const modeEl = q(".pf-vatmode"), dateEl = q(".pf-vatdate");
+  out.vatMode = modeEl && VAT_MODES[modeEl.value] && modeEl.value !== "odpocet" ? modeEl.value : undefined;
+  out.vatDate = dateEl && /^\d{4}-\d{2}-\d{2}$/.test(dateEl.value) ? dateEl.value : undefined;
   return out;
 }
 function fmtDateCz(iso){
@@ -1608,6 +1616,7 @@ function costCardHtml(c, o){
   meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
   if(empName && proj) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
   if(c.invoiceNumber) meta.push(`<span>faktura č. ${esc(c.invoiceNumber)}</span>`);
+  if(costVatMode(c) !== "odpocet") meta.push(`<span class="cc-vatmode ${costVatMode(c)}" title="Členění DPH">${esc(costVatMode(c) === "bez_naroku" ? "DPH bez nároku na odpočet" : costVatMode(c) === "pdp" ? "přenesená daň. povinnost" : "od neplátce")}</span>`);
   const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
   return `
     <div class="cost-card ${cb ? "has-cb" : ""}">
@@ -1626,10 +1635,33 @@ function costNoteCellHtml(c){
   const sup = supName ? `<b class="cost-supplier">${esc(supName)}</b>` : "";
   return `<span class="entry-note">${sup}${sup && c.note ? " · " : ""}${esc(c.note || "")}</span>`;
 }
+// Členění DPH u nákladu: s nárokem na odpočet (výchozí), bez nároku (DPH je pro firmu náklad), přenesená daňová povinnost, od neplátce.
+const VAT_MODES = { odpocet: "S nárokem na odpočet", bez_naroku: "Bez nároku na odpočet", pdp: "Přenesená daňová povinnost", neplatce: "Od neplátce (bez DPH)" };
+function costVatMode(c){ return c && VAT_MODES[c.vatMode] ? c.vatMode : "odpocet"; }
+function costGross(c){ return c.amountGross !== undefined && c.amountGross !== "" && c.amountGross !== null ? Number(c.amountGross) : Number(c.amount || 0) + Number(c.vatAmount || 0); }
+// Skutečný náklad firmy: bez nároku na odpočet je to cena s DPH, jinak cena bez DPH.
+function costValue(c){ return costVatMode(c) === "bez_naroku" ? costGross(c) : Number(c.amount || 0); }
+function vatModeOptionsHtml(sel, withDefault){
+  return (withDefault ? `<option value="">— nenastaveno (s nárokem na odpočet) —</option>` : ``)
+    + Object.keys(VAT_MODES).filter(k => !(withDefault && k === "odpocet")).map(k => `<option value="${k}" ${sel === k ? "selected" : ""}>${esc(VAT_MODES[k])}</option>`).join("");
+}
 function costPriceCellHtml(c){
   const hasVat = Number(c.vatAmount) > 0 || (Number(c.amountGross) && Number(c.amountGross) !== Number(c.amount));
   return `<span class="entry-num">${fmtKc2(c.amount)}${hasVat ? `<small class="cost-gross">s DPH ${fmtKc2(c.amountGross)}</small>` : ``}</span>`;
 }
+// Výběr dodavatele předvyplní jeho výchozí členění DPH (pokud je nastavené).
+document.addEventListener("change", e => {
+  const t = e.target;
+  if(!t || !t.classList) return;
+  if(t.classList.contains("pf-vatmode") && e.isTrusted){ delete t.dataset.auto; return; }   // ruční volba uživatele
+  if(!t.classList.contains("pf-supplier")) return;
+  const sp = suppliersList().find(x => x.id === t.value);
+  const g = t.closest(".price-group");
+  const sel = g && g.querySelector(".pf-vatmode");
+  if(!sel) return;
+  if(sp && sp.vatMode){ sel.value = sp.vatMode; sel.dataset.auto = "1"; }
+  else if(sel.dataset.auto === "1"){ sel.value = "odpocet"; delete sel.dataset.auto; }
+});
 document.addEventListener("input", e => {
   const t = e.target;
   const g = t && t.closest && t.closest(".price-group");
@@ -1992,7 +2024,7 @@ function clientExportOwnCosts(){
   });
   const costs = (state.costs || []).filter(c => c.projectId && inRange(c.date) && (!state.clientExportProjectId || c.projectId === state.clientExportProjectId)
     && (!state.clientExportPhaseId || c.phaseId === state.clientExportPhaseId));
-  const projectCostsSum = costs.reduce((t, c) => t + Number(c.amount || 0), 0);
+  const projectCostsSum = costs.reduce((t, c) => t + costValue(c), 0);
   const manual = (state.clientExportExtraCosts || []).reduce((t, i) => t + clientExportAmountFor(i.id, i.amount), 0);
   const people = Object.values(byEmp).sort((a, b) => String(a.name).localeCompare(String(b.name), "cs"));
   const wage = people.reduce((t, r) => t + r.wage, 0), overhead = people.reduce((t, r) => t + r.overhead, 0);
@@ -4262,7 +4294,7 @@ function buildAdminProjectOverviewDetail(projectId){
   const entries = (state.adminEntriesFlat || []).filter(e => e.projectId === projectId);
   const totalHours = entries.reduce((s,e) => s + Number(e.hours||0), 0);
   const projectCosts = (state.costs || []).filter(c => c.projectId === projectId);
-  const totalCostAmount = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
+  const totalCostAmount = projectCosts.reduce((s,c) => s + costValue(c), 0);
 
   const byPhase = {};
   entries.forEach(e => {
@@ -4275,7 +4307,7 @@ function buildAdminProjectOverviewDetail(projectId){
     const pid = c.phaseId || "—";
     if(!byPhase[pid]) byPhase[pid] = { total: 0, byEmployee: {}, costs: [], costTotal: 0 };
     byPhase[pid].costs.push(c);
-    byPhase[pid].costTotal += Number(c.amount||0);
+    byPhase[pid].costTotal += costValue(c);
   });
 
   const assignedIds = (project && project.phaseIds) ? project.phaseIds : [];
@@ -5117,7 +5149,7 @@ function projectDetailPageHtml(){
             const closedFrom = (p.closedPhases && p.closedPhases[pid]) || null;
             const phaseEntries = (state.adminEntriesFlat || []).filter(en => en.projectId === p.id && en.phaseId === pid);
             const phaseCosts = (state.costs || []).filter(c => c.projectId === p.id && c.phaseId === pid);
-            const costsSum = phaseCosts.reduce((s,c) => s + Number(c.amount||0), 0);
+            const costsSum = phaseCosts.reduce((s,c) => s + costValue(c), 0);
             const laborSum = phaseEntries.reduce((s,en) => {
               const emp = state.config.employees.find(x => x.id === en.employeeId);
               return s + Number(en.hours||0) * hourlyRateForEmployee(emp, en.date, en.projectId);
@@ -5214,7 +5246,7 @@ function projectDetailPageHtml(){
             if(costsSort === "amount") return Number(b.amount||0) - Number(a.amount||0);
             return (b.date||"").localeCompare(a.date||"");
           });
-          const costsTotal = projectCosts.reduce((s,c) => s + Number(c.amount||0), 0);
+          const costsTotal = projectCosts.reduce((s,c) => s + costValue(c), 0);
           const costsFilterHtml = `
             <div class="form-grid" style="margin-bottom:12px;align-items:start;">
               <div class="field-row"><label class="field-label">Fáze</label><select id="project-costs-filter-phase">
@@ -5642,7 +5674,7 @@ function supplierDetailPageHtml(){
       </div>
       <div class="admin-block is-open">
         <div class="admin-block-title"><span>Fakturační údaje</span></div>
-        ${billingProfileCardHtml(sp, { fieldClass: "supplier-field", deleteAction: "delete-supplier" })}
+        ${billingProfileCardHtml(sp, { fieldClass: "supplier-field", deleteAction: "delete-supplier", showVatMode: true })}
       </div>
       <div class="admin-block is-open">
         <div class="admin-block-title"><span>Zaplacené náklady</span></div>
@@ -6248,6 +6280,7 @@ function parseInvoiceRows(rows, opts){
   if(rate === null){ const rm = /(?<![\d.,])(\d{1,2})(?:[.,]\d+)?\s*%/.exec(full); if(rm && [0, 10, 12, 15, 21].includes(Number(rm[1]))) rate = Number(rm[1]); }
   if(recapUse){ net = recapUse.net; rate = recapUse.rate; vat = recapUse.vat; if(gross === null) gross = recapUse.gross; }
   const reverseCharge = /reverse\s+charge|p[řr]enesen[áaé]\s+da[ňn]ov[áaé]\s+povinnost/i.test(full);
+  if(reverseCharge) out.vatMode = "pdp"; else if(nonPayer) out.vatMode = "neplatce";
   if(nonPayer || reverseCharge){ rate = 0; vat = 0; if(net === null && gross !== null) net = gross; if(gross === null && net !== null) gross = net; }
   if(net === null && gross !== null && rate !== null) net = r2(gross / (1 + rate / 100));
   if(net === null && gross !== null && vat !== null) net = r2(gross - vat);
@@ -6684,7 +6717,7 @@ function invoiceImportItemHtml(origin, it){
           <div class="form-grid"><div class="field-row"><label class="field-label">Kurz (Kč za 1 ${esc(p.currency)})</label><input type="number" step="0.001" min="0" data-k="ii-fx" value="${it.fx ? esc(it.fx.rate) : ""}"></div>
           <div class="field-row" style="display:flex;gap:8px;align-items:flex-end;"><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx" data-key="${esc(it.key)}">Přepočítat podle kurzu</button><button type="button" class="btn btn-outline btn-small" data-action="invoice-import-fx-cnb" data-key="${esc(it.key)}">Načíst kurz ČNB</button></div></div></div>`; })() : ``}
       <div class="form-grid ${miss.net || chk.amount ? "ii-amount-flag" : ""}">
-        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, cost: { amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
+        ${costPriceFieldsHtml({ noSupplier: true, vl: it.vatLines || null, cost: { vatMode: p.vatMode || (existing && existing.vatMode) || "", amount: p.net === null ? "" : p.net, vatRate: p.rate === null ? "" : p.rate, vatAmount: p.vat === null ? "" : p.vat, amountGross: p.gross === null ? "" : p.gross } })}
       </div>
       <div class="form-grid" style="margin-top:6px;">
         <div class="field-row cost-main-proj"><label class="field-label">Projekt</label><select data-k="ii-project">${projectOptions}</select></div>
@@ -6731,7 +6764,7 @@ function restoreInvoiceImportDraft(){
     const it = invoiceImportItemOf(panel);
     if(!it || !it.draft) return;
     const d = it.draft;
-    panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
+    panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross, .pf-vatmode, .pf-vatdate").forEach(el => {
       const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
       if(k && d[k] !== undefined && !(k === "ii-project" && d[k] === "")) el.value = d[k];
     });
@@ -6749,7 +6782,7 @@ function captureInvoiceImportDraft(e){
   if(!it) return;
   const panel = e.target.closest(".ii-panel[data-key]");
   const d = it.draft = it.draft || {};
-  panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross").forEach(el => {
+  panel.querySelectorAll("[data-k], .pf-net, .pf-rate, .pf-vat, .pf-gross, .pf-vatmode, .pf-vatdate").forEach(el => {
     const k = el.getAttribute("data-k") || Array.from(el.classList).find(c => c.startsWith("pf-"));
     if(k) d[k] = el.value;
   });
@@ -6861,6 +6894,96 @@ function adminLockMonthsTemplate(){
 }
 
 /* ---------------- hlídání rozpočtů ---------------- */
+/* ---------------- DPH: soupis přijatých dokladů za měsíc ---------------- */
+// Měsíc dokladu = datum nároku na odpočet (vatDate), jinak datum nákladu. Doklady rozděleného nákladu se pro kontrolní hlášení sečtou podle dodavatele a čísla.
+const KH_LIMIT = 10000;
+function vatMonthOf(c){ return String(c.vatDate || c.date || "").slice(0, 7); }
+function vatDocRate(c){
+  if(c.vatRate !== undefined && c.vatRate !== "" && c.vatRate !== null && Number.isFinite(Number(c.vatRate))) return Number(c.vatRate);
+  const n = Number(c.amount) || 0, v = Number(c.vatAmount) || 0;
+  return n > 0 ? Math.round(v / n * 100) : 0;
+}
+function vatReportMonths(){
+  const set = new Set((state.costs || []).map(vatMonthOf).filter(m => /^\d{4}-\d{2}$/.test(m)));
+  return [...set].sort().reverse();
+}
+function vatReportData(month){
+  const supById = {}; suppliersList().forEach(sp => { supById[sp.id] = sp; });
+  const docs = (state.costs || []).filter(c => vatMonthOf(c) === month).map(c => {
+    const sp = c.supplierId ? supById[c.supplierId] : null, mode = costVatMode(c);
+    const vat = Number(c.vatAmount) || 0, net = Number(c.amount) || 0, rate = vatDocRate(c);
+    let kind = mode;
+    if(mode === "odpocet") kind = vat > 0 ? "odpocet" : "bezdph";
+    const proj = state.config.projects.find(x => x.id === c.projectId);
+    return { c, kind, mode, net, vat, rate, gross: costGross(c), supplier: costSupplierName(c), ico: sp ? sp.ico || "" : "", dic: sp ? sp.dic || "" : "", number: c.invoiceNumber || "", date: c.date, vatDate: c.vatDate || c.date,
+      project: proj ? `#${proj.id} ${proj.name}` : (c.employeeId ? "zaměstnanec" : ""), note: c.note || "", key: `${c.supplierId || costSupplierName(c).toLowerCase()}|${c.invoiceNumber || c.id}` };
+  });
+  const by = k => docs.filter(d => d.kind === k);
+  // kontrolní hlášení: doklady s nárokem podle dodavatele a čísla (rozdělený náklad = jeden doklad)
+  const groups = {};
+  by("odpocet").forEach(d => { const g = groups[d.key] || (groups[d.key] = { supplier: d.supplier, dic: d.dic, number: d.number, date: d.vatDate, net: 0, vat: 0, gross: 0 }); g.net += d.net; g.vat += d.vat; g.gross += d.gross; });
+  const glist = Object.values(groups).sort((a, b) => a.date.localeCompare(b.date));
+  const b2 = glist.filter(g => g.gross > KH_LIMIT), b3 = glist.filter(g => g.gross <= KH_LIMIT);
+  const khOf = d => (groups[d.key] && groups[d.key].gross > KH_LIMIT ? "B.2" : "B.3");
+  const rates = {};
+  by("odpocet").forEach(d => { const r = rates[d.rate] || (rates[d.rate] = { rate: d.rate, net: 0, vat: 0 }); r.net += d.net; r.vat += d.vat; });
+  const sum = (list, k) => r2(list.reduce((t, d) => t + d[k], 0));
+  return { docs, odpocet: by("odpocet"), bez_naroku: by("bez_naroku"), pdp: by("pdp"), neplatce: by("neplatce"), bezdph: by("bezdph"),
+    rates: Object.values(rates).sort((a, b) => b.rate - a.rate), b2, b3, khOf, sum };
+}
+function adminVatReportTemplate(){
+  if(state.costs === null) return `<div class="empty-state">Načítání…</div>`;
+  const months = vatReportMonths();
+  if(!months.length) return `<div class="empty-state">Zatím nejsou zadané žádné náklady.</div>`;
+  const nowM = todayStr().slice(0, 7);
+  const month = months.includes(state.vatReportMonth) ? state.vatReportMonth : (months.find(m => m <= nowM) || months[0]);
+  const R = vatReportData(month);
+  const kc = v => fmtKc2(r2(v));
+  const tile = (label, value, has) => `<div class="emp-stat ${has ? "has" : ""}"><div class="emp-stat-label">${label}</div><div class="emp-stat-value">${value}</div></div>`;
+  const table = (head, rowsHtml, foot) => `<div class="pf-detail"><table class="pf-table"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rowsHtml}</tbody>${foot ? `<tfoot>${foot}</tfoot>` : ""}</table></div>`;
+  const docRow = d => `<tr><td>${esc(fmtDateCz(d.vatDate))}</td><td>${esc(d.supplier || "—")}</td><td>${esc(d.number || "")}</td><td>${kc(d.net)}</td><td>${d.rate} %</td><td>${kc(d.vat)}</td><td>${kc(d.gross)}</td></tr>`;
+  const docHead = ["Datum", "Dodavatel", "Číslo", "Základ", "Sazba", "DPH", "Celkem"];
+  const sect = (title, hint, list, extra) => list.length ? `
+      <div style="margin-top:20px;font-weight:700;">${title} <span class="meta">(${list.length})</span></div>
+      ${hint ? `<p class="pf-note" style="margin:4px 0 6px;">${hint}</p>` : ``}
+      ${table(docHead, list.map(docRow).join(""), `<tr><td colspan="3">Celkem</td><td>${kc(R.sum(list, "net"))}</td><td></td><td>${kc(R.sum(list, "vat"))}</td><td>${kc(R.sum(list, "gross"))}</td></tr>`)}${extra || ""}` : "";
+  const inputVat = R.sum(R.odpocet, "vat");
+  const pdpVat = r2(R.sum(R.pdp, "net") * 0.21);
+  return `
+    <p class="q-hint" style="margin:0 0 14px;">Přijaté doklady (náklady) za měsíc podle <b style="color:var(--ink);">data nároku na odpočet</b> (když není vyplněné, platí datum nákladu). Slouží jako podklad pro přiznání a kontrolní hlášení – závazné je vždy zaúčtování u účetní. Výstupní DPH z vystavených faktur zatím aplikace nesleduje, proto zde není „DPH k úhradě“.</p>
+    <div class="form-grid" style="margin-bottom:14px;">
+      <div class="field-row"><label class="field-label">Měsíc</label><select id="vat-report-month">${months.map(m => `<option value="${esc(m)}" ${m === month ? "selected" : ""}>${esc(fmtMonthLabel(m))}</option>`).join("")}</select></div>
+      <div class="field-row"><label class="field-label">&nbsp;</label><button type="button" class="btn btn-outline btn-small" id="vat-report-csv-btn">Stáhnout soupis (CSV)</button></div>
+    </div>
+    <div class="emp-stats pf-stats" style="margin-bottom:12px;">
+      ${tile("DPH k odpočtu", kc(inputVat), inputVat > 0)}
+      ${tile("Základ s nárokem", kc(R.sum(R.odpocet, "net")), R.odpocet.length > 0)}
+      ${tile("Bez nároku (s DPH)", kc(R.sum(R.bez_naroku, "gross")), R.bez_naroku.length > 0)}
+      ${tile("Přenesená daň. povinnost", kc(R.sum(R.pdp, "net")), R.pdp.length > 0)}
+    </div>
+    ${R.rates.length ? table(["Sazba", "Základ", "DPH k odpočtu"], R.rates.map(r => `<tr><td>${r.rate} %</td><td>${kc(r.net)}</td><td>${kc(r.vat)}</td></tr>`).join(""),
+      `<tr><td>Celkem</td><td>${kc(R.sum(R.odpocet, "net"))}</td><td>${kc(inputVat)}</td></tr>`) : `<div class="empty-state">Za tento měsíc není žádný doklad s evidovaným DPH a nárokem na odpočet.</div>`}
+    ${R.odpocet.length ? `
+      <div style="margin-top:20px;font-weight:700;">Kontrolní hlášení – přijatá plnění s nárokem na odpočet</div>
+      <p class="pf-note" style="margin:4px 0 6px;">Doklady nad ${KH_LIMIT.toLocaleString("cs-CZ")} Kč včetně DPH (oddíl B.2) se uvádějí jednotlivě, ostatní (B.3) jen souhrnně. Náklad rozdělený mezi projekty nebo sazby se počítá jako jeden doklad.</p>
+      ${R.b2.length ? table(["Datum", "Dodavatel", "DIČ", "Číslo dokladu", "Základ", "DPH", "Celkem"], R.b2.map(g => `<tr><td>${esc(fmtDateCz(g.date))}</td><td>${esc(g.supplier || "—")}</td><td>${esc(g.dic || "chybí")}</td><td>${esc(g.number || "chybí")}</td><td>${kc(g.net)}</td><td>${kc(g.vat)}</td><td>${kc(g.gross)}</td></tr>`).join(""),
+        `<tr><td colspan="4">B.2 celkem (${R.b2.length})</td><td>${kc(R.b2.reduce((t, g) => t + g.net, 0))}</td><td>${kc(R.b2.reduce((t, g) => t + g.vat, 0))}</td><td></td></tr>`) : `<p class="pf-note">B.2: žádný doklad nad limit.</p>`}
+      <p class="pf-note">B.3 (do ${KH_LIMIT.toLocaleString("cs-CZ")} Kč, ${R.b3.length} dokladů): základ <b>${kc(R.b3.reduce((t, g) => t + g.net, 0))}</b>, DPH <b>${kc(R.b3.reduce((t, g) => t + g.vat, 0))}</b>.</p>` : ``}
+    ${sect("Bez nároku na odpočet", "DPH si neodečítáte – je to náklad (do nákladů projektů se počítá cena s DPH). Do přiznání ani kontrolního hlášení nevstupuje.", R.bez_naroku)}
+    ${sect("Přenesená daňová povinnost (samovyměření)", `Základ se v přiznání uvádí jako výstup i vstup. Při sazbě 21 % je DPH ke samovyměření orientačně <b>${kc(pdpVat)}</b>.`, R.pdp)}
+    ${sect("Od neplátců (bez DPH)", "", R.neplatce)}
+    ${sect("Bez evidovaného DPH", "Doklady s nárokem na odpočet, u kterých není zadané DPH. Pokud na nich DPH bylo, doplňte ho, jinak se do soupisu nedostane.", R.bezdph)}`;
+}
+function vatReportCsvRows(month){
+  const R = vatReportData(month);
+  const label = { odpocet: "S nárokem na odpočet", bezdph: "S nárokem – bez evidovaného DPH", bez_naroku: VAT_MODES.bez_naroku, pdp: VAT_MODES.pdp, neplatce: VAT_MODES.neplatce };
+  const rows = [["Datum nároku na odpočet", "Datum nákladu", "Dodavatel", "IČ", "DIČ", "Číslo dokladu", "Členění DPH", "Základ", "Sazba %", "DPH", "Celkem s DPH", "Kontrolní hlášení", "Projekt", "Poznámka"]];
+  R.docs.slice().sort((a, b) => a.vatDate.localeCompare(b.vatDate) || String(a.supplier).localeCompare(String(b.supplier), "cs")).forEach(d => {
+    rows.push([d.vatDate, d.date, d.supplier, d.ico, d.dic, d.number, label[d.kind] || d.kind, csvNum(d.net), d.rate, csvNum(d.vat), csvNum(d.gross), d.kind === "odpocet" ? R.khOf(d) : "", d.project, d.note]);
+  });
+  return rows;
+}
+
 /* ---------------- opakované náklady ---------------- */
 // Šablona (state.config.recurringCosts): { id, name, supplier, supplierId, projectId, phaseId, employeeId, amount, vatRate, vatAmount, amountGross,
 // paymentMethod, note, day, every (měsíců), start "RRRR-MM", skip: ["RRRR-MM"] }. Náklad za měsíc se pozná podle recurringId nebo dodavatele.
@@ -6978,6 +7101,7 @@ async function recurCreateCost(id, month){
   if(state.costs === null) state.costs = await loadCosts();
   const c = { id: uid("cost"), date: recurCostDate(t, month), projectId: t.projectId || "", phaseId: t.phaseId || "", amount: t.amount, vatAmount: t.vatAmount, amountGross: t.amountGross,
     paymentMethod: t.paymentMethod || "ucet", note: t.note || "", supplier: t.supplier || "", recurringId: t.id };
+  if(t.vatMode) c.vatMode = t.vatMode;
   if(t.vatRate !== undefined && t.vatRate !== null && t.vatRate !== "") c.vatRate = t.vatRate;
   if(t.supplierId) c.supplierId = t.supplierId;
   if(t.employeeId) c.employeeId = t.employeeId;
@@ -7018,7 +7142,7 @@ function profitabilityData(){
   });
   state.costs.forEach(c => {
     if(!c.projectId || SKIP.has(c.projectId)) return;
-    slot(c.projectId, c.phaseId).costs += Number(c.amount || 0);
+    slot(c.projectId, c.phaseId).costs += costValue(c);
   });
   return sortedProjects().filter(p => !SKIP.has(p.id)).map(p => {
     const a = acc[p.id] || { phases: {}, missingH: 0 };
@@ -7123,7 +7247,7 @@ function budgetWatchRows(){
         labor += Number(e.hours || 0) * hourlyRateForEmployee(state.config.employees.find(x => x.id === e.employeeId), e.date, e.projectId);
         extra += Number(e.cost || 0);
       });
-      const costs = state.costs.filter(c => c.projectId === p.id && c.phaseId === pid).reduce((a, c) => a + Number(c.amount || 0), 0);
+      const costs = state.costs.filter(c => c.projectId === p.id && c.phaseId === pid).reduce((a, c) => a + costValue(c), 0);
       const spent = labor + extra + costs;
       rows.push({ project: p, phaseId: pid, budget, spent, pct: spent / budget * 100 });
     });
@@ -7255,7 +7379,7 @@ function overheadStats(entries, costs, prefix){
       if(match){ const parts = ratePartsOf(match); st.setZeroSum += h * parts.zero; st.setOfficeSum += h * parts.office; }
     }
   });
-  (costs || []).forEach(c => { if(c.projectId === "000" && (c.date || "").startsWith(prefix)) st.officeCost += Number(c.amount || 0); });
+  (costs || []).forEach(c => { if(c.projectId === "000" && (c.date || "").startsWith(prefix)) st.officeCost += costValue(c); });
   st.zeroPerH = st.projH ? st.zeroCost / st.projH : null;
   st.officePerH = st.projH ? st.officeCost / st.projH : null;
   st.setZeroPerH = st.projH ? st.setZeroSum / st.projH : null;
@@ -7483,6 +7607,7 @@ function billingProfileCardHtml(profile, opts){
         <div class="field-row"><label class="field-label">Telefon</label><input type="text" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="phone" value="${esc(profile.phone || "")}"></div>
         ${opts.showVatRate ? `<div class="field-row"><label class="field-label">DPH (%)</label><input type="number" min="0" max="100" step="0.1" class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="vatRate" value="${esc(profile.vatRate || 0)}"></div>` : ``}
       </div>
+      ${opts.showVatMode ? `<div class="form-grid"><div class="field-row"><label class="field-label">Výchozí členění DPH u nových nákladů</label><select class="${fieldClass}" ${extraAttrs} data-id="${esc(profile.id)}" data-field="vatMode">${vatModeOptionsHtml(profile.vatMode || "", true)}</select></div></div>` : ``}
       ${opts.showVatRate ? `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;" title="U fyzické osoby podnikající se do patičky faktury doplní „fyzická osoba zapsaná v živnostenském rejstříku“. Bez zaškrtnutí se pozná podle názvu bez s.r.o., a.s. a podobně."><input type="checkbox" class="billing-profile-flag" data-id="${esc(profile.id)}" data-flag="soleTrader" ${supplierIsSoleTrader(profile) ? "checked" : ""}> Fyzická osoba podnikající (OSVČ) – doplní se věta do patičky faktury</label>` : ``}
       <div style="margin-top:10px;"><button type="button" class="btn btn-danger btn-small btn-with-icon" data-action="${deleteAction}" ${extraAttrs} data-id="${esc(profile.id)}" title="Smazat profil">${ICON_TRASH}Smazat profil</button></div>
     </div>`;
@@ -7670,6 +7795,11 @@ function adminTemplate(){
       <div class="admin-block${state.adminOpenSection === "recurring" ? " is-open" : ""}" data-group="billing" style="order:1;">
         ${adminSectionHeader("recurring", (() => { const m = recurMissing(); return `Opakované náklady${m && m.length ? ` <span class="bw-count ${m.some(x => x.late) ? "over" : ""}">${m.length}</span>` : ""}`; })())}
         ${state.adminOpenSection === "recurring" ? adminRecurringTemplate() : ""}
+      </div>
+
+      <div class="admin-block${state.adminOpenSection === "vat-report" ? " is-open" : ""}" data-group="billing" style="order:3;">
+        ${adminSectionHeader("vat-report", "DPH – soupis za měsíc")}
+        ${state.adminOpenSection === "vat-report" ? adminVatReportTemplate() : ""}
       </div>
 
       <div class="admin-block${state.adminOpenSection === "payment-calendar" ? " is-open" : ""}" data-group="billing" style="order:3;">
@@ -8380,6 +8510,13 @@ function bindAdmin(){
       item.style.display = item.getAttribute("data-search").includes(q) ? "" : "none";
     });
   });
+  const vatMonthSel = document.getElementById("vat-report-month");
+  if(vatMonthSel) vatMonthSel.addEventListener("change", () => setState({ vatReportMonth: vatMonthSel.value }));
+  const vatCsvBtn = document.getElementById("vat-report-csv-btn");
+  if(vatCsvBtn) vatCsvBtn.onclick = () => {
+    const m = document.getElementById("vat-report-month").value;
+    downloadCsv(vatReportCsvRows(m), `dph_soupis_${m}.csv`);
+  };
   document.querySelectorAll('[data-action="recur-create"]').forEach(b => b.onclick = () => recurCreateCost(b.getAttribute("data-id"), b.getAttribute("data-month")));
   document.querySelectorAll('[data-action="recur-skip"]').forEach(b => b.onclick = async () => {
     const t = recurList().find(x => x.id === b.getAttribute("data-id"));
@@ -8429,7 +8566,7 @@ function bindAdmin(){
     if(dup){ alert(`Opakovaný náklad „${recurLabel(dup)}“ už existuje (Finance → Opakované náklady).`); return; }
     const note = String(c.note || "").replace(/^(Faktura|Účtenka) č\.\s*\S+\s*[–-]?\s*/i, "").trim();
     const t = { id: uid("rec"), name: costSupplierName(c) || note || "Opakovaný náklad", supplier: c.supplier || "", supplierId: c.supplierId, projectId: c.projectId || "", phaseId: c.phaseId || "", employeeId: c.employeeId,
-      amount: c.amount, vatRate: c.vatRate, vatAmount: c.vatAmount, amountGross: c.amountGross, paymentMethod: c.paymentMethod || "ucet", note,
+      amount: c.amount, vatRate: c.vatRate, vatAmount: c.vatAmount, amountGross: c.amountGross, vatMode: c.vatMode, paymentMethod: c.paymentMethod || "ucet", note,
       day: Number((c.date || "").slice(8, 10)) || 1, every: 1, start: (c.date || todayStr()).slice(0, 7), skip: [] };
     if(!Array.isArray(state.config.recurringCosts)) state.config.recurringCosts = [];
     state.config.recurringCosts.push(t);
@@ -9556,7 +9693,7 @@ function bindAdmin(){
     const src = (state.costs || []).find(c => c.id === b.getAttribute("data-id"));
     if(!src) return;
     const copy = { ...src, id: uid("cost"), date: todayStr() };
-    delete copy.invoiceNumber; delete copy.dueDate;
+    delete copy.invoiceNumber; delete copy.dueDate; delete copy.vatDate;
     state.costs = [...state.costs, copy];
     if(b.getAttribute("data-scope") === "project") state.editingProjectCostId = copy.id;
     else state.editingCostId = copy.id;
