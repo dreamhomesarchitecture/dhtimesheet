@@ -660,6 +660,7 @@
   .pf-stats .emp-stat{ padding-left:14px; padding-right:12px; min-width:0; }
   .cc-vatmode{ font-size:11.5px; font-weight:700; color:var(--tan); border:1px solid rgba(186,148,112,.5); border-radius:999px; padding:1px 8px; }
   .cc-vatmode.bez_naroku{ color:var(--danger); border-color:rgba(179,56,44,.45); }
+  .cc-vatmode.odpocet{ color:var(--sage); border-color:rgba(164,172,127,.6); }
   .recur-banner{ border:1px solid rgba(186,148,112,0.55); background:var(--tan-tint); border-radius:var(--radius-md); padding:14px 18px; margin-top:18px; }
   .recur-banner .zone-title{ margin-bottom:10px; }
   .recur-item{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 0; }
@@ -1616,7 +1617,8 @@ function costCardHtml(c, o){
   meta.push(`<span>${c.paymentMethod === "hotove" ? "Hotově" : c.paymentMethod === "ucet" ? "Účtem" : "—"}</span>`);
   if(empName && proj) meta.push(`<span>zaměstnanec ${esc(empName)}</span>`);
   if(c.invoiceNumber) meta.push(`<span>faktura č. ${esc(c.invoiceNumber)}</span>`);
-  if(costVatMode(c) !== "odpocet") meta.push(`<span class="cc-vatmode ${costVatMode(c)}" title="Členění DPH">${esc(costVatMode(c) === "bez_naroku" ? "DPH bez nároku na odpočet" : costVatMode(c) === "pdp" ? "přenesená daň. povinnost" : "bez DPH (osvobozeno / neplátce)")}</span>`);
+  const vatMode = costVatMode(c);
+  if(vatMode !== "odpocet" || Number(c.vatAmount) > 0) meta.push(`<span class="cc-vatmode ${vatMode}" title="Členění DPH">${esc(vatMode === "bez_naroku" ? "DPH bez nároku na odpočet" : vatMode === "pdp" ? "přenesená daňová povinnost" : vatMode === "neplatce" ? "bez DPH (osvobozeno / neplátce)" : "DPH s nárokem na odpočet")}</span>`);
   const cb = o.cbList ? bulkRowCbHtml(o.cbList, c.id) : "";
   return `
     <div class="cost-card ${cb ? "has-cb" : ""}">
