@@ -2750,6 +2750,28 @@ function b64ToUint8Array(b64){
   return bytes;
 }
 
+// Číslo strany „n/celkem“ v zápatí smluv: v .docx přes pole PAGE a NUMPAGES, v PDF dopočtem po sazbě textu.
+async function addContractPageTotalToDocx(zip){
+  const f = zip.file("word/footer1.xml");
+  if(!f) return;
+  const xml = await f.async("string");
+  const fld = (instr, shown) => `<w:r><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> ${instr} </w:instrText><w:fldChar w:fldCharType="separate"/><w:t>${shown}</w:t><w:fldChar w:fldCharType="end"/></w:r>`;
+  const re = /<w:r [^>]*><w:rPr\/><w:fldChar w:fldCharType="begin"\/><w:instrText xml:space="preserve">PAGE<\/w:instrText><w:fldChar w:fldCharType="separate"\/><w:fldChar w:fldCharType="end"\/><\/w:r>/;
+  if(!re.test(xml)) return;
+  zip.file("word/footer1.xml", xml.replace(re, fld("PAGE", "1") + `<w:r><w:t>/</w:t></w:r>` + fld("NUMPAGES", "1")));
+}
+function addContractPageNumbersToPdf(doc){
+  const total = doc.getNumberOfPages();
+  const w = doc.internal.pageSize.getWidth();
+  const h = doc.internal.pageSize.getHeight();
+  for(let i = 1; i <= total; i++){
+    doc.setPage(i);
+    doc.setFont("Lato", "normal");
+    doc.setFontSize(9);
+    doc.text(`${i}/${total}`, w - 20, h - 9, { align: "right" });
+  }
+}
+
 // Fills in the "Smlouva o dilo - DSP a inzenyring" .docx template with data from the
 // project, the selected client billing profile and the export-time overrides, and
 // returns a Blob ready for download. Fáze 1 = phase "DSP", fáze 2 = phase "I", their
@@ -2820,6 +2842,7 @@ async function generateDspInzenyringContract(project, customer, opts){
   // strip it from the generated contract so the final document looks finished.
   xml = xml.split('w:fill="fff2cc"').join('w:fill="auto"');
   zip.file("word/document.xml", xml);
+  await addContractPageTotalToDocx(zip);
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" });
 }
 
@@ -2972,6 +2995,7 @@ async function buildDspInzenyringContractPdf(project, customer, opts){
   doc.text("", sigX1, y);
   doc.text("Zhotovitel", sigX2, y);
 
+  addContractPageNumbersToPdf(doc);
   return doc;
 }
 
@@ -3199,6 +3223,7 @@ async function buildInteriorContractPdf(project, customer, opts){
   doc.text("Ing. Kamil Plavec, jednatel", sigX2, y);
   y += 4.6;
   doc.text("Zhotovitel", sigX2, y);
+  addContractPageNumbersToPdf(doc);
   return doc;
 }
 
@@ -3228,6 +3253,7 @@ async function generateInteriorContract(project, customer, opts){
     .map(t => para(t ? run(t, 21, false) : "", { jc: "left", after: 45 })).join("");
 
   zip.file("word/document.xml", `${head}${body}${sign}${sect}</w:body></w:document>`);
+  await addContractPageTotalToDocx(zip);
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" });
 }
 
