@@ -3020,6 +3020,7 @@ function computeInteriorContractFields(project, customer, opts){
     signDate: fmtDateCzLong(opts.signDate || todayStr()),
     clientName: (customer.name || "").trim(),
     clientAddress: (customer.address || "").trim(),
+    ownBuildingProject: !!opts.ownBuildingProject,
     items, total,
     withVat: n => n * (1 + vatRate/100)
   };
@@ -3028,7 +3029,7 @@ function computeInteriorContractFields(project, customer, opts){
 // Text smlouvy jako seznam bloků – společný pro .docx i PDF, aby obě podoby zůstaly stejné.
 // Typy: title, sub (podtitul), center, centerBold, gap, h (nadpis článku), c (odstavec), sub2 (odsazená položka)
 function interiorContractBlocks(f){
-  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, clientName, clientAddress, items, total, withVat } = f;
+  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, clientName, clientAddress, items, total, withVat, ownBuildingProject } = f;
   const kinds = items.map(interiorItemKind);
   const has = k => kinds.includes(k);
   const blocks = [];
@@ -3064,9 +3065,10 @@ function interiorContractBlocks(f){
     const scope = INTERIOR_SCOPE_TEXT[kinds[i]];
     if(scope) clause(`Fáze „${it.label}“ ${scope}`);
   });
-  clause("Tato Smlouva je samostatnou smlouvou. Její platnost, účinnost ani plnění nezávisí na dokumentaci pro povolení stavby, inženýrské činnosti ani na jiné smlouvě o dílo uzavřené mezi Stranami a Dílo není jejich součástí.");
-  clause("Dokumentace Interiéru je zpracována na základě podkladů o stavbě předaných Objednatelem. Případné úpravy stavebního řešení nebo projektů technických profesí vyvolané řešením Interiéru nejsou součástí Díla.");
-  clause("Předmětem Díla není dokumentace pro povolení záměru ani dokumentace pro provádění stavby, inženýrská činnost, projekty technických profesí (zejména elektroinstalace, zdravotechniky, vytápění a vzduchotechniky), statické posouzení, výrobní a dílenská dokumentace zhotovitelů, položkový rozpočet, výběr a objednání dodavatelů a vybavení ani výkon autorského dozoru při realizaci Interiéru, není-li ve Smlouvě výslovně uvedeno nebo Stranami písemně dohodnuto jinak.");
+  // Tři body o samostatnosti smlouvy a vyloučeném rozsahu se vkládají jen tehdy, když projekt stavby nezpracovával Zhotovitel.
+  if(!ownBuildingProject) clause("Tato Smlouva je samostatnou smlouvou. Její platnost, účinnost ani plnění nezávisí na dokumentaci pro povolení stavby, inženýrské činnosti ani na jiné smlouvě o dílo uzavřené mezi Stranami a Dílo není jejich součástí.");
+  if(!ownBuildingProject) clause("Dokumentace Interiéru je zpracována na základě podkladů o stavbě předaných Objednatelem. Případné úpravy stavebního řešení nebo projektů technických profesí vyvolané řešením Interiéru nejsou součástí Díla.");
+  if(!ownBuildingProject) clause("Předmětem Díla není dokumentace pro povolení záměru ani dokumentace pro provádění stavby, inženýrská činnost, projekty technických profesí (zejména elektroinstalace, zdravotechniky, vytápění a vzduchotechniky), statické posouzení, výrobní a dílenská dokumentace zhotovitelů, položkový rozpočet, výběr a objednání dodavatelů a vybavení ani výkon autorského dozoru při realizaci Interiéru, není-li ve Smlouvě výslovně uvedeno nebo Stranami písemně dohodnuto jinak.");
 
   heading("Doba plnění, součinnost a předání");
   clause("Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě první zálohy podle čl. 3.3 a po předání podkladů potřebných k zahájení prací.");
@@ -4809,6 +4811,10 @@ function buildPaymentCalendarDetail(projectId){
           <input type="text" id="contract-int-site-phrase" style="width:100%;max-width:560px;padding:6px 8px;font-size:13px;" value="${esc("rodinného domu " + (p.location || ""))}">
           <div class="q-hint" style="margin:4px 0 0;">Zkontrolujte, ať věta dává smysl (např. „rodinného domu ve Třebíči, na pozemku parc. č. …, v katastrálním území …“).</div>
         </div>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" id="contract-int-own-project" style="margin-top:2px;" ${(p.phaseIds || []).some(id => id === phaseRoleId("dsp") || id === "DPS") ? "checked" : ""}>
+          <span>Projekt stavby jsme zpracovávali my<br><span class="q-hint" style="margin:0;">Zaškrtnuto = ve smlouvě nebudou body o samostatnosti smlouvy, podkladech od objednatele a o tom, co Dílo nezahrnuje. Nezaškrtnuto = budou tam všechny tři.</span></span>
+        </label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button type="button" class="btn btn-tan btn-small" id="contract-int-generate-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (.docx)</button>
           <button type="button" class="btn btn-outline btn-small" id="contract-int-generate-pdf-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (PDF)</button>
@@ -9168,6 +9174,7 @@ function bindAdmin(){
       signPlace: val("contract-int-sign-place").trim(),
       signDate: val("contract-int-sign-date") || todayStr(),
       sitePhrase: val("contract-int-site-phrase").trim() || ("rodinného domu " + (project.location || "")),
+      ownBuildingProject: !!(document.getElementById("contract-int-own-project") || {}).checked,
       vatRate
     } };
   };
