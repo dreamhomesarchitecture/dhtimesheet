@@ -3288,11 +3288,13 @@ function computeStudyContractFields(project, customer, opts){
   return {
     ...contractCommonFields(customer, opts),
     full: opts.variant !== "standard",
+    // Položky fáze AS s cenou (např. příprava projektu + architektonická studie) – kvůli rozpisu součtu ve smlouvě.
+    parts: phaseBudgetItems(project, phaseRoleId("as")).filter(it => Number(it.amount) > 0).map(it => ({ label: String(it.label || "").trim(), amount: Number(it.amount) })),
     total: phaseBudgetTotal(project, phaseRoleId("as"))
   };
 }
 function studyContractBlocks(f){
-  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, total, withVat, full } = f;
+  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, total, withVat, full, parts } = f;
   const { blocks, heading, clause, sub } = contractBlockWriter();
   blocks.push(...contractPartyBlocks(f));
 
@@ -3313,7 +3315,7 @@ function studyContractBlocks(f){
   clause(`Dílo bude Objednateli předáno v elektronické podobě prostřednictvím elektronické pošty ve formátu PDF. Objednatel se zavazuje přijetí Díla Zhotoviteli prostřednictvím elektronické pošty bez zbytečného odkladu potvrdit.${full ? " Dílo bude dále předáno osobně nebo zásilkovou službou formou architektonické knihy ve formátu A4." : ""}`);
 
   heading("Cena za plnění");
-  clause(`Celková cena za provedení Díla podle této Smlouvy činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH. Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.`);
+  clause(`Celková cena za provedení Díla podle této Smlouvy činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH.${parts.length > 1 ? ` Celková cena je součtem cen částí Díla: ${parts.map(it => `„${it.label}“ (${czContractPrice(it.amount)} bez DPH)`).join(" a ")}.` : ""} Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.`);
   clause("Cena bude hrazena takto:");
   sub(`a) záloha ve výši 50 % ceny, tj. ${czContractPrice(total/2)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(total/2))} včetně DPH, splatná před zahájením prací na Díle, nejpozději do 14 dnů ode dne uzavření této Smlouvy na účet uvedený v záhlaví Smlouvy,`);
   sub(`b) doplatek ve výši 50 % ceny, tj. ${czContractPrice(total/2)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(total/2))} včetně DPH, splatný do 14 dnů ode dne předání Díla.`);
