@@ -1219,7 +1219,7 @@ function ensureBuiltInPhases(config){
 const PHASE_IDS_LOCKED = ["NN", "DOV", "SS"];
 // Fáze se zvláštním významem (DSP a Inženýring ve smlouvě o dílo, Dokumentace interiéru ve smlouvě na interiér, Autorský dozor s povinnou poznámkou).
 // Zkratku lze změnit – aplikace si ji pamatuje v config.phaseRoles.
-const PHASE_ROLE_DEFAULTS = { dsp: "DSP", inz: "I", ad: "AD", di: "DI" };
+const PHASE_ROLE_DEFAULTS = { dsp: "DSP", inz: "I", ad: "AD", di: "DI", as: "AS" };
 function phaseRoleId(role){
   return (state.config && state.config.phaseRoles && state.config.phaseRoles[role]) || PHASE_ROLE_DEFAULTS[role];
 }
@@ -3030,12 +3030,11 @@ const INTERIOR_SCOPE_TEXT = {
   atyp: "zahrnuje samostatné rozpracování nábytku navrženého na míru, tj. určení rozměrů, vnitřního členění, materiálů, povrchových úprav, způsobu otevírání, kování a úchytek, včetně důležitých detailů a návazností na stěny, podlahy, spotřebiče nebo další vybavení, jako podklad pro nacenění a přípravu výroby."
 };
 
-function computeInteriorContractFields(project, customer, opts){
+// Pole společná pro smlouvy na interiér a architektonickou studii (strany, sazby, podpis).
+function contractCommonFields(customer, opts){
   opts = opts || {};
   const vatRate = Number(opts.vatRate) || 21;
   const hourlyRate = Number(opts.hourlyRate) || 890;
-  const items = interiorContractItems(project);
-  const total = items.reduce((s, it) => s + it.amount, 0);
   return {
     vatRate, hourlyRate,
     hourlyRateFmt: hourlyRate.toLocaleString("cs-CZ"),
@@ -3044,42 +3043,62 @@ function computeInteriorContractFields(project, customer, opts){
     signDate: fmtDateCzLong(opts.signDate || todayStr()),
     clientName: (customer.name || "").trim(),
     clientAddress: (customer.address || "").trim(),
-    ownBuildingProject: !!opts.ownBuildingProject,
-    items, total,
     withVat: n => n * (1 + vatRate/100)
+  };
+}
+// Zapisovač bloků smlouvy: nadpisy článků a číslované odstavce (1.1., 1.2., …) se číslují samy.
+function contractBlockWriter(){
+  const blocks = [];
+  let art = 0, no = 0;
+  return {
+    blocks,
+    heading: t => { art++; no = 0; blocks.push({ k: "h", t: `Článek ${art} – ${t}` }); },
+    clause: t => blocks.push({ k: "c", t: `${art}.${++no}. ${t}` }),
+    sub: t => blocks.push({ k: "sub2", t })
+  };
+}
+// Titulní část smlouvy: nadpis, Objednatel a Zhotovitel.
+function contractPartyBlocks(f){
+  return [
+    { k: "title", t: "SMLOUVA O DÍLO" },
+    { k: "sub", t: "uzavřená podle § 2586 a násl. zákona č. 89/2012 Sb., občanský zákoník" },
+    { k: "centerBold", t: "Objednatel:" },
+    { k: "center", t: `${f.clientName},` },
+    { k: "center", t: `bytem ${f.clientAddress}` },
+    { k: "center", t: "(dále jen „Objednatel“)" },
+    { k: "gap" },
+    { k: "center", t: "a" },
+    { k: "gap" },
+    { k: "centerBold", t: "Zhotovitel:" },
+    { k: "center", t: "DREAM HOMES ARCHITECTURE s.r.o., IČO 09111841" },
+    { k: "center", t: "se sídlem Dolní Cerekev 274, 588 45 Dolní Cerekev" },
+    { k: "center", t: "zastoupená Ing. Kamilem Plavcem, nar. 11. 5. 1988, jednatelem" },
+    { k: "center", t: "bankovní spojení: 2501813703/2010" },
+    { k: "center", t: "(dále jen „Zhotovitel“)" },
+    { k: "gap" },
+    { k: "center", t: "Objednatel a Zhotovitel dále společně jen „Strany“." }
+  ];
+}
+
+function computeInteriorContractFields(project, customer, opts){
+  opts = opts || {};
+  const items = interiorContractItems(project);
+  return {
+    ...contractCommonFields(customer, opts),
+    ownBuildingProject: !!opts.ownBuildingProject,
+    items, total: items.reduce((s, it) => s + it.amount, 0)
   };
 }
 
 // Text smlouvy jako seznam bloků – společný pro .docx i PDF, aby obě podoby zůstaly stejné.
 // Typy: title, sub (podtitul), center, centerBold, gap, h (nadpis článku), c (odstavec), sub2 (odsazená položka)
 function interiorContractBlocks(f){
-  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, clientName, clientAddress, items, total, withVat, ownBuildingProject } = f;
+  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, items, total, withVat, ownBuildingProject } = f;
   const kinds = items.map(interiorItemKind);
   const has = k => kinds.includes(k);
-  const blocks = [];
-  let art = 0, no = 0;
-  const heading = t => { art++; no = 0; blocks.push({ k: "h", t: `Článek ${art} – ${t}` }); };
-  const clause = t => blocks.push({ k: "c", t: `${art}.${++no}. ${t}` });
-  const sub = t => blocks.push({ k: "sub2", t });
+  const { blocks, heading, clause, sub } = contractBlockWriter();
   const letters = "abcdefghijklmnopqrstuvwxyz";
-
-  blocks.push({ k: "title", t: "SMLOUVA O DÍLO" });
-  blocks.push({ k: "sub", t: "uzavřená podle § 2586 a násl. zákona č. 89/2012 Sb., občanský zákoník" });
-  blocks.push({ k: "centerBold", t: "Objednatel:" });
-  blocks.push({ k: "center", t: `${clientName},` });
-  blocks.push({ k: "center", t: `bytem ${clientAddress}` });
-  blocks.push({ k: "center", t: "(dále jen „Objednatel“)" });
-  blocks.push({ k: "gap" });
-  blocks.push({ k: "center", t: "a" });
-  blocks.push({ k: "gap" });
-  blocks.push({ k: "centerBold", t: "Zhotovitel:" });
-  blocks.push({ k: "center", t: "DREAM HOMES ARCHITECTURE s.r.o., IČO 09111841" });
-  blocks.push({ k: "center", t: "se sídlem Dolní Cerekev 274, 588 45 Dolní Cerekev" });
-  blocks.push({ k: "center", t: "zastoupená Ing. Kamilem Plavcem, nar. 11. 5. 1988, jednatelem" });
-  blocks.push({ k: "center", t: "bankovní spojení: 2501813703/2010" });
-  blocks.push({ k: "center", t: "(dále jen „Zhotovitel“)" });
-  blocks.push({ k: "gap" });
-  blocks.push({ k: "center", t: "Objednatel a Zhotovitel dále společně jen „Strany“." });
+  blocks.push(...contractPartyBlocks(f));
 
   heading("Předmět Díla");
   clause(`Zhotovitel se zavazuje pro Objednatele zpracovat návrh a dokumentaci interiéru ${sitePhrase} (dále jen „Interiér“) v rozsahu jednotlivých fází uvedených v odstavci 1.2 (dále jednotlivě „fáze“, společně „Dílo“).`);
@@ -3159,8 +3178,11 @@ function interiorContractBlocks(f){
 
 async function buildInteriorContractPdf(project, customer, opts){
   const f = computeInteriorContractFields(project, customer, opts);
-  const blocks = interiorContractBlocks(f);
+  return renderContractPdf(interiorContractBlocks(f), f.clientName);
+}
 
+// Společné vykreslení bloků smlouvy do PDF (interiér, architektonická studie).
+async function renderContractPdf(blocks, clientName){
   const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
   await ensurePdfFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -3216,7 +3238,7 @@ async function buildInteriorContractPdf(project, customer, opts){
   y += 5;
   doc.setFont("Lato", "normal");
   doc.setFontSize(9.5);
-  doc.text(f.clientName, sigX1, y);
+  doc.text(clientName, sigX1, y);
   doc.text("DREAM HOMES ARCHITECTURE s.r.o.", sigX2, y);
   y += 4.6;
   doc.text("Objednatel", sigX1, y);
@@ -3230,7 +3252,10 @@ async function buildInteriorContractPdf(project, customer, opts){
 // .docx: styly, zápatí a nastavení se berou ze šablony smlouvy DSP a inženýring, text těla se skládá z bloků.
 async function generateInteriorContract(project, customer, opts){
   const f = computeInteriorContractFields(project, customer, opts);
-  const blocks = interiorContractBlocks(f);
+  return renderContractDocx(interiorContractBlocks(f), f.clientName);
+}
+
+async function renderContractDocx(blocks, clientName){
   const zip = await JSZip.loadAsync(b64ToUint8Array(CONTRACT_TEMPLATE_DSP_INZENYRING_B64));
   const tplXml = await zip.file("word/document.xml").async("string");
   const head = tplXml.slice(0, tplXml.indexOf("<w:body>") + "<w:body>".length);
@@ -3249,12 +3274,88 @@ async function generateInteriorContract(project, customer, opts){
     const m = b.t.match(/^(\d+\.\d+\.\s)([\s\S]*)$/);
     return para(m ? run(m[1], 21, true) + run(m[2], 21, false) : run(b.t, 21, false), { jc: "both", after: 102, line: 276 });
   }).join("");
-  const sign = ["______________________________", f.clientName, "Objednatel", "", "______________________________", "DREAM HOMES ARCHITECTURE s.r.o.", "Ing. Kamil Plavec, jednatel", "Zhotovitel"]
+  const sign = ["______________________________", clientName, "Objednatel", "", "______________________________", "DREAM HOMES ARCHITECTURE s.r.o.", "Ing. Kamil Plavec, jednatel", "Zhotovitel"]
     .map(t => para(t ? run(t, 21, false) : "", { jc: "left", after: 45 })).join("");
 
   zip.file("word/document.xml", `${head}${body}${sign}${sect}</w:body></w:document>`);
   await addContractPageTotalToDocx(zip);
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" });
+}
+
+// ---------- Smlouva o dílo – architektonická studie (cena z fáze AS, standardní nebo plná studie) ----------
+function computeStudyContractFields(project, customer, opts){
+  opts = opts || {};
+  return {
+    ...contractCommonFields(customer, opts),
+    full: opts.variant !== "standard",
+    total: phaseBudgetTotal(project, phaseRoleId("as"))
+  };
+}
+function studyContractBlocks(f){
+  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, total, withVat, full } = f;
+  const { blocks, heading, clause, sub } = contractBlockWriter();
+  blocks.push(...contractPartyBlocks(f));
+
+  heading("Předmět Díla");
+  clause(`Zhotovitel se zavazuje pro Objednatele zpracovat architektonickou studii (koncepční návrh) novostavby ${sitePhrase} (dále jen „Stavba“) v rozsahu uvedeném v odstavci 1.2 (dále jen „Dílo“).`);
+  clause("Dílo zahrnuje:");
+  const scope = [
+    "zabezpečení vstupních podkladů, prověření a analýzu přípravy projektu, upřesnění cílových představ Objednatele",
+    "zpracování konceptu a skic, určení základního materiálového řešení, popis návrhu",
+    "situace, půdorysy, řezy, pohledy"
+  ];
+  if(full) scope.push("3D model včetně možnosti procházení, varianty materiálového řešení na 3D modelu, axonometrie, vizualizace, studie oslunění", "architektonickou knihu");
+  scope.forEach((t, i) => sub(`– ${t}${i === scope.length - 1 ? "." : ","}`));
+
+  heading("Doba plnění a způsob předání");
+  clause("Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě zálohy podle čl. 3.2 a po předání podkladů potřebných k zahájení prací. Zhotovitel se zavazuje provést Dílo v přiměřeném termínu odpovídajícímu termínům v čase a místě obvyklým, přičemž se předpokládá součinnost Objednatele podle této Smlouvy.");
+  clause(`Dílo bude Objednateli předáno v elektronické podobě prostřednictvím elektronické pošty ve formátu PDF. Objednatel se zavazuje přijetí Díla Zhotoviteli prostřednictvím elektronické pošty bez zbytečného odkladu potvrdit.${full ? " Dílo bude dále předáno osobně nebo zásilkovou službou formou architektonické knihy ve formátu A4." : ""}`);
+
+  heading("Cena za plnění");
+  clause(`Celková cena za provedení Díla podle této Smlouvy činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH. Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.`);
+  clause("Cena bude hrazena takto:");
+  sub(`a) záloha ve výši 50 % ceny, tj. ${czContractPrice(total/2)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(total/2))} včetně DPH, splatná před zahájením prací na Díle, nejpozději do 14 dnů ode dne uzavření této Smlouvy na účet uvedený v záhlaví Smlouvy,`);
+  sub(`b) doplatek ve výši 50 % ceny, tj. ${czContractPrice(total/2)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(total/2))} včetně DPH, splatný do 14 dnů ode dne předání Díla.`);
+  clause("Dohodnutá cena zahrnuje veškeré náklady Zhotovitele související s provedením Díla.");
+  clause("Inflační doložka: Zhotovitel má právo jednostranně zvýšit cenu Díla, resp. dosud neprovedených prací, podle průměrné roční míry inflace za předchozí kalendářní rok měřené indexem spotřebitelských cen dle Českého statistického úřadu. Změnu ceny na základě inflační doložky musí Zhotovitel Objednateli oznámit do 31. 3. příslušného kalendářního roku. Pokud tak neučiní, zůstává cena za Dílo, resp. neprovedené práce neměnná.");
+
+  heading("Práva a povinnosti Stran");
+  clause("Zhotovitel se zavazuje provést Dílo s vynaložením maximálního úsilí tak, aby odpovídalo co nejblíže zadání Objednatele, k čemuž se mu Objednatel zavazuje poskytnout nezbytnou součinnost. Zhotovitel je povinen provést Dílo osobně nebo prostřednictvím oprávněných osob.");
+  clause("Zhotovitel se zavazuje předat Objednateli Dílo v termínu stanoveném v článku 2 této Smlouvy.");
+  clause("Zhotovitel, resp. jím pověření pracovníci, bude v rámci plnění Smlouvy úzce spolupracovat s Objednatelem za účelem koordinace provádění Díla. Objednatel bere na vědomí, že jeho součinnost je pro plnění Díla podle této Smlouvy nezbytná.");
+  clause("Změny zadání požadované Objednatelem po odsouhlasení konceptu, které vyvolají změnu nebo přepracování již provedených prací, nejsou zahrnuty v ceně Díla a považují se za práce nad rámec Díla.");
+  clause(`Práce a výkony nad rámec sjednaného Díla, zejména změny odsouhlaseného konceptu, nové varianty řešení nebo dodatečně požadované vizualizace, budou provedeny po předchozím odsouhlasení Objednatelem. Není-li jejich cena sjednána pevnou částkou, budou účtovány podle skutečně vynaloženého času sazbou ${hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel není povinen práce nad rámec Díla zahájit před jejich odsouhlasením Objednatelem.`);
+  clause("Pro odsouhlasení změn zadání, víceprací, jejich rozsahu a ceny postačuje písemná komunikace mezi Stranami, včetně komunikace prostřednictvím e-mailu. Takové odsouhlasení se pro účely této Smlouvy nepovažuje za změnu Smlouvy vyžadující uzavření dodatku podle čl. 7.2.");
+
+  heading("Ukončení Smlouvy");
+  clause("Strany mohou Smlouvu ukončit dohodou nebo výpovědí z níže uvedených důvodů. Zhotovitel je oprávněn od této Smlouvy odstoupit v případě, že Objednatel neuhradí zálohu v termínu uvedeném v článku 3.2 Smlouvy. Dohoda, výpověď i odstoupení od Smlouvy musí být provedeny v písemné formě (za kterou se nepovažuje e-mail) a doručeny druhé Straně.");
+  clause("Objednatel je oprávněn vypovědět Smlouvu i bez udání důvodu. Zhotovitel je oprávněn vypovědět Smlouvu z důvodu neposkytnutí potřebné součinnosti ze strany Objednatele za předpokladu, že byl Objednatel předem k poskytnutí součinnosti prokazatelně vyzván (alespoň prostřednictvím e-mailu). V případě výpovědi Smlouvy je Objednatel povinen zaplatit Zhotoviteli částku, která připadá na práce na Díle Zhotovitelem již vykonané.");
+
+  heading("Ostatní ujednání");
+  clause("Tato Smlouva nabývá platnosti a účinnosti dnem podpisu obou Stran.");
+  clause("Tato Smlouva zaniká, není-li výše uvedeno jinak, splněním nebo písemnou dohodou Stran, v níž si Strany dohodnou vzájemná práva a povinnosti v souvislosti s takovýmto ukončením Smlouvy.");
+  clause("Po ukončení platnosti této Smlouvy je Zhotovitel povinen protokolárně předat Objednateli bez zbytečného odkladu všechny dokumenty a vybavení Objednatele, pokud bylo poskytnuto, a kopie těchto dokumentů zlikvidovat, nestanoví-li právní předpis jinak.");
+  clause("Zhotovitel je oprávněn použít vyobrazení a části Díla, včetně vizualizací, pro svou profesní prezentaci, zejména v portfoliu, na webových stránkách, sociálních sítích a v odborných publikacích, bez uvedení osobních nebo jiných neveřejných údajů Objednatele.");
+  clause("Majetková autorská práva k autorskému dílu nejsou převáděna. Po úplném uhrazení ceny Díla získává Objednatel nevýhradní oprávnění užít Dílo pro účely další projektové přípravy a realizace Stavby na místě uvedeném v této Smlouvě.");
+
+  heading("Závěrečná ujednání");
+  clause("Práva a povinnosti Stran, pokud nejsou upraveny touto Smlouvou, se řídí zákonem č. 89/2012 Sb., občanský zákoník, ve znění pozdějších předpisů a předpisy souvisejícími.");
+  clause("Jakékoliv změny a doplňky této Smlouvy jsou možné pouze formou písemných, vzestupně číslovaných a Stranami podepsaných dodatků, a to osobami oprávněnými jednat jménem či za Strany, nestanoví-li tato Smlouva výslovně jinak.");
+  clause("Strany výslovně prohlašují, že si tuto Smlouvu přečetly, seznámily se s jejím obsahem a souhlasí s ní. Na důkaz správnosti a úplnosti této Smlouvy připojují své podpisy. Svými podpisy rovněž vyjadřují, že Smlouva nebyla ujednána v tísni a ani za jinak jednostranně nevýhodných podmínek.");
+  clause("Strany se zavazují řešit spory vzniklé v souvislosti s touto Smlouvou především smírnou cestou. Spory, jež nebude možné ve lhůtě do 30 dnů ode dne oznámení sporné otázky druhé Straně vyřešit smírem, budou řešeny, pokud nebude předem písemně dohodnuto jinak, místně příslušným soudem Objednatele.");
+  clause("Tato Smlouva je vyhotovena ve dvou stejnopisech, z nichž každá ze Stran obdrží po jednom, nebo může být podepsána elektronicky.");
+  clause("Je-li Objednatel spotřebitelem a byla-li tato Smlouva uzavřena způsobem, při němž právní předpisy přiznávají Objednateli právo na odstoupení od Smlouvy ve lhůtě stanovené zákonem, Objednatel výslovně žádá, aby Zhotovitel zahájil poskytování sjednaných služeb před uplynutím této lhůty. Objednatel bere na vědomí, že v případě odstoupení po zahájení plnění je povinen uhradit poměrnou část ceny za plnění poskytnuté do okamžiku odstoupení, stanoví-li tak právní předpisy.");
+
+  blocks.push({ k: "place", t: `V ${signPlace} dne ${signDate}` });
+  return blocks;
+}
+async function buildStudyContractPdf(project, customer, opts){
+  const f = computeStudyContractFields(project, customer, opts);
+  return renderContractPdf(studyContractBlocks(f), f.clientName);
+}
+async function generateStudyContract(project, customer, opts){
+  const f = computeStudyContractFields(project, customer, opts);
+  return renderContractDocx(studyContractBlocks(f), f.clientName);
 }
 
 // Název souboru faktury: 2026000049_ONDREJ-TROJANEK  (číslo faktury, podtržítko, odběratel velkými písmeny
@@ -4810,6 +4911,42 @@ function buildPaymentCalendarDetail(projectId){
           <button type="button" class="btn btn-outline btn-small" id="contract-dsp-generate-pdf-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (PDF)</button>
         </div>
         <div class="q-hint" style="margin:8px 0 0;">Fáze 1 (${esc(phaseRoleId("dsp"))}): ${fmtKc(phaseBudgetTotal(p, phaseRoleId("dsp")))} · Fáze 2 (${esc(phaseRoleId("inz"))}): ${fmtKc(phaseBudgetTotal(p, phaseRoleId("inz")))}</div>
+      </div>
+      ` : ``}
+      ${projectBillingProfiles(p).length && (p.phaseIds || []).includes(phaseRoleId("as")) ? `
+      <div class="phase-block" style="margin-top:18px;">
+        <div style="font-weight:700;margin-bottom:8px;">Smlouva o dílo (architektonická studie)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <select id="contract-as-customer-select" style="width:auto;min-width:180px;">
+            ${projectBillingProfiles(p).map(bp => `<option value="${esc(bp.id)}">${esc(bp.name || "Bez názvu")}</option>`).join("")}
+          </select>
+          <select id="contract-as-variant" style="width:auto;" title="Rozsah studie">
+            <option value="full">Plná architektonická studie (3D model, vizualizace, kniha)</option>
+            <option value="standard">Standardní studie (situace, půdorysy, řezy, pohledy)</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
+            Hodinová sazba
+            <input type="number" min="0" step="1" id="contract-as-hourly-rate" style="width:90px;padding:6px 8px;font-size:13px;" value="890">
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
+            Místo podpisu
+            <input type="text" id="contract-as-sign-place" style="width:140px;padding:6px 8px;font-size:13px;" value="Dolní Cerekev">
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--soft);">
+            Datum podpisu
+            <input type="date" id="contract-as-sign-date" style="width:auto;padding:6px 8px;font-size:13px;" value="${esc(todayStr())}">
+          </label>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label class="field-label" style="display:block;margin-bottom:4px;">Předmět a místo (věta do smlouvy: „architektonickou studii (koncepční návrh) novostavby …“)</label>
+          <input type="text" id="contract-as-site-phrase" style="width:100%;max-width:560px;padding:6px 8px;font-size:13px;" value="${esc("rodinného domu " + (p.location || ""))}">
+          <div class="q-hint" style="margin:4px 0 0;">Zkontrolujte, ať věta dává smysl (např. „rodinného domu ve Velkém Meziříčí na parcele č. 3700/70, k. ú. Velké Meziříčí“).</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-tan btn-small" id="contract-as-generate-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (.docx)</button>
+          <button type="button" class="btn btn-outline btn-small" id="contract-as-generate-pdf-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (PDF)</button>
+        </div>
+        <div class="q-hint" style="margin:8px 0 0;">Cena z fáze ${esc(phaseRoleId("as"))}: ${fmtKc(phaseBudgetTotal(p, phaseRoleId("as")))}</div>
       </div>
       ` : ``}
       ${projectBillingProfiles(p).length && (p.phaseIds || []).includes(phaseRoleId("di")) ? `
@@ -9211,6 +9348,41 @@ function bindAdmin(){
     if(!btn) return;
     btn.onclick = async () => {
       const data = readContractIntInputs(btn.getAttribute("data-project-id"));
+      if(!data) return;
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.textContent = "Generuji…";
+      try{ await run(data); }
+      finally { btn.disabled = false; btn.textContent = origText; }
+    };
+  });
+
+  const readContractAsInputs = (projectId) => {
+    const project = state.config.projects.find(x => x.id === projectId);
+    if(!project) return null;
+    const customerSelect = document.getElementById("contract-as-customer-select");
+    const customerProfiles = projectBillingProfiles(project);
+    const customer = (customerSelect && customerProfiles.find(bp => bp.id === customerSelect.value)) || customerProfiles[0];
+    if(!customer) return null;
+    const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+    if(!(phaseBudgetTotal(project, phaseRoleId("as")) > 0)){ alert("Fáze " + phaseRoleId("as") + " v tomto projektu zatím nemá cenu – doplňte ji v rozpočtu fází."); return null; }
+    const vatRate = Number(state.config.billingProfiles && state.config.billingProfiles[0] && state.config.billingProfiles[0].vatRate) || 21;
+    return { project, customer, opts: {
+      hourlyRate: Number(val("contract-as-hourly-rate")) || 890,
+      signPlace: val("contract-as-sign-place").trim(),
+      signDate: val("contract-as-sign-date") || todayStr(),
+      sitePhrase: val("contract-as-site-phrase").trim() || ("rodinného domu " + (project.location || "")),
+      variant: val("contract-as-variant") || "full",
+      vatRate
+    } };
+  };
+  [["contract-as-generate-btn", async data => downloadBlob(await generateStudyContract(data.project, data.customer, data.opts), `smlouva-studie_${data.project.id}_${todayStr()}.docx`)],
+   ["contract-as-generate-pdf-btn", async data => (await buildStudyContractPdf(data.project, data.customer, data.opts)).save(`smlouva-studie_${data.project.id}_${todayStr()}.pdf`)]
+  ].forEach(([id, run]) => {
+    const btn = document.getElementById(id);
+    if(!btn) return;
+    btn.onclick = async () => {
+      const data = readContractAsInputs(btn.getAttribute("data-project-id"));
       if(!data) return;
       btn.disabled = true;
       const origText = btn.textContent;
