@@ -3089,7 +3089,7 @@ function interiorContractBlocks(f){
     const scope = INTERIOR_SCOPE_TEXT[kinds[i]];
     if(scope) clause(`Fáze „${it.label}“ ${scope}`);
   });
-  // Tři body o samostatnosti smlouvy a vyloučeném rozsahu se vkládají jen tehdy, když projekt stavby nezpracovával Zhotovitel.
+  // Body 1.x o samostatnosti smlouvy a vyloučeném rozsahu a bod o podkladech v článku 2 se vkládají jen tehdy, když projekt stavby nezpracovával Zhotovitel.
   if(!ownBuildingProject) clause("Tato Smlouva je samostatnou smlouvou. Její platnost, účinnost ani plnění nezávisí na dokumentaci pro povolení stavby, inženýrské činnosti ani na jiné smlouvě o dílo uzavřené mezi Stranami a Dílo není jejich součástí.");
   if(!ownBuildingProject) clause("Dokumentace Interiéru je zpracována na základě podkladů o stavbě předaných Objednatelem. Případné úpravy stavebního řešení nebo projektů technických profesí vyvolané řešením Interiéru nejsou součástí Díla.");
   if(!ownBuildingProject) clause("Předmětem Díla není dokumentace pro povolení záměru ani dokumentace pro provádění stavby, inženýrská činnost, projekty technických profesí (zejména elektroinstalace, zdravotechniky, vytápění a vzduchotechniky), statické posouzení, výrobní a dílenská dokumentace zhotovitelů, položkový rozpočet, výběr a objednání dodavatelů a vybavení ani výkon autorského dozoru při realizaci Interiéru, není-li ve Smlouvě výslovně uvedeno nebo Stranami písemně dohodnuto jinak.");
@@ -3097,7 +3097,7 @@ function interiorContractBlocks(f){
   heading("Doba plnění, součinnost a předání");
   clause("Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě první zálohy podle čl. 3.3 a po předání podkladů potřebných k zahájení prací.");
   clause("Doba zpracování jednotlivých fází odpovídá jejich rozsahu a průběhu společných konzultací. Fáze mohou probíhat postupně nebo souběžně podle dohody Stran.");
-  clause("Objednatel poskytne Zhotoviteli včas veškeré podklady (zejména projektovou dokumentaci stavby nebo zaměření skutečného stavu), informace, rozhodnutí, odsouhlasení, podpisy a další součinnost potřebnou pro řádné provádění Díla.");
+  if(!ownBuildingProject) clause("Objednatel poskytne Zhotoviteli včas veškeré podklady (zejména projektovou dokumentaci stavby nebo zaměření skutečného stavu), informace, rozhodnutí, odsouhlasení, podpisy a další součinnost potřebnou pro řádné provádění Díla.");
   clause("Po dobu prodlení Objednatele s poskytnutím potřebné součinnosti neběží Zhotoviteli doba plnění. Doba plnění se dále přiměřeně prodlužuje o dobu čekání na vyjádření, stanoviska, podklady nebo úkony třetích osob, které Zhotovitel nemůže ovlivnit.");
   if(has("navrh")) clause("Připomínky Objednatele k návrhu interiéru zapracuje Zhotovitel do odsouhlasené podoby návrhu, která je podkladem pro další fáze. Odsouhlasení postačuje písemně, včetně e-mailu.");
   clause("Dokumentace bude Objednateli předána elektronicky ve formátu PDF. 3D model slouží k prezentaci návrhu; editovatelné zdrojové soubory a 3D model nejsou součástí plnění, není-li písemně dohodnuto jinak.");
@@ -4839,7 +4839,7 @@ function buildPaymentCalendarDetail(projectId){
         </div>
         <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-bottom:10px;cursor:pointer;">
           <input type="checkbox" id="contract-int-own-project" style="margin-top:2px;" ${(p.phaseIds || []).some(id => id === phaseRoleId("dsp") || id === "DPS") ? "checked" : ""}>
-          <span>Projekt stavby jsme zpracovávali my<br><span class="q-hint" style="margin:0;">Zaškrtnuto = ve smlouvě nebudou body o samostatnosti smlouvy, podkladech od objednatele a o tom, co Dílo nezahrnuje. Nezaškrtnuto = budou tam všechny tři.</span></span>
+          <span>Projekt stavby jsme zpracovávali my<br><span class="q-hint" style="margin:0;">Zaškrtnuto = ve smlouvě nebudou body o samostatnosti smlouvy, podkladech od objednatele (v čl. 1 i 2) a o tom, co Dílo nezahrnuje. Nezaškrtnuto = budou tam všechny čtyři.</span></span>
         </label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button type="button" class="btn btn-tan btn-small" id="contract-int-generate-btn" data-project-id="${esc(p.id)}">Vygenerovat smlouvu (.docx)</button>
