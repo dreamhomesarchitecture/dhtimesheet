@@ -3300,11 +3300,12 @@ function studyContractBlocks(f){
   clause(`Zhotovitel se zavazuje pro Objednatele zpracovat architektonickou studii (koncepční návrh) novostavby ${sitePhrase} (dále jen „Stavba“) v rozsahu uvedeném v odstavci 1.2 (dále jen „Dílo“).`);
   clause("Dílo zahrnuje:");
   const scope = [
-    "zabezpečení vstupních podkladů, prověření a analýzu přípravy projektu, upřesnění cílových představ Objednatele",
+    "zabezpečení vstupních podkladů, prověření a analýzu přípravy projektu",
+    "upřesnění cílových představ Objednatele",
     "zpracování konceptu a skic, určení základního materiálového řešení, popis návrhu",
     "situace, půdorysy, řezy, pohledy"
   ];
-  if(full) scope.push("3D model včetně možnosti procházení, varianty materiálového řešení na 3D modelu, axonometrie, vizualizace, studie oslunění", "architektonickou knihu");
+  if(full) scope.push("3D model včetně možnosti procházení, varianty materiálového řešení na 3D modelu", "axonometrii, vizualizace a studii oslunění", "architektonickou knihu");
   scope.forEach((t, i) => sub(`– ${t}${i === scope.length - 1 ? "." : ","}`));
 
   heading("Doba plnění a způsob předání");
