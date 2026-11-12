@@ -2772,10 +2772,6 @@ function addContractPageNumbersToPdf(doc){
   }
 }
 
-// Fills in the "Smlouva o dilo - DSP a inzenyring" .docx template with data from the
-// project, the selected client billing profile and the export-time overrides, and
-// returns a Blob ready for download. Fáze 1 = phase "DSP", fáze 2 = phase "I", their
-// budget totals and the 50/50 payment split mirror the structure of the source contract.
 // Computes the values that vary across the "Smlouva o dilo - DSP a inzenyring"
 // contract (client, site, prices, hourly rate, signature block) from the project,
 // the selected client billing profile and export-time overrides. Shared by both
@@ -2802,201 +2798,81 @@ function computeDspInzenyringContractFields(project, customer, opts){
   return { vatRate, hourlyRate, hourlyRateFmt, sitePhrase, signPlace, signDate, clientName, clientAddress, faze1, faze2, total, withVat, aAmt, bAmt, cAmt };
 }
 
+// Text smlouvy DSP a inženýring jako seznam bloků – společný pro .docx i PDF (stejně jako u interiéru a studie).
+// Společná ustanovení jsou v ContractCl, tady zůstává jen to, co je specifické pro DSP a inženýring.
+function dspContractBlocks(f){
+  const { signPlace, signDate, sitePhrase, faze1, faze2, total, aAmt, bAmt, cAmt, vatRate } = f;
+  const w = contractBlockWriter();
+  const { heading, clause, sub } = w;
+  const C = ContractCl;
+  const dok1 = ctNoun("Fáze 1", true);
+  w.blocks.push(...contractPartyBlocks(f));
+
+  heading("Předmět Díla");
+  clause(`Zhotovitel se zavazuje pro Objednatele zpracovat projektovou dokumentaci pro povolení záměru novostavby rodinného domu ${sitePhrase} (dále jen „Stavba“), a to jako fázi 1 Díla, a dále zajistit inženýrskou činnost směřující k získání povolení záměru jako fázi 2 Díla.`);
+  clause("Fáze 2 může být podle potřeby prováděna souběžně s fází 1.");
+  clause("Fáze 1 bude zpracována jako dokumentace pro povolení stavby podle vyhlášky č. 131/2024 Sb., o dokumentaci staveb, v rozsahu odpovídajícím povaze Stavby a požadavkům právních předpisů.");
+  clause("Fáze 1 bude zahrnovat zejména průvodní list, souhrnnou technickou zprávu, situační výkresy, dokumentaci stavebních objektů a technických zařízení, architektonicko-stavební řešení včetně technické zprávy a výkresové části, základní konstrukční řešení včetně základního statického výpočtu, požárně bezpečnostní řešení, dokladovou část a průkaz energetické náročnosti budovy (PENB), je-li pro Stavbu vyžadován.");
+  clause("Fáze 2 zahrnuje koordinaci podkladů, obstarání vyjádření vlastníků a správců technické infrastruktury a potřebných závazných stanovisek, podání žádosti na základě plné moci, komunikaci se stavebním úřadem, běžná doplnění požadovaná v rozsahu sjednaného Díla a sledování řízení do vydání rozhodnutí.");
+  clause("Zhotovitel bude postupovat s odbornou péčí a vyvine přiměřené úsilí k získání povolení. Zhotovitel však negarantuje vydání povolení ani dobu, ve které příslušný orgán rozhodne.");
+  clause("Předmětem Díla není dokumentace pro provádění stavby ani jiné navazující stupně nebo části dokumentace, zejména dokumentace skutečného provedení stavby, výrobní a dílenská dokumentace, položkový rozpočet, výkaz výměr, zadávací dokumentace pro výběr zhotovitele stavby ani výkon autorského dozoru, není-li ve Smlouvě výslovně uvedeno nebo Stranami písemně dohodnuto jinak.");
+  clause("Fáze 2 nezahrnuje zastupování Objednatele ani jiné činnosti Zhotovitele v odvolacím, přezkumném nebo soudním řízení ani činnosti vyvolané zrušením nebo vrácením rozhodnutí k novému projednání, není-li takový postup způsoben porušením povinností Zhotovitele podle této Smlouvy. Případné takové činnosti budou považovány za práce nad rámec Díla.");
+
+  heading("Doba plnění, součinnost a předání");
+  C.start(w, "{ref:pay} písm. a)");
+  clause("Fáze 1 bude zpracována v přiměřené době odpovídající rozsahu Díla a obvyklým projekčním lhůtám. Fáze 2 může probíhat souběžně a pokračuje podle potřeb povolovacího procesu.");
+  C.cooperation(w);
+  C.delay(w, true);
+  C.delivery(w, dok1);
+  C.changes(w);
+  clause("Vyžaduje-li provedení činností podle této Smlouvy udělení plné moci Zhotoviteli nebo jím určené osobě, poskytne ji Objednatel bez zbytečného odkladu na žádost Zhotovitele. Do jejího poskytnutí není Zhotovitel v prodlení s činnostmi, které bez takové plné moci nelze provést.");
+  C.deemed(w, dok1);
+
+  heading("Cena Díla a platební podmínky");
+  clause(`Cena fáze 1 činí ${ctPrice(f, faze1)}.`);
+  clause(`Cena fáze 2 činí ${ctPrice(f, faze2)}.`);
+  clause(`Celková cena Díla činí ${ctPrice(f, total)}. ${CONTRACT_VAT_CHANGE}`);
+  clause("Cena bude hrazena takto:", "pay");
+  sub(`a) při zahájení Díla 50 % ceny fáze 1 a 50 % ceny fáze 2, tj. ${ctPart(f, aAmt)};`);
+  sub(`b) po předání fáze 1 zbývajících 50 % ceny fáze 1, tj. ${ctPart(f, bAmt)};`);
+  sub(`c) zbývajících 50 % ceny fáze 2, tj. ${ctPart(f, cAmt)}, po vydání rozhodnutí o povolení záměru. Pokud k vydání rozhodnutí nedojde z důvodů, které Zhotovitel nezavinil, vzniká Zhotoviteli právo na úhradu této části ceny po provedení činností sjednaných v rámci fáze 2, které bylo za daných okolností možné a účelné provést.`);
+  C.invoices(w);
+  C.interruption(w);
+  C.priceScope(w, "poplatky správcům technické infrastruktury ani práce a podklady třetích osob");
+  clause("V ceně Díla nejsou zahrnuty zejména geodetické zaměření pozemku, geometrické plány, hydrogeologické posouzení, inženýrsko-geologický průzkum, radonový průzkum, hlukové, dopravní, dendrologické, biologické a jiné odborné průzkumy, studie a posudky ani jiné obdobné podklady zpracovávané třetími osobami, není-li v této Smlouvě výslovně uvedeno jinak. Budou-li tyto nebo jiné obdobné podklady pro řádné provedení Díla nebo povolení záměru potřebné, zajistí je Objednatel, případně je Zhotovitel po předchozím odsouhlasení Objednatelem obstará na jeho náklady.");
+  C.inflation(w);
+
+  heading("Provádění Díla a práce nad rámec");
+  C.care(w, "příslušné fáze");
+  C.specialists(w);
+  C.influences(w, "požadavky právních předpisů, orgánů veřejné moci, správců technické infrastruktury a výsledky potřebných průzkumů a podkladů");
+  clause("Pokud požadavek orgánu veřejné moci nebo třetí osoby vyvolá práce nad rámec této Smlouvy, zejména zásadní přepracování Díla z důvodu změny zadání, nových skutečností nebo mimořádných požadavků, dohodnou Strany samostatně rozsah, cenu a případný vliv na dobu plnění.");
+  C.extraWork(w, f);
+  C.writtenComm(w);
+  C.reliance(w);
+  C.interference(w, "Díla");
+
+  heading("Ukončení Smlouvy");
+  C.ending(w, f);
+
+  heading("Autorská práva a prezentace");
+  C.copyright(w, { shown: "Díla", part: "příslušné fáze", use: "Dílo pro účely povolení a realizace Stavby" });
+
+  heading("Závěrečná ustanovení");
+  C.closing(w, { building: true });
+
+  w.blocks.push({ k: "place", t: `V ${signPlace} dne ${signDate}` });
+  return w.finish();
+}
+
 async function generateDspInzenyringContract(project, customer, opts){
   const f = computeDspInzenyringContractFields(project, customer, opts);
-  const { vatRate, hourlyRate, hourlyRateFmt, sitePhrase, signPlace, signDate, clientName, clientAddress, faze1, faze2, total, withVat, aAmt, bAmt, cAmt } = f;
-
-  const sampleName = ["Jan", "Svoboda,"].join(" ");
-  const sampleAddress = "bytem č.p. 4, 675 05 Rohy";
-  const sampleSitePhrase = "ve Velkém Meziříčí, na pozemku parc. č. 3700/70 v katastrálním území Velké Meziříčí ";
-  const sampleSignBlank = "V __________________ dne __________________";
-  const replacements = [
-    [sampleName, `${clientName},`],
-    [sampleAddress, `bytem ${clientAddress}`],
-    [sampleSitePhrase, `${sitePhrase} `],
-    ["Cena fáze 1 činí 187 500,- Kč bez DPH; při sazbě DPH 21 % činí 226 875,- Kč včetně DPH.",
-      `Cena fáze 1 činí ${czContractPrice(faze1)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(faze1))} včetně DPH.`],
-    ["Cena fáze 2 činí 31 000,- Kč bez DPH; při sazbě DPH 21 % činí 37 510,- Kč včetně DPH.",
-      `Cena fáze 2 činí ${czContractPrice(faze2)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(faze2))} včetně DPH.`],
-    ["Celková cena Díla činí 218 500,- Kč bez DPH; při sazbě DPH 21 % činí 264 385,- Kč včetně DPH.",
-      `Celková cena Díla činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH.`],
-    ["a) při zahájení Díla 50 % ceny fáze 1 a 50 % ceny fáze 2, tj. 109 250,- Kč bez DPH; při sazbě DPH 21 % celkem 132 192,50 Kč včetně DPH,",
-      `a) při zahájení Díla 50 % ceny fáze 1 a 50 % ceny fáze 2, tj. ${czContractPrice(aAmt)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(aAmt))} včetně DPH,`],
-    ["b) po předání fáze 1 zbývajících 50 % ceny fáze 1, tj. 93 750,- Kč bez DPH; při sazbě DPH 21 % celkem 113 437,50 Kč včetně DPH,",
-      `b) po předání fáze 1 zbývajících 50 % ceny fáze 1, tj. ${czContractPrice(bAmt)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(bAmt))} včetně DPH,`],
-    ["c) zbývajících 50 % ceny fáze 2, tj. 15 500,- Kč bez DPH, po vydání rozhodnutí o povolení záměru.",
-      `c) zbývajících 50 % ceny fáze 2, tj. ${czContractPrice(cAmt)} bez DPH, po vydání rozhodnutí o povolení záměru.`],
-    ["Jan Svoboda</w:t>", `${clientName}</w:t>`],
-    [sampleSignBlank, `V ${signPlace} dne ${signDate}`],
-  ];
-
-  const bytes = b64ToUint8Array(CONTRACT_TEMPLATE_DSP_INZENYRING_B64);
-  const zip = await JSZip.loadAsync(bytes);
-  let xml = await zip.file("word/document.xml").async("string");
-  replacements.forEach(([from, to]) => {
-    if(!xml.includes(from)) return;
-    xml = xml.replace(from, to);
-  });
-  xml = xml.split("890,- Kč bez DPH").join(`${hourlyRateFmt},- Kč bez DPH`);
-  // The yellow shading in the source template only marks which fields to fill in;
-  // strip it from the generated contract so the final document looks finished.
-  xml = xml.split('w:fill="fff2cc"').join('w:fill="auto"');
-  zip.file("word/document.xml", xml);
-  await addContractPageTotalToDocx(zip);
-  return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" });
+  return renderContractDocx(dspContractBlocks(f), f.clientName);
 }
 
 async function buildDspInzenyringContractPdf(project, customer, opts){
   const f = computeDspInzenyringContractFields(project, customer, opts);
-  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, clientName, clientAddress, faze1, faze2, total, withVat, aAmt, bAmt, cAmt } = f;
-
-  const doc = new jspdf.jsPDF({ unit: "mm", format: "a4" });
-  await ensurePdfFont(doc);
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 20;
-  const marginTop = 18;
-  const marginBottom = 18;
-  const contentWidth = pageWidth - marginX*2;
-  let y = marginTop;
-
-  const ensureSpace = (needed) => {
-    if(y + needed > pageHeight - marginBottom){
-      doc.addPage();
-      y = marginTop;
-    }
-  };
-
-  const block = (text, o) => {
-    o = o || {};
-    if(text === ""){ y += o.blankH || 3; return; }
-    const fontSize = o.fontSize || 9.5;
-    doc.setFont("Lato", o.bold ? "bold" : "normal");
-    doc.setFontSize(fontSize);
-    const align = o.align || "left";
-    const width = o.width || contentWidth;
-    const x = align === "center" ? pageWidth/2 : marginX;
-    const lineH = o.lineH || (fontSize * 0.46);
-    if(o.spaceBefore) ensureSpace(o.spaceBefore + lineH);
-    y += o.spaceBefore || 0;
-    const lines = doc.splitTextToSize(text, width);
-    lines.forEach(line => {
-      ensureSpace(lineH);
-      doc.text(line, x, y, { align });
-      y += lineH;
-    });
-    y += o.spaceAfter || 0;
-  };
-
-  const heading = (text) => block(text, { bold: true, fontSize: 12, align: "center", lineH: 6, spaceBefore: 5, spaceAfter: 2 });
-  const centerLine = (text, bold) => block(text, { align: "center", bold: !!bold, fontSize: 9.5, lineH: 4.6 });
-  const clause = (text) => block(text, { fontSize: 9.5, lineH: 4.4, spaceAfter: 1.6 });
-
-  block("SMLOUVA O DÍLO", { bold: true, fontSize: 17, align: "center", lineH: 8, spaceAfter: 2 });
-  block("uzavřená podle § 2586 a násl. zákona č. 89/2012 Sb., občanský zákoník", { align: "center", fontSize: 9.5, lineH: 5, spaceAfter: 5 });
-
-  centerLine("Objednatel:", true);
-  centerLine(`${clientName},`);
-  centerLine(`bytem ${clientAddress}`);
-  centerLine("(dále jen „Objednatel“)");
-  block("", { blankH: 3 });
-  centerLine("a");
-  block("", { blankH: 3 });
-  centerLine("Zhotovitel:", true);
-  centerLine("DREAM HOMES ARCHITECTURE s.r.o., IČO 09111841");
-  centerLine("se sídlem Dolní Cerekev 274, 588 45 Dolní Cerekev");
-  centerLine("zastoupená Ing. Kamilem Plavcem, nar. 11. 5. 1988, jednatelem");
-  centerLine("bankovní spojení: 2501813703/2010");
-  centerLine("(dále jen „Zhotovitel“)");
-  block("", { blankH: 3 });
-  centerLine("Objednatel a Zhotovitel dále společně jen „Strany“.");
-
-  heading("Článek 1 – Předmět Díla");
-  clause(`1.1. Zhotovitel se zavazuje pro Objednatele zpracovat projektovou dokumentaci pro povolení záměru novostavby rodinného domu ${sitePhrase} (dále jen „Stavba“), a to jako fázi 1 Díla, a dále zajistit inženýrskou činnost směřující k získání povolení záměru jako fázi 2 Díla.`);
-  clause("1.2. Fáze 2 může být podle potřeby prováděna souběžně s fází 1.");
-  clause("1.3. Dokumentace fáze 1 bude zpracována jako dokumentace pro povolení stavby podle vyhlášky č. 131/2024 Sb., o dokumentaci staveb, v rozsahu odpovídajícím povaze Stavby a požadavkům právních předpisů.");
-  clause("1.4. Dokumentace bude zahrnovat zejména průvodní list, souhrnnou technickou zprávu, situační výkresy, dokumentaci stavebních objektů a technických zařízení, architektonicko-stavební řešení včetně technické zprávy a výkresové části, základní konstrukční řešení včetně základního statického výpočtu, požárně bezpečnostní řešení, dokladovou část a průkaz energetické náročnosti budovy (PENB), je-li pro Stavbu vyžadován.");
-  clause("1.5. Fáze 2 zahrnuje koordinaci podkladů, obstarání vyjádření vlastníků a správců technické infrastruktury a potřebných závazných stanovisek, podání žádosti na základě plné moci, komunikaci se stavebním úřadem, běžná doplnění požadovaná v rozsahu sjednaného Díla a sledování řízení do vydání rozhodnutí.");
-  clause("1.6. Zhotovitel bude postupovat s odbornou péčí a vyvine přiměřené úsilí k získání povolení. Zhotovitel však negarantuje vydání povolení ani dobu, ve které příslušný orgán rozhodne.");
-  clause("1.7. Předmětem Díla není dokumentace pro provádění stavby ani jiné navazující stupně nebo části dokumentace, zejména dokumentace skutečného provedení stavby, výrobní a dílenská dokumentace, položkový rozpočet, výkaz výměr, zadávací dokumentace pro výběr zhotovitele stavby ani výkon autorského dozoru, není-li ve Smlouvě výslovně uvedeno nebo Stranami písemně dohodnuto jinak.");
-  clause("1.8. Fáze 2 nezahrnuje zastupování Objednatele ani jiné činnosti Zhotovitele v odvolacím, přezkumném nebo soudním řízení ani činnosti vyvolané zrušením nebo vrácením rozhodnutí k novému projednání, není-li takový postup způsoben porušením povinností Zhotovitele podle této Smlouvy. Případné takové činnosti budou považovány za práce nad rámec Díla.");
-
-  heading("Článek 2 – Doba plnění, součinnost a předání");
-  clause("2.1. Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě první platby podle čl. 3.4 písm. a) a po předání podkladů potřebných k zahájení prací.");
-  clause("2.2. Fáze 1 bude zpracována v přiměřené době odpovídající rozsahu Díla a obvyklým projekčním lhůtám. Fáze 2 může probíhat souběžně a pokračuje podle potřeb povolovacího procesu.");
-  clause("2.3. Objednatel poskytne Zhotoviteli včas veškeré podklady, informace, rozhodnutí, schválení, podpisy a další součinnost potřebnou pro řádné provádění Díla.");
-  clause("2.4. Po dobu prodlení Objednatele s poskytnutím potřebné součinnosti neběží Zhotoviteli doba plnění. Doba plnění se dále přiměřeně prodlužuje o dobu čekání na vyjádření, stanoviska, podklady nebo úkony třetích osob a orgánů veřejné moci, které Zhotovitel nemůže ovlivnit.");
-  clause("2.5. Dokumentace fáze 1 bude Objednateli předána elektronicky ve formátu PDF. Editovatelné zdrojové soubory nejsou součástí plnění, není-li písemně dohodnuto jinak.");
-  clause("2.6. Změny zadání požadované Objednatelem, které vyvolají změnu nebo přepracování již provedených prací, nejsou zahrnuty v ceně Díla a považují se za práce nad rámec Díla. Jejich provedení a cena se řídí příslušnými ustanoveními této Smlouvy o pracích nad rámec Díla.");
-  clause("2.7. Vyžaduje-li provedení činností podle této Smlouvy udělení plné moci Zhotoviteli nebo jím určené osobě, poskytne ji Objednatel bez zbytečného odkladu na žádost Zhotovitele. Do jejího poskytnutí není Zhotovitel v prodlení s činnostmi, které bez takové plné moci nelze provést.");
-  clause("2.8. Dokumentace fáze 1 se považuje za předanou okamžikem jejího odeslání Objednateli v elektronické podobě na jím sdělenou e-mailovou adresu nebo okamžikem jejího zpřístupnění Objednateli prostřednictvím elektronického úložiště, o němž byl Objednatel informován.");
-
-  heading("Článek 3 – Cena Díla a platební podmínky");
-  clause(`3.1. Cena fáze 1 činí ${czContractPrice(faze1)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(faze1))} včetně DPH.`);
-  clause(`3.2. Cena fáze 2 činí ${czContractPrice(faze2)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(faze2))} včetně DPH.`);
-  clause(`3.3. Celková cena Díla činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH. Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.`);
-  clause("3.4. Cena bude hrazena takto:");
-  clause(`a) při zahájení Díla 50 % ceny fáze 1 a 50 % ceny fáze 2, tj. ${czContractPrice(aAmt)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(aAmt))} včetně DPH,`);
-  clause(`b) po předání fáze 1 zbývajících 50 % ceny fáze 1, tj. ${czContractPrice(bAmt)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(bAmt))} včetně DPH,`);
-  clause(`c) zbývajících 50 % ceny fáze 2, tj. ${czContractPrice(cAmt)} bez DPH, po vydání rozhodnutí o povolení záměru. Pokud k vydání rozhodnutí nedojde z důvodů, které Zhotovitel nezavinil, vzniká Zhotoviteli právo na úhradu této části ceny po provedení činností sjednaných v rámci fáze 2, které bylo za daných okolností možné a účelné provést.`);
-  clause("3.5. Faktury jsou splatné do 14 dnů ode dne jejich vystavení, není-li na faktuře uvedena pozdější splatnost.");
-  clause("3.6. Je-li Objednatel v prodlení s úhradou jakékoli splatné částky podle této Smlouvy, je Zhotovitel oprávněn až do jejího úplného uhrazení přerušit provádění Díla. Po dobu takového přerušení není Zhotovitel v prodlení. Doba plnění se prodlužuje o dobu prodlení Objednatele a dále o přiměřenou dobu nezbytnou k opětovnému zařazení zakázky do pracovního harmonogramu Zhotovitele.");
-  clause("3.7. Cena zahrnuje náklady Zhotovitele výslovně uvedené v této Smlouvě. Nezahrnuje správní a jiné úřední poplatky, poplatky správcům technické infrastruktury ani práce a podklady třetích osob, není-li výslovně uvedeno jinak.");
-  clause("3.8. V ceně Díla nejsou zahrnuty zejména geodetické zaměření pozemku, geometrické plány, hydrogeologické posouzení, inženýrsko-geologický průzkum, radonový průzkum, hlukové, dopravní, dendrologické, biologické a jiné odborné průzkumy, studie a posudky ani jiné obdobné podklady zpracovávané třetími osobami, není-li v této Smlouvě výslovně uvedeno jinak. Budou-li tyto nebo jiné obdobné podklady pro řádné zpracování dokumentace nebo povolení záměru potřebné, zajistí je Objednatel, případně je Zhotovitel po předchozím odsouhlasení Objednatelem obstará na jeho náklady.");
-  clause("3.9. Trvá-li plnění této Smlouvy déle než 12 měsíců od její účinnosti, je Zhotovitel oprávněn jednou za každých dalších 12 měsíců zvýšit cenu dosud neprovedené části Díla o procentní míru odpovídající meziročnímu růstu indexu spotřebitelských cen zveřejněnému Českým statistickým úřadem za poslední dostupné období. O zvýšení ceny Zhotovitel Objednatele písemně informuje.");
-
-  heading("Článek 4 – Provádění Díla a práce nad rámec");
-  clause("4.1. Zhotovitel provede Dílo s odbornou péčí, v souladu se zadáním Objednatele, touto Smlouvou a právními předpisy účinnými v době zpracování příslušné části Díla.");
-  clause("4.2. Zhotovitel je oprávněn při provádění Díla využít kvalifikované spolupracovníky a specialisty a koordinovat jejich činnost.");
-  clause("4.3. Výsledné řešení může být ovlivněno požadavky právních předpisů, orgánů veřejné moci, správců technické infrastruktury a výsledky potřebných průzkumů a podkladů.");
-  clause("4.4. Pokud požadavek orgánu veřejné moci nebo třetí osoby vyvolá práce nad rámec této Smlouvy, zejména zásadní přepracování dokumentace z důvodu změny zadání, nových skutečností nebo mimořádných požadavků, dohodnou Strany samostatně rozsah, cenu a případný vliv na dobu plnění.");
-  clause(`4.5. Práce a výkony nad rámec sjednaného Díla budou provedeny po předchozím odsouhlasení Objednatelem. Není-li jejich cena sjednána pevnou částkou, budou účtovány podle skutečně vynaloženého času sazbou ${hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel není povinen práce nad rámec Díla zahájit před jejich odsouhlasením Objednatelem.`);
-  clause("4.6. Pro odsouhlasení změn zadání, víceprací, jejich rozsahu a ceny postačuje písemná komunikace mezi Stranami, včetně komunikace prostřednictvím e-mailu. Takové odsouhlasení se pro účely této Smlouvy nepovažuje za změnu Smlouvy vyžadující uzavření dodatku podle čl. 7.2.");
-  clause("4.7. Zhotovitel je oprávněn vycházet z údajů, informací a podkladů předaných Objednatelem nebo třetími osobami. Zhotovitel neodpovídá za vady Díla, prodlení ani nutnost přepracování Díla způsobené nesprávností, neúplností nebo pozdějším doplněním či změnou těchto podkladů, pokud jejich nesprávnost nebo neúplnost nemohl Zhotovitel při vynaložení odborné péče rozumně zjistit. Případné práce vyvolané takovou skutečností se považují za práce nad rámec Díla.");
-  clause("4.8. Zhotovitel neodpovídá za vady, škody ani jiné následky vzniklé v důsledku změny, doplnění nebo jiného zásahu do dokumentace provedeného Objednatelem nebo třetí osobou bez předchozího písemného souhlasu Zhotovitele ani za použití dokumentace v rozporu s účelem sjednaným touto Smlouvou.");
-
-  heading("Článek 5 – Ukončení Smlouvy");
-  clause("5.1. Smlouvu lze ukončit písemnou dohodou Stran. Zhotovitel je oprávněn od Smlouvy odstoupit, je-li Objednatel v prodlení s úhradou splatné částky déle než 14 dnů a neuhradí ji ani po písemné výzvě Zhotovitele.");
-  clause("5.2. Objednatel může Smlouvu vypovědět i bez uvedení důvodu. Zhotovitel může Smlouvu vypovědět, neposkytuje-li Objednatel potřebnou součinnost ani po prokazatelné výzvě k nápravě.");
-  clause(`5.3. Při předčasném ukončení Smlouvy je Objednatel povinen uhradit Zhotoviteli cenu prací a výkonů skutečně provedených do okamžiku ukončení Smlouvy a účelně vynaložené náklady. Nelze-li hodnotu rozpracovaného plnění určit podle dokončených částí Díla, bude určena podle skutečně vynaloženého času sazbou ${hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel předá Objednateli rozpracované výstupy odpovídající uhrazenému plnění.`);
-  clause("5.4. Výpověď, odstoupení nebo dohoda o ukončení Smlouvy musí mít písemnou formu.");
-
-  heading("Článek 6 – Autorská práva a prezentace");
-  clause("6.1. Tato Smlouva nabývá účinnosti dnem podpisu oběma Stranami.");
-  clause("6.2. Zhotovitel je oprávněn použít vyobrazení a části dokumentace Díla pro svou profesní prezentaci, zejména v portfoliu, na webových stránkách, sociálních sítích a v odborných publikacích, bez uvedení osobních nebo jiných neveřejných údajů Objednatele.");
-  clause("6.3. Majetková autorská práva k autorskému dílu nejsou převáděna. Po úplném uhrazení ceny příslušné části Díla získává Objednatel nevýhradní oprávnění užít dokumentaci pro účely povolení a realizace Stavby na místě uvedeném v této Smlouvě.");
-
-  heading("Článek 7 – Závěrečná ustanovení");
-  clause("7.1. Právní vztahy neupravené touto Smlouvou se řídí zejména občanským zákoníkem, stavebním zákonem a souvisejícími právními předpisy.");
-  clause("7.2. Změny této Smlouvy lze činit pouze písemnými, vzestupně číslovanými dodatky podepsanými oběma Stranami, nestanoví-li tato Smlouva výslovně jinak.");
-  clause("7.3. Strany prohlašují, že si Smlouvu přečetly, jejímu obsahu rozumějí, souhlasí s ním a uzavírají ji svobodně a vážně.");
-  clause("7.4. Případné spory se Strany pokusí řešit přednostně smírně. Nedojde-li ke smírnému řešení do 30 dnů od písemné výzvy jedné Strany, bude spor řešen věcně a místně příslušným soudem.");
-  clause("7.5. Smlouva může být podepsána ve dvou stejnopisech nebo elektronicky; každá Strana obdrží jedno vyhotovení.");
-  clause("7.6. Je-li Objednatel spotřebitelem a byla-li tato Smlouva uzavřena způsobem, při němž právní předpisy přiznávají Objednateli právo na odstoupení od Smlouvy ve lhůtě stanovené zákonem, Objednatel výslovně žádá, aby Zhotovitel zahájil poskytování sjednaných služeb před uplynutím této lhůty. Objednatel bere na vědomí, že v případě odstoupení po zahájení plnění je povinen uhradit poměrnou část ceny za plnění poskytnuté do okamžiku odstoupení, stanoví-li tak právní předpisy.");
-
-  block(`V ${signPlace} dne ${signDate}`, { fontSize: 9.5, lineH: 4.6, spaceBefore: 8, spaceAfter: 18 });
-
-  ensureSpace(28);
-  const colW = (contentWidth - 16) / 2;
-  const sigX1 = marginX, sigX2 = marginX + colW + 16;
-  const lineY = y;
-  doc.setDrawColor(0,0,0);
-  doc.line(sigX1, lineY, sigX1 + colW, lineY);
-  doc.line(sigX2, lineY, sigX2 + colW, lineY);
-  y += 5;
-  doc.setFont("Lato", "normal");
-  doc.setFontSize(9.5);
-  doc.text(clientName, sigX1, y);
-  doc.text("DREAM HOMES ARCHITECTURE s.r.o.", sigX2, y);
-  y += 4.6;
-  doc.text("Objednatel", sigX1, y);
-  doc.text("Ing. Kamil Plavec, jednatel", sigX2, y);
-  y += 4.6;
-  doc.text("", sigX1, y);
-  doc.text("Zhotovitel", sigX2, y);
-
-  addContractPageNumbersToPdf(doc);
-  return doc;
+  return renderContractPdf(dspContractBlocks(f), f.clientName);
 }
 
 // ---------- Smlouva o dílo – interiér (samostatná smlouva, cena z fáze DI včetně jejích položek) ----------
@@ -3026,7 +2902,7 @@ const INTERIOR_SCOPE_TEXT = {
   priprava: "zahrnuje upřesnění řešených prostor, způsobu jejich užívání a požadavků Objednatele na vybavení, úložné prostory a celkový vzhled, projednání předpokládaného rozpočtu a termínu realizace, shromáždění a ověření dostupných podkladů a vypracování zadání, které stanoví rozsah návrhu, priority a základní podmínky další práce.",
   navrh: "zahrnuje návrh uspořádání prostoru, rozmístění nábytku a podoby jednotlivých místností včetně řešení jejich fungování, velikosti a návaznosti vybavení, materiálů, barev a základního rozmístění osvětlení. Návrh bude zpracován včetně 3D modelu a po společných konzultacích upraven do odsouhlasené podoby, která bude podkladem pro technické rozpracování.",
   viz: "zahrnuje fotorealistické vizualizace místností uvedených v názvu této fáze. Vizualizace jiných místností jsou doplňkovou službou za samostatnou cenu.",
-  provadeni: "zahrnuje převedení odsouhlaseného návrhu do výkresů a specifikací pro přípravu a provedení interiéru, zejména kótované půdorysy místností s rozmístěním nábytku a vybavení, kótované rozmístění zásuvek, vypínačů, svítidel a vývodů, návaznosti kuchyně a koupelen na vodu, odpady a další instalace, pohledy na stěny koupelen a kladečské plány obkladů a dlažeb, podhledy a zapuštěná svítidla, detaily interiéru, tabulku interiérových prvků, tabulku povrchových úprav a návrh osvětlení (knihu svítidel). Dokumentace slouží dodavatelům jako podklad pro nacenění a realizaci; na dokumentaci podle potřeby navazuje výrobní a dílenská dokumentace zhotovitelů.",
+  provadeni: "zahrnuje převedení odsouhlaseného návrhu do výkresů a specifikací pro přípravu a provedení interiéru, zejména kótované půdorysy místností s rozmístěním nábytku a vybavení, kótované rozmístění zásuvek, vypínačů, svítidel a vývodů, návaznosti kuchyně a koupelen na vodu, odpady a další instalace, pohledy na stěny koupelen a kladečské plány obkladů a dlažeb, podhledy a zapuštěná svítidla, detaily interiéru, tabulku interiérových prvků, tabulku povrchových úprav a návrh osvětlení (knihu svítidel). Tato fáze slouží dodavatelům jako podklad pro nacenění a realizaci; na Dílo podle potřeby navazuje výrobní a dílenská dokumentace zhotovitelů.",
   atyp: "zahrnuje samostatné rozpracování nábytku navrženého na míru, tj. určení rozměrů, vnitřního členění, materiálů, povrchových úprav, způsobu otevírání, kování a úchytek, včetně důležitých detailů a návazností na stěny, podlahy, spotřebiče nebo další vybavení, jako podklad pro nacenění a přípravu výroby."
 };
 
@@ -3047,16 +2923,121 @@ function contractCommonFields(customer, opts){
   };
 }
 // Zapisovač bloků smlouvy: nadpisy článků a číslované odstavce (1.1., 1.2., …) se číslují samy.
+// Odkazy na jiné články se píší jako {ref:id}; id se přiřazuje druhým parametrem clause() a odkazy se dosadí ve finish().
 function contractBlockWriter(){
-  const blocks = [];
+  const blocks = [], ids = {};
   let art = 0, no = 0;
   return {
     blocks,
     heading: t => { art++; no = 0; blocks.push({ k: "h", t: `Článek ${art} – ${t}` }); },
-    clause: t => blocks.push({ k: "c", t: `${art}.${++no}. ${t}` }),
-    sub: t => blocks.push({ k: "sub2", t })
+    clause: (t, id) => { const n = `${art}.${++no}`; if(id) ids[id] = n; blocks.push({ k: "c", t: `${n}. ${t}` }); },
+    sub: t => blocks.push({ k: "sub2", t }),
+    finish: () => {
+      blocks.forEach(b => { if(b.t) b.t = b.t.replace(/\{ref:(\w+)\}/g, (m, id) => ids[id] || m); });
+      return blocks;
+    }
   };
 }
+
+// ---------- Společná ustanovení všech tří smluv (DSP a inženýring, interiér, architektonická studie) ----------
+// Stejné věci se ve všech smlouvách říkají stejnými větami. Smlouvy se liší jen parametry (název předmětu plnění,
+// příklady, výčty) a věcnými články (rozsah Díla, ceny a platby); ostatní je tady a upravuje se na jednom místě.
+const CONTRACT_VAT_CHANGE = "Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.";
+// „1 000,- Kč bez DPH; při sazbě DPH 21 % činí 1 210,- Kč včetně DPH“
+function ctPrice(f, a){ return `${czContractPrice(a)} bez DPH; při sazbě DPH ${f.vatRate} % činí ${czContractPrice(f.withVat(a))} včetně DPH`; }
+// „1 000,- Kč bez DPH; při sazbě DPH 21 % celkem 1 210,- Kč včetně DPH“ (za „tj.“ u dílčích plateb)
+function ctPart(f, a){ return `${czContractPrice(a)} bez DPH; při sazbě DPH ${f.vatRate} % celkem ${czContractPrice(f.withVat(a))} včetně DPH`; }
+// Předmět plnění ve správném rodě („Dokumentace … předána“ × „Dílo … předáno“).
+function ctNoun(nom, fem){ return fem ? { nom, past: "předána", acc: "předanou", poss: "jejího" } : { nom, past: "předáno", acc: "předané", poss: "jeho" }; }
+
+const ContractCl = {
+  // Článek „Doba plnění, součinnost a předání“
+  start(w, payRef){
+    w.clause(`Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě první platby podle čl. ${payRef} a po předání podkladů potřebných k zahájení prací.`);
+  },
+  cooperation(w, hint){
+    w.clause(`Objednatel poskytne Zhotoviteli včas veškeré podklady${hint ? ` (${hint})` : ""}, informace, rozhodnutí, schválení, podpisy a další součinnost potřebnou pro řádné provádění Díla.`);
+  },
+  delay(w, withAuthorities){
+    w.clause(`Po dobu prodlení Objednatele s poskytnutím potřebné součinnosti neběží Zhotoviteli doba plnění. Doba plnění se dále přiměřeně prodlužuje o dobu čekání na vyjádření, stanoviska, podklady nebo úkony třetích osob${withAuthorities ? " a orgánů veřejné moci" : ""}, které Zhotovitel nemůže ovlivnit.`);
+  },
+  // o: note (věta o formě výstupu), sources (co není součástí plnění), after (doplňující věta)
+  delivery(w, n, o){
+    o = o || {};
+    w.clause(`${n.nom} bude Objednateli ${n.past} elektronicky ve formátu PDF.${o.note ? " " + o.note : ""} ${o.sources || "Editovatelné zdrojové soubory"} nejsou součástí plnění, není-li písemně dohodnuto jinak.${o.after ? " " + o.after : ""}`);
+  },
+  changes(w, approved){
+    w.clause(`Změny zadání${approved ? ` nebo odsouhlaseného ${approved}` : ""} požadované Objednatelem, které vyvolají změnu nebo přepracování již provedených prací, nejsou zahrnuty v ceně Díla a považují se za práce nad rámec Díla. Jejich provedení a cena se řídí příslušnými ustanoveními této Smlouvy o pracích nad rámec Díla.`);
+  },
+  deemed(w, n){
+    w.clause(`${n.nom} se považuje za ${n.acc} okamžikem ${n.poss} odeslání Objednateli v elektronické podobě na jím sdělenou e-mailovou adresu nebo okamžikem ${n.poss} zpřístupnění Objednateli prostřednictvím elektronického úložiště, o němž byl Objednatel informován.`);
+  },
+
+  // Článek „Cena Díla a platební podmínky“ (společná část za výčtem cen a plateb)
+  invoices(w){
+    w.clause("Faktury jsou splatné do 14 dnů ode dne jejich vystavení, není-li na faktuře uvedena pozdější splatnost.");
+  },
+  interruption(w){
+    w.clause("Je-li Objednatel v prodlení s úhradou jakékoli splatné částky podle této Smlouvy, je Zhotovitel oprávněn až do jejího úplného uhrazení přerušit provádění Díla. Po dobu takového přerušení není Zhotovitel v prodlení. Doba plnění se prodlužuje o dobu prodlení Objednatele a dále o přiměřenou dobu nezbytnou k opětovnému zařazení zakázky do pracovního harmonogramu Zhotovitele.");
+  },
+  priceScope(w, excluded){
+    w.clause(`Cena zahrnuje náklady Zhotovitele výslovně uvedené v této Smlouvě. Nezahrnuje správní a jiné úřední poplatky, ${excluded}, není-li výslovně uvedeno jinak.`);
+  },
+  inflation(w){
+    w.clause("Trvá-li plnění této Smlouvy déle než 12 měsíců od její účinnosti, je Zhotovitel oprávněn jednou za každých dalších 12 měsíců zvýšit cenu dosud neprovedené části Díla o procentní míru odpovídající meziročnímu růstu indexu spotřebitelských cen zveřejněnému Českým statistickým úřadem za poslední dostupné období. O zvýšení ceny Zhotovitel Objednatele písemně informuje.");
+  },
+
+  // Článek „Provádění Díla a práce nad rámec“
+  care(w, part){
+    w.clause(`Zhotovitel provede Dílo s odbornou péčí, v souladu se zadáním Objednatele, touto Smlouvou a právními předpisy účinnými v době zpracování ${part || "Díla"}.`);
+  },
+  specialists(w){
+    w.clause("Zhotovitel je oprávněn při provádění Díla využít kvalifikované spolupracovníky a specialisty a koordinovat jejich činnost.");
+  },
+  influences(w, what, extra){
+    w.clause(`Výsledné řešení může být ovlivněno ${what}.${extra ? " " + extra : ""}`);
+  },
+  extraWork(w, f, examples){
+    w.clause(`Práce a výkony nad rámec sjednaného Díla${examples ? `, zejména ${examples},` : ""} budou provedeny po předchozím odsouhlasení Objednatelem. Není-li jejich cena sjednána pevnou částkou, budou účtovány podle skutečně vynaloženého času sazbou ${f.hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel není povinen práce nad rámec Díla zahájit před jejich odsouhlasením Objednatelem.`);
+  },
+  writtenComm(w){
+    w.clause("Pro odsouhlasení změn zadání, víceprací, jejich rozsahu a ceny postačuje písemná komunikace mezi Stranami, včetně komunikace prostřednictvím e-mailu. Takové odsouhlasení se pro účely této Smlouvy nepovažuje za změnu Smlouvy vyžadující uzavření dodatku podle čl. {ref:amend}.");
+  },
+  reliance(w){
+    w.clause("Zhotovitel je oprávněn vycházet z údajů, informací a podkladů předaných Objednatelem nebo třetími osobami. Zhotovitel neodpovídá za vady Díla, prodlení ani nutnost přepracování Díla způsobené nesprávností, neúplností nebo pozdějším doplněním či změnou těchto podkladů, pokud jejich nesprávnost nebo neúplnost nemohl Zhotovitel při vynaložení odborné péče rozumně zjistit. Případné práce vyvolané takovou skutečností se považují za práce nad rámec Díla.");
+  },
+  // gen: předmět v 2. pádě („dokumentace“, „Díla“), extra: doplňující důvod odpovědnosti
+  interference(w, gen, extra){
+    w.clause(`Zhotovitel neodpovídá za vady, škody ani jiné následky vzniklé v důsledku změny, doplnění nebo jiného zásahu do ${gen} provedeného Objednatelem nebo třetí osobou bez předchozího písemného souhlasu Zhotovitele${extra ? `, ${extra}` : ""} ani za použití ${gen} v rozporu s účelem sjednaným touto Smlouvou.`);
+  },
+
+  // Článek „Ukončení Smlouvy“
+  ending(w, f){
+    w.clause("Smlouvu lze ukončit písemnou dohodou Stran. Zhotovitel je oprávněn od Smlouvy odstoupit, je-li Objednatel v prodlení s úhradou splatné částky déle než 14 dnů a neuhradí ji ani po písemné výzvě Zhotovitele.");
+    w.clause("Objednatel může Smlouvu vypovědět i bez uvedení důvodu. Zhotovitel může Smlouvu vypovědět, neposkytuje-li Objednatel potřebnou součinnost ani po prokazatelné výzvě k nápravě.");
+    w.clause(`Při předčasném ukončení Smlouvy je Objednatel povinen uhradit Zhotoviteli cenu prací a výkonů skutečně provedených do okamžiku ukončení Smlouvy a účelně vynaložené náklady. Nelze-li hodnotu rozpracovaného plnění určit podle dokončených částí Díla, bude určena podle skutečně vynaloženého času sazbou ${f.hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel předá Objednateli rozpracované výstupy odpovídající uhrazenému plnění.`);
+    w.clause("Výpověď, odstoupení nebo dohoda o ukončení Smlouvy musí mít písemnou formu.");
+  },
+
+  // Článek „Autorská práva a prezentace“; o: shown (co lze prezentovat), part (jejíž úhradou vzniká licence), use (co lze užít)
+  copyright(w, o){
+    w.clause(`Zhotovitel je oprávněn použít vyobrazení a části ${o.shown} pro svou profesní prezentaci, zejména v portfoliu, na webových stránkách, sociálních sítích a v odborných publikacích, bez uvedení osobních nebo jiných neveřejných údajů Objednatele.`);
+    w.clause(`Majetková autorská práva k autorskému dílu nejsou převáděna. Po úplném uhrazení ceny ${o.part} získává Objednatel nevýhradní oprávnění užít ${o.use} na místě uvedeném v této Smlouvě.`);
+  },
+
+  // Článek „Závěrečná ustanovení“; o.building = odkaz i na stavební zákon
+  closing(w, o){
+    o = o || {};
+    w.clause("Tato Smlouva nabývá účinnosti dnem podpisu oběma Stranami.");
+    w.clause(`Právní vztahy neupravené touto Smlouvou se řídí zejména občanským zákoníkem${o.building ? ", stavebním zákonem" : ""} a souvisejícími právními předpisy.`);
+    w.clause("Změny této Smlouvy lze činit pouze písemnými, vzestupně číslovanými dodatky podepsanými oběma Stranami, nestanoví-li tato Smlouva výslovně jinak.", "amend");
+    w.clause("Strany prohlašují, že si Smlouvu přečetly, jejímu obsahu rozumějí, souhlasí s ním a uzavírají ji svobodně a vážně.");
+    w.clause("Případné spory se Strany pokusí řešit přednostně smírně. Nedojde-li ke smírnému řešení do 30 dnů od písemné výzvy jedné Strany, bude spor řešen věcně a místně příslušným soudem.");
+    w.clause("Smlouva může být podepsána ve dvou stejnopisech nebo elektronicky; každá Strana obdrží jedno vyhotovení.");
+    w.clause("Je-li Objednatel spotřebitelem a byla-li tato Smlouva uzavřena způsobem, při němž právní předpisy přiznávají Objednateli právo na odstoupení od Smlouvy ve lhůtě stanovené zákonem, Objednatel výslovně žádá, aby Zhotovitel zahájil poskytování sjednaných služeb před uplynutím této lhůty. Objednatel bere na vědomí, že v případě odstoupení po zahájení plnění je povinen uhradit poměrnou část ceny za plnění poskytnuté do okamžiku odstoupení, stanoví-li tak právní předpisy.");
+  }
+};
+
 // Titulní část smlouvy: nadpis, Objednatel a Zhotovitel.
 function contractPartyBlocks(f){
   return [
@@ -3093,87 +3074,80 @@ function computeInteriorContractFields(project, customer, opts){
 // Text smlouvy jako seznam bloků – společný pro .docx i PDF, aby obě podoby zůstaly stejné.
 // Typy: title, sub (podtitul), center, centerBold, gap, h (nadpis článku), c (odstavec), sub2 (odsazená položka)
 function interiorContractBlocks(f){
-  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, items, total, withVat, ownBuildingProject } = f;
+  const { signPlace, signDate, items, total, ownBuildingProject } = f;
   const kinds = items.map(interiorItemKind);
   const has = k => kinds.includes(k);
-  const { blocks, heading, clause, sub } = contractBlockWriter();
+  const w = contractBlockWriter();
+  const { heading, clause, sub } = w;
+  const C = ContractCl;
+  const dilo = ctNoun("Dílo", false);
   const letters = "abcdefghijklmnopqrstuvwxyz";
-  blocks.push(...contractPartyBlocks(f));
+  w.blocks.push(...contractPartyBlocks(f));
 
   heading("Předmět Díla");
-  clause(`Zhotovitel se zavazuje pro Objednatele zpracovat návrh a dokumentaci interiéru ${sitePhrase} (dále jen „Interiér“) v rozsahu jednotlivých fází uvedených v odstavci 1.2 (dále jednotlivě „fáze“, společně „Dílo“).`);
-  clause("Dílo se skládá z těchto fází:");
-  items.forEach((it, i) => sub(`${letters[i]}) ${it.label}`));
+  clause(`Zhotovitel se zavazuje pro Objednatele zpracovat návrh a dokumentaci interiéru ${f.sitePhrase} (dále jen „Interiér“) v rozsahu jednotlivých fází uvedených v čl. {ref:scope} (dále jednotlivě „fáze“, společně „Dílo“).`);
+  clause("Dílo se skládá z těchto fází:", "scope");
+  items.forEach((it, i) => sub(`${letters[i]}) ${it.label}${i === items.length - 1 ? "." : ";"}`));
   items.forEach((it, i) => {
     const scope = INTERIOR_SCOPE_TEXT[kinds[i]];
     if(scope) clause(`Fáze „${it.label}“ ${scope}`);
   });
-  // Body 1.x o samostatnosti smlouvy a vyloučeném rozsahu a bod o podkladech v článku 2 se vkládají jen tehdy, když projekt stavby nezpracovával Zhotovitel.
+  // Body o samostatnosti smlouvy a vyloučeném rozsahu a bod o podkladech v článku 2 se vkládají jen tehdy, když projekt stavby nezpracovával Zhotovitel.
   if(!ownBuildingProject) clause("Tato Smlouva je samostatnou smlouvou. Její platnost, účinnost ani plnění nezávisí na dokumentaci pro povolení stavby, inženýrské činnosti ani na jiné smlouvě o dílo uzavřené mezi Stranami a Dílo není jejich součástí.");
-  if(!ownBuildingProject) clause("Dokumentace Interiéru je zpracována na základě podkladů o stavbě předaných Objednatelem. Případné úpravy stavebního řešení nebo projektů technických profesí vyvolané řešením Interiéru nejsou součástí Díla.");
+  if(!ownBuildingProject) clause("Dílo je zpracováno na základě podkladů o stavbě předaných Objednatelem. Případné úpravy stavebního řešení nebo projektů technických profesí vyvolané řešením Interiéru nejsou součástí Díla.");
   if(!ownBuildingProject) clause("Předmětem Díla není dokumentace pro povolení záměru ani dokumentace pro provádění stavby, inženýrská činnost, projekty technických profesí (zejména elektroinstalace, zdravotechniky, vytápění a vzduchotechniky), statické posouzení, výrobní a dílenská dokumentace zhotovitelů, položkový rozpočet, výběr a objednání dodavatelů a vybavení ani výkon autorského dozoru při realizaci Interiéru, není-li ve Smlouvě výslovně uvedeno nebo Stranami písemně dohodnuto jinak.");
 
   heading("Doba plnění, součinnost a předání");
-  clause("Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě první zálohy podle čl. 3.3 a po předání podkladů potřebných k zahájení prací.");
+  C.start(w, "{ref:pay}");
   clause("Doba zpracování jednotlivých fází odpovídá jejich rozsahu a průběhu společných konzultací. Fáze mohou probíhat postupně nebo souběžně podle dohody Stran.");
-  if(!ownBuildingProject) clause("Objednatel poskytne Zhotoviteli včas veškeré podklady (zejména projektovou dokumentaci stavby nebo zaměření skutečného stavu), informace, rozhodnutí, odsouhlasení, podpisy a další součinnost potřebnou pro řádné provádění Díla.");
-  clause("Po dobu prodlení Objednatele s poskytnutím potřebné součinnosti neběží Zhotoviteli doba plnění. Doba plnění se dále přiměřeně prodlužuje o dobu čekání na vyjádření, stanoviska, podklady nebo úkony třetích osob, které Zhotovitel nemůže ovlivnit.");
-  if(has("navrh")) clause("Připomínky Objednatele k návrhu interiéru zapracuje Zhotovitel do odsouhlasené podoby návrhu, která je podkladem pro další fáze. Odsouhlasení postačuje písemně, včetně e-mailu.");
-  clause("Dokumentace bude Objednateli předána elektronicky ve formátu PDF. 3D model slouží k prezentaci návrhu; editovatelné zdrojové soubory a 3D model nejsou součástí plnění, není-li písemně dohodnuto jinak.");
-  clause("Změny odsouhlaseného návrhu nebo zadání požadované Objednatelem, které vyvolají změnu nebo přepracování již provedených prací, nejsou zahrnuty v ceně Díla a považují se za práce nad rámec Díla.");
-  clause("Dokumentace se považuje za předanou okamžikem jejího odeslání Objednateli v elektronické podobě na jím sdělenou e-mailovou adresu nebo okamžikem jejího zpřístupnění Objednateli prostřednictvím elektronického úložiště, o němž byl Objednatel informován.");
+  if(!ownBuildingProject) C.cooperation(w, "zejména projektovou dokumentaci stavby nebo zaměření skutečného stavu");
+  C.delay(w);
+  if(has("navrh")) clause("Zhotovitel zapracuje připomínky Objednatele k návrhu Interiéru do podoby návrhu, kterou Objednatel odsouhlasí. Odsouhlasení se provádí písemně, přičemž postačuje i zpráva zaslaná e-mailem. Odsouhlasená podoba návrhu je podkladem pro další fáze.");
+  C.delivery(w, dilo, { note: "3D model slouží k prezentaci návrhu.", sources: "Editovatelné zdrojové soubory a 3D model" });
+  C.changes(w, "návrhu");
+  C.deemed(w, dilo);
 
   heading("Cena Díla a platební podmínky");
   clause("Cena jednotlivých fází činí:");
-  items.forEach((it, i) => sub(`${letters[i]}) ${it.label}: ${czContractPrice(it.amount)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(it.amount))} včetně DPH,`.replace(/,$/, i === items.length - 1 ? "." : ";")));
-  clause(`Celková cena Díla činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH. Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.`);
+  items.forEach((it, i) => sub(`${letters[i]}) ${it.label}: ${ctPrice(f, it.amount)}${i === items.length - 1 ? "." : ";"}`));
+  clause(`Celková cena Díla činí ${ctPrice(f, total)}. ${CONTRACT_VAT_CHANGE}`);
   // Příprava projektu a návrh interiéru se kvůli nízké ceně přípravy platí společně jako jeden celek; ostatní fáze zvlášť.
   const joined = items.filter((_, i) => kinds[i] === "priprava" || kinds[i] === "navrh");
   const payGroups = (joined.length ? [joined] : []).concat(items.filter((_, i) => kinds[i] !== "priprava" && kinds[i] !== "navrh").map(it => [it]));
   clause(joined.length > 1
     ? `Cena bude hrazena po jednotlivých fázích, přičemž fáze „${joined[0].label}“ a „${joined[1].label}“ se pro účely plateb považují za jednu fázi. Za každou takto vymezenou fázi se platí:`
-    : "Cena bude hrazena po jednotlivých fázích. Za každou fázi se platí:");
+    : "Cena bude hrazena po jednotlivých fázích. Za každou fázi se platí:", "pay");
   payGroups.forEach((g, i) => {
     const sum = g.reduce((s, it) => s + it.amount, 0);
     const names = g.map(it => `„${it.label}“`).join(" a ");
-    sub(`${letters[i]}) ${names} (celkem ${czContractPrice(sum)} bez DPH): záloha ve výši 50 % ceny, tj. ${czContractPrice(sum/2)} bez DPH; při sazbě DPH ${vatRate} % ${czContractPrice(withVat(sum/2))} včetně DPH, splatná před zahájením prací na této fázi; doplatek ve výši 50 % ceny, tj. ${czContractPrice(sum/2)} bez DPH; při sazbě DPH ${vatRate} % ${czContractPrice(withVat(sum/2))} včetně DPH, splatný po předání dokumentace této fáze${i === payGroups.length - 1 ? "." : ";"}`);
+    sub(`${letters[i]}) ${names} (celkem ${czContractPrice(sum)} bez DPH): záloha ve výši 50 % ceny, tj. ${ctPart(f, sum/2)}, splatná před zahájením prací na této fázi; doplatek ve výši 50 % ceny, tj. ${ctPart(f, sum/2)}, splatný po předání této fáze${i === payGroups.length - 1 ? "." : ";"}`);
   });
-  clause("Faktury jsou splatné do 14 dnů ode dne jejich vystavení, není-li na faktuře uvedena pozdější splatnost.");
-  clause("Je-li Objednatel v prodlení s úhradou jakékoli splatné částky podle této Smlouvy, je Zhotovitel oprávněn až do jejího úplného uhrazení přerušit provádění Díla. Po dobu takového přerušení není Zhotovitel v prodlení. Doba plnění se prodlužuje o dobu prodlení Objednatele a dále o přiměřenou dobu nezbytnou k opětovnému zařazení zakázky do pracovního harmonogramu Zhotovitele.");
-  clause("Cena zahrnuje náklady Zhotovitele výslovně uvedené v této Smlouvě. Nezahrnuje správní a jiné úřední poplatky, práce a podklady třetích osob (zejména zaměření skutečného stavu, průzkumy a posudky), ani dodávku, výrobu a montáž nábytku, svítidel, materiálů a dalšího vybavení Interiéru, není-li výslovně uvedeno jinak.");
-  clause("Trvá-li plnění této Smlouvy déle než 12 měsíců od její účinnosti, je Zhotovitel oprávněn jednou za každých dalších 12 měsíců zvýšit cenu dosud neprovedené části Díla o procentní míru odpovídající meziročnímu růstu indexu spotřebitelských cen zveřejněnému Českým statistickým úřadem za poslední dostupné období. O zvýšení ceny Zhotovitel Objednatele písemně informuje.");
+  C.invoices(w);
+  C.interruption(w);
+  C.priceScope(w, "práce a podklady třetích osob (zejména zaměření skutečného stavu, průzkumy a posudky), ani dodávku, výrobu a montáž nábytku, svítidel, materiálů a dalšího vybavení Interiéru");
+  C.inflation(w);
 
   heading("Provádění Díla a práce nad rámec");
-  clause("Zhotovitel provede Dílo s odbornou péčí, v souladu se zadáním Objednatele, touto Smlouvou a právními předpisy účinnými v době zpracování příslušné části Díla.");
-  clause("Zhotovitel je oprávněn při provádění Díla využít kvalifikované spolupracovníky a specialisty a koordinovat jejich činnost.");
-  clause("Výsledné řešení může být ovlivněno požadavky Objednatele, dostupnými podklady, technickými možnostmi stavby a požadavky právních předpisů. Specifikace výrobků a materiálů vychází z jejich dostupnosti a vlastností v době zpracování; Zhotovitel neodpovídá za pozdější změnu jejich dostupnosti, ceny nebo technických parametrů ani za ukončení jejich výroby.");
-  clause(`Práce a výkony nad rámec sjednaného Díla, zejména změny odsouhlaseného návrhu, nové varianty řešení nebo dodatečně požadované místnosti a vizualizace, budou provedeny po předchozím odsouhlasení Objednatelem. Není-li jejich cena sjednána pevnou částkou, budou účtovány podle skutečně vynaloženého času sazbou ${hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel není povinen práce nad rámec Díla zahájit před jejich odsouhlasením Objednatelem.`);
-  clause("Pro odsouhlasení změn zadání, víceprací, jejich rozsahu a ceny postačuje písemná komunikace mezi Stranami, včetně komunikace prostřednictvím e-mailu. Takové odsouhlasení se pro účely této Smlouvy nepovažuje za změnu Smlouvy vyžadující uzavření dodatku podle čl. 7.2.");
-  clause("Zhotovitel je oprávněn vycházet z údajů, informací a podkladů předaných Objednatelem nebo třetími osobami. Zhotovitel neodpovídá za vady Díla, prodlení ani nutnost přepracování Díla způsobené nesprávností, neúplností nebo pozdějším doplněním či změnou těchto podkladů, pokud jejich nesprávnost nebo neúplnost nemohl Zhotovitel při vynaložení odborné péče rozumně zjistit. Případné práce vyvolané takovou skutečností se považují za práce nad rámec Díla.");
+  C.care(w, "příslušné fáze");
+  C.specialists(w);
+  C.influences(w, "požadavky Objednatele, dostupnými podklady, technickými možnostmi stavby a požadavky právních předpisů", "Specifikace výrobků a materiálů vychází z jejich dostupnosti a vlastností v době zpracování; Zhotovitel neodpovídá za pozdější změnu jejich dostupnosti, ceny nebo technických parametrů ani za ukončení jejich výroby.");
+  C.extraWork(w, f, "změny odsouhlaseného návrhu, nové varianty řešení nebo dodatečně požadované místnosti a vizualizace");
+  C.writtenComm(w);
+  C.reliance(w);
   if(has("atyp")) clause("Před zahájením výroby atypických truhlářských prvků je nutné ověřit skutečné rozměry na místě a dopracovat výrobní dokumentaci. Zhotovitel neodpovídá za rozměry převzaté z podkladů, které neodpovídají skutečnému provedení stavby.");
-  clause("Zhotovitel neodpovídá za vady, škody ani jiné následky vzniklé v důsledku změny, doplnění nebo jiného zásahu do dokumentace provedeného Objednatelem nebo třetí osobou bez předchozího písemného souhlasu Zhotovitele, za provedení Interiéru v rozporu s dokumentací ani za použití dokumentace v rozporu s účelem sjednaným touto Smlouvou.");
+  C.interference(w, "Díla", "za provedení Interiéru v rozporu s Dílem");
 
   heading("Ukončení Smlouvy");
-  clause("Smlouvu lze ukončit písemnou dohodou Stran. Zhotovitel je oprávněn od Smlouvy odstoupit, je-li Objednatel v prodlení s úhradou splatné částky déle než 14 dnů a neuhradí ji ani po písemné výzvě Zhotovitele.");
-  clause("Objednatel může Smlouvu vypovědět i bez uvedení důvodu. Zhotovitel může Smlouvu vypovědět, neposkytuje-li Objednatel potřebnou součinnost ani po prokazatelné výzvě k nápravě.");
-  clause(`Při předčasném ukončení Smlouvy je Objednatel povinen uhradit Zhotoviteli cenu prací a výkonů skutečně provedených do okamžiku ukončení Smlouvy a účelně vynaložené náklady. Nelze-li hodnotu rozpracovaného plnění určit podle dokončených částí Díla, bude určena podle skutečně vynaloženého času sazbou ${hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel předá Objednateli rozpracované výstupy odpovídající uhrazenému plnění.`);
-  clause("Výpověď, odstoupení nebo dohoda o ukončení Smlouvy musí mít písemnou formu.");
+  C.ending(w, f);
 
   heading("Autorská práva a prezentace");
-  clause("Tato Smlouva nabývá účinnosti dnem podpisu oběma Stranami.");
-  clause("Zhotovitel je oprávněn použít vyobrazení a části dokumentace Díla, vizualizace i fotografie realizovaného Interiéru pro svou profesní prezentaci, zejména v portfoliu, na webových stránkách, sociálních sítích a v odborných publikacích, bez uvedení osobních nebo jiných neveřejných údajů Objednatele.");
-  clause("Majetková autorská práva k autorskému dílu nejsou převáděna. Po úplném uhrazení ceny příslušné části Díla získává Objednatel nevýhradní oprávnění užít návrh a dokumentaci pro realizaci Interiéru na místě uvedeném v této Smlouvě.");
+  C.copyright(w, { shown: "Díla (včetně vizualizací) i fotografie realizovaného Interiéru", part: "příslušné fáze", use: "Dílo pro realizaci Interiéru" });
 
   heading("Závěrečná ustanovení");
-  clause("Právní vztahy neupravené touto Smlouvou se řídí zejména občanským zákoníkem a souvisejícími právními předpisy.");
-  clause("Změny této Smlouvy lze činit pouze písemnými, vzestupně číslovanými dodatky podepsanými oběma Stranami, nestanoví-li tato Smlouva výslovně jinak.");
-  clause("Strany prohlašují, že si Smlouvu přečetly, jejímu obsahu rozumějí, souhlasí s ním a uzavírají ji svobodně a vážně.");
-  clause("Případné spory se Strany pokusí řešit přednostně smírně. Nedojde-li ke smírnému řešení do 30 dnů od písemné výzvy jedné Strany, bude spor řešen věcně a místně příslušným soudem.");
-  clause("Smlouva může být podepsána ve dvou stejnopisech nebo elektronicky; každá Strana obdrží jedno vyhotovení.");
-  clause("Je-li Objednatel spotřebitelem a byla-li tato Smlouva uzavřena způsobem, při němž právní předpisy přiznávají Objednateli právo na odstoupení od Smlouvy ve lhůtě stanovené zákonem, Objednatel výslovně žádá, aby Zhotovitel zahájil poskytování sjednaných služeb před uplynutím této lhůty. Objednatel bere na vědomí, že v případě odstoupení po zahájení plnění je povinen uhradit poměrnou část ceny za plnění poskytnuté do okamžiku odstoupení, stanoví-li tak právní předpisy.");
+  C.closing(w);
 
-  blocks.push({ k: "place", t: `V ${signPlace} dne ${signDate}` });
-  return blocks;
+  w.blocks.push({ k: "place", t: `V ${signPlace} dne ${signDate}` });
+  return w.finish();
 }
 
 async function buildInteriorContractPdf(project, customer, opts){
@@ -3294,13 +3268,16 @@ function computeStudyContractFields(project, customer, opts){
   };
 }
 function studyContractBlocks(f){
-  const { vatRate, hourlyRateFmt, sitePhrase, signPlace, signDate, total, withVat, full, parts } = f;
-  const { blocks, heading, clause, sub } = contractBlockWriter();
-  blocks.push(...contractPartyBlocks(f));
+  const { signPlace, signDate, total, full, parts } = f;
+  const w = contractBlockWriter();
+  const { heading, clause, sub } = w;
+  const C = ContractCl;
+  const dilo = ctNoun("Dílo", false);
+  w.blocks.push(...contractPartyBlocks(f));
 
   heading("Předmět Díla");
-  clause(`Zhotovitel se zavazuje pro Objednatele zpracovat architektonickou studii (koncepční návrh) novostavby ${sitePhrase} (dále jen „Stavba“) v rozsahu uvedeném v odstavci 1.2 (dále jen „Dílo“).`);
-  clause("Dílo zahrnuje:");
+  clause(`Zhotovitel se zavazuje pro Objednatele zpracovat architektonickou studii (koncepční návrh) novostavby ${f.sitePhrase} (dále jen „Stavba“) v rozsahu uvedeném v čl. {ref:scope} (dále jen „Dílo“).`);
+  clause("Dílo zahrnuje:", "scope");
   const scope = [
     "zabezpečení vstupních podkladů, prověření a analýzu přípravy projektu",
     "upřesnění cílových představ Objednatele",
@@ -3308,50 +3285,52 @@ function studyContractBlocks(f){
     "situace, půdorysy, řezy, pohledy"
   ];
   if(full) scope.push("3D model včetně možnosti procházení, varianty materiálového řešení na 3D modelu", "axonometrii, vizualizace a studii oslunění", "architektonickou knihu");
-  scope.forEach((t, i) => sub(`– ${t}${i === scope.length - 1 ? "." : ","}`));
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  scope.forEach((t, i) => sub(`${letters[i]}) ${t}${i === scope.length - 1 ? "." : ";"}`));
 
-  heading("Doba plnění a způsob předání");
-  clause("Zhotovitel zahájí provádění Díla po nabytí účinnosti této Smlouvy, úhradě zálohy podle čl. 3.2 a po předání podkladů potřebných k zahájení prací. Zhotovitel se zavazuje provést Dílo v přiměřeném termínu odpovídajícímu termínům v čase a místě obvyklým, přičemž se předpokládá součinnost Objednatele podle této Smlouvy.");
-  clause(`Dílo bude Objednateli předáno v elektronické podobě prostřednictvím elektronické pošty ve formátu PDF. Objednatel se zavazuje přijetí Díla Zhotoviteli prostřednictvím elektronické pošty bez zbytečného odkladu potvrdit.${full ? " Dílo bude dále předáno osobně nebo zásilkovou službou formou architektonické knihy ve formátu A4." : ""}`);
+  heading("Doba plnění, součinnost a předání");
+  C.start(w, "{ref:pay}");
+  clause("Dílo bude zpracováno v přiměřené době odpovídající jeho rozsahu a obvyklým projekčním lhůtám.");
+  C.cooperation(w);
+  C.delay(w);
+  C.delivery(w, dilo, full
+    ? { note: "3D model slouží k prezentaci návrhu.", sources: "Editovatelné zdrojové soubory a 3D model", after: "Dílo bude dále předáno osobně nebo zásilkovou službou formou architektonické knihy ve formátu A4." }
+    : {});
+  C.changes(w, "konceptu");
+  C.deemed(w, dilo);
 
-  heading("Cena za plnění");
-  clause(`Celková cena za provedení Díla podle této Smlouvy činí ${czContractPrice(total)} bez DPH; při sazbě DPH ${vatRate} % činí ${czContractPrice(withVat(total))} včetně DPH.${parts.length > 1 ? ` Celková cena je součtem cen částí Díla: ${parts.map(it => `„${it.label}“ (${czContractPrice(it.amount)} bez DPH)`).join(" a ")}.` : ""} Dojde-li v průběhu plnění této Smlouvy ke změně zákonné sazby DPH, bude k ceně příslušného plnění připočtena DPH v zákonné výši účinné ke dni uskutečnění příslušného zdanitelného plnění.`);
-  clause("Cena bude hrazena takto:");
-  sub(`a) záloha ve výši 50 % ceny, tj. ${czContractPrice(total/2)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(total/2))} včetně DPH, splatná před zahájením prací na Díle, nejpozději do 14 dnů ode dne uzavření této Smlouvy na účet uvedený v záhlaví Smlouvy,`);
-  sub(`b) doplatek ve výši 50 % ceny, tj. ${czContractPrice(total/2)} bez DPH; při sazbě DPH ${vatRate} % celkem ${czContractPrice(withVat(total/2))} včetně DPH, splatný do 14 dnů ode dne předání Díla.`);
-  clause("Dohodnutá cena zahrnuje veškeré náklady Zhotovitele související s provedením Díla.");
-  clause("Inflační doložka: Zhotovitel má právo jednostranně zvýšit cenu Díla, resp. dosud neprovedených prací, podle průměrné roční míry inflace za předchozí kalendářní rok měřené indexem spotřebitelských cen dle Českého statistického úřadu. Změnu ceny na základě inflační doložky musí Zhotovitel Objednateli oznámit do 31. 3. příslušného kalendářního roku. Pokud tak neučiní, zůstává cena za Dílo, resp. neprovedené práce neměnná.");
+  heading("Cena Díla a platební podmínky");
+  clause(`Celková cena Díla činí ${ctPrice(f, total)}.${parts.length > 1 ? ` Celková cena je součtem cen částí Díla: ${parts.map(it => `„${it.label}“ (${czContractPrice(it.amount)} bez DPH)`).join(" a ")}.` : ""} ${CONTRACT_VAT_CHANGE}`);
+  clause("Cena bude hrazena takto:", "pay");
+  sub(`a) záloha ve výši 50 % ceny, tj. ${ctPart(f, total/2)}, splatná před zahájením prací na Díle;`);
+  sub(`b) doplatek ve výši 50 % ceny, tj. ${ctPart(f, total/2)}, splatný po předání Díla.`);
+  C.invoices(w);
+  C.interruption(w);
+  C.priceScope(w, "práce a podklady třetích osob (zejména zaměření pozemku, průzkumy a posudky)");
+  C.inflation(w);
 
-  heading("Práva a povinnosti Stran");
-  clause("Zhotovitel se zavazuje provést Dílo s vynaložením maximálního úsilí tak, aby odpovídalo co nejblíže zadání Objednatele, k čemuž se mu Objednatel zavazuje poskytnout nezbytnou součinnost. Zhotovitel je povinen provést Dílo osobně nebo prostřednictvím oprávněných osob.");
-  clause("Zhotovitel se zavazuje předat Objednateli Dílo v termínu stanoveném v článku 2 této Smlouvy.");
-  clause("Zhotovitel, resp. jím pověření pracovníci, bude v rámci plnění Smlouvy úzce spolupracovat s Objednatelem za účelem koordinace provádění Díla. Objednatel bere na vědomí, že jeho součinnost je pro plnění Díla podle této Smlouvy nezbytná.");
-  clause("Změny zadání požadované Objednatelem po odsouhlasení konceptu, které vyvolají změnu nebo přepracování již provedených prací, nejsou zahrnuty v ceně Díla a považují se za práce nad rámec Díla.");
-  clause(`Práce a výkony nad rámec sjednaného Díla, zejména změny odsouhlaseného konceptu, nové varianty řešení nebo dodatečně požadované vizualizace, budou provedeny po předchozím odsouhlasení Objednatelem. Není-li jejich cena sjednána pevnou částkou, budou účtovány podle skutečně vynaloženého času sazbou ${hourlyRateFmt},- Kč bez DPH za hodinu. Zhotovitel není povinen práce nad rámec Díla zahájit před jejich odsouhlasením Objednatelem.`);
-  clause("Pro odsouhlasení změn zadání, víceprací, jejich rozsahu a ceny postačuje písemná komunikace mezi Stranami, včetně komunikace prostřednictvím e-mailu. Takové odsouhlasení se pro účely této Smlouvy nepovažuje za změnu Smlouvy vyžadující uzavření dodatku podle čl. 7.2.");
+  heading("Provádění Díla a práce nad rámec");
+  C.care(w);
+  C.specialists(w);
+  C.influences(w, "požadavky právních předpisů, orgánů veřejné moci a výsledky potřebných průzkumů a podkladů");
+  C.extraWork(w, f, "změny odsouhlaseného konceptu, nové varianty řešení nebo dodatečně požadované vizualizace");
+  C.writtenComm(w);
+  C.reliance(w);
+  C.interference(w, "Díla");
 
   heading("Ukončení Smlouvy");
-  clause("Strany mohou Smlouvu ukončit dohodou nebo výpovědí z níže uvedených důvodů. Zhotovitel je oprávněn od této Smlouvy odstoupit v případě, že Objednatel neuhradí zálohu v termínu uvedeném v článku 3.2 Smlouvy. Dohoda, výpověď i odstoupení od Smlouvy musí být provedeny v písemné formě (za kterou se nepovažuje e-mail) a doručeny druhé Straně.");
-  clause("Objednatel je oprávněn vypovědět Smlouvu i bez udání důvodu. Zhotovitel je oprávněn vypovědět Smlouvu z důvodu neposkytnutí potřebné součinnosti ze strany Objednatele za předpokladu, že byl Objednatel předem k poskytnutí součinnosti prokazatelně vyzván (alespoň prostřednictvím e-mailu). V případě výpovědi Smlouvy je Objednatel povinen zaplatit Zhotoviteli částku, která připadá na práce na Díle Zhotovitelem již vykonané.");
+  C.ending(w, f);
 
-  heading("Ostatní ujednání");
-  clause("Tato Smlouva nabývá platnosti a účinnosti dnem podpisu obou Stran.");
-  clause("Tato Smlouva zaniká, není-li výše uvedeno jinak, splněním nebo písemnou dohodou Stran, v níž si Strany dohodnou vzájemná práva a povinnosti v souvislosti s takovýmto ukončením Smlouvy.");
-  clause("Po ukončení platnosti této Smlouvy je Zhotovitel povinen protokolárně předat Objednateli bez zbytečného odkladu všechny dokumenty a vybavení Objednatele, pokud bylo poskytnuto, a kopie těchto dokumentů zlikvidovat, nestanoví-li právní předpis jinak.");
-  clause("Zhotovitel je oprávněn použít vyobrazení a části Díla, včetně vizualizací, pro svou profesní prezentaci, zejména v portfoliu, na webových stránkách, sociálních sítích a v odborných publikacích, bez uvedení osobních nebo jiných neveřejných údajů Objednatele.");
-  clause("Majetková autorská práva k autorskému dílu nejsou převáděna. Po úplném uhrazení ceny Díla získává Objednatel nevýhradní oprávnění užít Dílo pro účely další projektové přípravy a realizace Stavby na místě uvedeném v této Smlouvě.");
+  heading("Autorská práva a prezentace");
+  C.copyright(w, { shown: "Díla (včetně vizualizací)", part: "Díla", use: "Dílo pro účely další projektové přípravy a realizace Stavby" });
 
-  heading("Závěrečná ujednání");
-  clause("Práva a povinnosti Stran, pokud nejsou upraveny touto Smlouvou, se řídí zákonem č. 89/2012 Sb., občanský zákoník, ve znění pozdějších předpisů a předpisy souvisejícími.");
-  clause("Jakékoliv změny a doplňky této Smlouvy jsou možné pouze formou písemných, vzestupně číslovaných a Stranami podepsaných dodatků, a to osobami oprávněnými jednat jménem či za Strany, nestanoví-li tato Smlouva výslovně jinak.");
-  clause("Strany výslovně prohlašují, že si tuto Smlouvu přečetly, seznámily se s jejím obsahem a souhlasí s ní. Na důkaz správnosti a úplnosti této Smlouvy připojují své podpisy. Svými podpisy rovněž vyjadřují, že Smlouva nebyla ujednána v tísni a ani za jinak jednostranně nevýhodných podmínek.");
-  clause("Strany se zavazují řešit spory vzniklé v souvislosti s touto Smlouvou především smírnou cestou. Spory, jež nebude možné ve lhůtě do 30 dnů ode dne oznámení sporné otázky druhé Straně vyřešit smírem, budou řešeny, pokud nebude předem písemně dohodnuto jinak, místně příslušným soudem Objednatele.");
-  clause("Tato Smlouva je vyhotovena ve dvou stejnopisech, z nichž každá ze Stran obdrží po jednom, nebo může být podepsána elektronicky.");
-  clause("Je-li Objednatel spotřebitelem a byla-li tato Smlouva uzavřena způsobem, při němž právní předpisy přiznávají Objednateli právo na odstoupení od Smlouvy ve lhůtě stanovené zákonem, Objednatel výslovně žádá, aby Zhotovitel zahájil poskytování sjednaných služeb před uplynutím této lhůty. Objednatel bere na vědomí, že v případě odstoupení po zahájení plnění je povinen uhradit poměrnou část ceny za plnění poskytnuté do okamžiku odstoupení, stanoví-li tak právní předpisy.");
+  heading("Závěrečná ustanovení");
+  C.closing(w);
 
-  blocks.push({ k: "place", t: `V ${signPlace} dne ${signDate}` });
-  return blocks;
+  w.blocks.push({ k: "place", t: `V ${signPlace} dne ${signDate}` });
+  return w.finish();
 }
+
 async function buildStudyContractPdf(project, customer, opts){
   const f = computeStudyContractFields(project, customer, opts);
   return renderContractPdf(studyContractBlocks(f), f.clientName);
