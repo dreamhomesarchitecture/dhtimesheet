@@ -3067,6 +3067,7 @@ function computeInteriorContractFields(project, customer, opts){
   return {
     ...contractCommonFields(customer, opts),
     ownBuildingProject: !!opts.ownBuildingProject,
+    rooms: String(opts.rooms || "").trim().replace(/[.;,\s]+$/, ""),
     items, total: items.reduce((s, it) => s + it.amount, 0)
   };
 }
@@ -3086,6 +3087,9 @@ function interiorContractBlocks(f){
 
   heading("Předmět Díla");
   clause(`Zhotovitel se zavazuje pro Objednatele zpracovat návrh a dokumentaci interiéru ${f.sitePhrase} (dále jen „Interiér“) v rozsahu jednotlivých fází uvedených v čl. {ref:scope} (dále jednotlivě „fáze“, společně „Dílo“).`);
+  clause(f.rooms
+    ? `Dílo se zpracovává pouze pro tyto prostory: ${f.rooms}. Ostatní prostory nejsou součástí Díla; jejich zpracování se považuje za práce nad rámec Díla.`
+    : "Dílo se zpracovává pro všechny prostory řešeného objektu.");
   clause("Dílo se skládá z těchto fází:", "scope");
   items.forEach((it, i) => sub(`${letters[i]}) ${it.label}${i === items.length - 1 ? "." : ";"}`));
   items.forEach((it, i) => {
@@ -4955,6 +4959,11 @@ function buildPaymentCalendarDetail(projectId){
           <label class="field-label" style="display:block;margin-bottom:4px;">Předmět a místo (věta do smlouvy: „návrh a dokumentaci interiéru …“)</label>
           <input type="text" id="contract-int-site-phrase" style="width:100%;max-width:560px;padding:6px 8px;font-size:13px;" value="${esc("rodinného domu " + (p.location || ""))}">
           <div class="q-hint" style="margin:4px 0 0;">Zkontrolujte, ať věta dává smysl (např. „rodinného domu ve Třebíči, na pozemku parc. č. …, v katastrálním území …“).</div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label class="field-label" style="display:block;margin-bottom:4px;">Řešené prostory (do smlouvy)</label>
+          <input type="text" id="contract-int-rooms" placeholder="prázdné = všechny prostory; jinak např. obývací pokoj s kuchyní, ložnice a koupelna v 1. NP" style="width:100%;max-width:560px;padding:6px 8px;font-size:13px;" value="">
+          <div class="q-hint" style="margin:4px 0 0;">Nechte prázdné, pokud se řeší všechny prostory. Vypíšete-li místnosti, smlouva uvede, že se Dílo zpracovává jen pro ně a ostatní prostory jsou nad rámec Díla.</div>
         </div>
         <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-bottom:10px;cursor:pointer;">
           <input type="checkbox" id="contract-int-own-project" style="margin-top:2px;" ${(p.phaseIds || []).some(id => id === phaseRoleId("dsp") || id === "DPS") ? "checked" : ""}>
@@ -9319,6 +9328,7 @@ function bindAdmin(){
       signPlace: val("contract-int-sign-place").trim(),
       signDate: val("contract-int-sign-date") || todayStr(),
       sitePhrase: val("contract-int-site-phrase").trim() || ("rodinného domu " + (project.location || "")),
+      rooms: val("contract-int-rooms").trim(),
       ownBuildingProject: !!(document.getElementById("contract-int-own-project") || {}).checked,
       vatRate
     } };
